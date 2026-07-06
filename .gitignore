@@ -1,0 +1,42 @@
+.claude
+.codex
+.tokensave
+CLAUDE.md
+
+# Build output
+internal/server/frontend/
+
+# Go
+*.test
+*.out
+
+# Dependencies
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (frontend)
+web/node_modules/
+web/dist/
+
+# Environment
+.env
+.env.local
+
+# Binary
+bin/
+bin/*
+avalok
+configs/*
+
+# Hugo build output
+docs/public/
+docs/resources/_gen/

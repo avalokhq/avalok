@@ -1,0 +1,68 @@
+baseURL = "https://avalokhq.github.io/avalok/"
+languageCode = "en-us"
+title = "Avalok"
+contentDir = "content"
+enableGitInfo = true
+
+[module]
+  [[module.imports]]
+    path = "github.com/colinwilson/lotusdocs"
+    disable = false
+  [[module.imports]]
+    path = "github.com/gohugoio/hugo-mod-bootstrap-scss/v5"
+    disable = false
+
+[markup]
+  [markup.tableOfContents]
+    endLevel = 3
+    startLevel = 2
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[params]
+  title = "Avalok"
+  description = "Unified log streaming across your entire infrastructure"
+  images = ["images/avalok-dark-mode.png"]
+  google_fonts = [
+    ["Inter", "300, 400, 500, 600, 700"],
+    ["Fira Code", "400, 500, 600, 700"]
+  ]
+  sans_serif_font = "Inter"
+  mono_font = "Fira Code"
+  secondary_font = "Inter"
+  logo_text = "Avalok"
+  header_height = "10rem"
+  footer_text = "Powered by <a href='https://lotusdocs.dev'>Lotus Docs</a>"
+
+  [params.social]
+    github = "avalokhq/avalok"
+
+  [params.docs]
+    title = "Avalok Documentation"
+    pathName = "docs"
+    darkMode = true
+
+  [params.flexsearch]
+    enabled = true
+    tokenize = "forward"
+
+  [params.feedback]
+    enabled = false
+
+  [params.docsearch]
+    appID = ""
+    apiKey = ""
+    indexName = ""
+
+[[menu.primary]]
+  name = "Docs"
+  url = "/docs/"
+  identifier = "docs"
+  weight = 10
+
+[[menu.primary]]
+  name = "GitHub"
+  url = "https://github.com/avalokhq/avalok"
+  identifier = "github"
+  weight = 30
