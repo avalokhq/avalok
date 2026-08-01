@@ -330,9 +330,7 @@ func runServerDeploy() error {
 
 const dockerComposeTemplate = `services:
   avalok:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
+    image: ghcr.io/avalokhq/avalok:latest
     ports:
       - "9090:9090"
     environment:
