@@ -78,6 +78,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES 
   const [paused, setPaused] = useState(false)
   const [levelFilter, setLevelFilter] = useState<Set<string>>(() => new Set(['error', 'warn', 'info', 'debug']))
   const [fontSize, setFontSize] = useState(getStoredFontSize)
+  const [wrap, setWrap] = useState(true)
   const [timeFilter, setTimeFilter] = useState<TimeFilterValue>({ source: 'live' })
   const [connected, setConnected] = useState(false)
   const wsRefs = useRef<Map<string, WebSocket>>(new Map())
@@ -291,6 +292,8 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES 
         onToggleLevel={toggleLevel}
         fontSize={fontSize}
         onFontSizeChange={handleFontSizeChange}
+        wrap={wrap}
+        onToggleWrap={() => setWrap(v => !v)}
         timeFilter={timeFilter}
         onTimeFilterChange={setTimeFilter}
       />
@@ -332,22 +335,22 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES 
                     lineHeight: `${rowHeight}px`,
                   }}
                 >
-                  <span className="shrink-0 w-12 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums">
+                  <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums overflow-hidden" style={{ width: '5ch' }}>
                     {vRow.index + 1}
                   </span>
 
                   {entry.timestamp && (
-                    <span className="shrink-0 w-24 pr-3 text-[var(--text-muted)] tabular-nums">
+                    <span className="shrink-0 pr-3 text-[var(--text-muted)] tabular-nums overflow-hidden" style={{ width: '13ch' }}>
                       {formatTimestamp(entry.timestamp)}
                     </span>
                   )}
 
-                  <span className="shrink-0 w-32 pr-3 flex items-center gap-1.5 truncate">
+                  <span className="shrink-0 pr-3 flex items-center gap-1.5 whitespace-nowrap">
                     <SourceDot name={entry.sessionId} />
-                    <span className="truncate text-[var(--text-secondary)]">{entry.sessionLabel}</span>
+                    <span className="text-[var(--text-secondary)]">{entry.sessionLabel}</span>
                   </span>
 
-                  <span className="flex-1 whitespace-pre-wrap break-all">
+                  <span className={cn('flex-1', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')}>
                     {highlightSearch(entry.line, debouncedSearch)}
                   </span>
                 </div>

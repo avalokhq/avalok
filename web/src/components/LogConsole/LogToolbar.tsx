@@ -8,6 +8,7 @@ import {
   Minus,
   Plus,
   ChevronsDown,
+  WrapText,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import TimeFilter, { type TimeFilterValue } from './TimeFilter'
@@ -27,6 +28,8 @@ interface Props {
   onToggleLevel: (level: string) => void
   fontSize: number
   onFontSizeChange: (size: number) => void
+  wrap: boolean
+  onToggleWrap: () => void
   timeFilter?: TimeFilterValue
   onTimeFilterChange?: (v: TimeFilterValue) => void
 }
@@ -43,7 +46,7 @@ const FONT_SIZES = [10, 12, 14, 16, 18]
 export default function LogToolbar({
   search, onSearchChange, paused, onTogglePause, onClear, onScrollToBottom,
   lineCount, totalCount, follow, onToggleFollow, levelFilter, onToggleLevel,
-  fontSize, onFontSizeChange, timeFilter, onTimeFilterChange,
+  fontSize, onFontSizeChange, wrap, onToggleWrap, timeFilter, onTimeFilterChange,
 }: Props) {
   const sizeIdx = FONT_SIZES.indexOf(fontSize)
   const canDecrease = sizeIdx > 0
@@ -133,6 +136,20 @@ export default function LogToolbar({
           <Plus className="w-3 h-3" />
         </button>
       </div>
+
+      {/* Wrap toggle */}
+      <button
+        onClick={onToggleWrap}
+        className={cn(
+          'p-1 rounded-md transition-colors border-l border-[var(--border-default)] pl-2',
+          wrap
+            ? 'text-accent-400 bg-accent-500/10 hover:bg-accent-500/20'
+            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+        )}
+        title={wrap ? 'Wrap ON' : 'Wrap OFF'}
+      >
+        <WrapText className="w-3.5 h-3.5" />
+      </button>
 
       {/* Line count */}
       <span className="text-xs text-[var(--text-muted)] tabular-nums">

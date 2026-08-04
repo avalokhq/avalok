@@ -38,6 +38,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
   const [levelFilter, setLevelFilter] = useState<Set<string>>(() => new Set(['error', 'warn', 'info', 'debug']))
   const [showColumnMenu, setShowColumnMenu] = useState(false)
   const [fontSize, setFontSize] = useState(getStoredFontSize)
+  const [wrap, setWrap] = useState(true)
   const scrollKickRef = useRef(0)
 
   const handleFontSizeChange = useCallback((size: number) => {
@@ -196,6 +197,8 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         onToggleLevel={toggleLevel}
         fontSize={fontSize}
         onFontSizeChange={handleFontSizeChange}
+        wrap={wrap}
+        onToggleWrap={() => setWrap(v => !v)}
         timeFilter={timeFilter}
         onTimeFilterChange={setTimeFilter}
       />
@@ -208,6 +211,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         showSource={showSource}
         search={debouncedSearch}
         fontSize={fontSize}
+        wrap={wrap}
         totalCount={logs.length}
         connected={connected}
       />

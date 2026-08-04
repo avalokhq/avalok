@@ -38,6 +38,7 @@ export default function LogPanel({ workspace, environment, service, label, panel
   const [levelFilter, setLevelFilter] = useState<Set<string>>(() => new Set(['error', 'warn', 'info', 'debug']))
   const [showColumnMenu, setShowColumnMenu] = useState(false)
   const [fontSize, setFontSize] = useState(getStoredFontSize)
+  const [wrap, setWrap] = useState(true)
   const scrollKickRef = useRef(0)
 
   const handleFontSizeChange = useCallback((size: number) => {
@@ -179,6 +180,8 @@ export default function LogPanel({ workspace, environment, service, label, panel
         onToggleLevel={toggleLevel}
         fontSize={fontSize}
         onFontSizeChange={handleFontSizeChange}
+        wrap={wrap}
+        onToggleWrap={() => setWrap(v => !v)}
         timeFilter={timeFilter}
         onTimeFilterChange={setTimeFilter}
       />
@@ -192,6 +195,7 @@ export default function LogPanel({ workspace, environment, service, label, panel
           showSource={showSource}
           search={debouncedSearch}
           fontSize={fontSize}
+          wrap={wrap}
           totalCount={logs.length}
           connected={connected}
         />
