@@ -233,6 +233,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
   }, [filtered, sessions])
 
   const rowHeight = estimateRowHeight(fontSize)
+  const lineNumWidth = `${Math.max(4, String(filtered.length).length) + 1}ch`
   const shouldFollow = follow && !paused
 
   const virtualizer = useVirtualizer({
@@ -345,7 +346,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
                     lineHeight: `${rowHeight}px`,
                   }}
                 >
-                  <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums overflow-hidden" style={{ width: '5ch' }}>
+                  <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums" style={{ width: lineNumWidth }}>
                     {vRow.index + 1}
                   </span>
 
