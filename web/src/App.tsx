@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, fetchConfig } from './lib/api'
+import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, storageObjectStreamURL, adminGetResource, fetchConfig } from './lib/api'
 import type { AuthUser } from './lib/api'
 import { useTheme } from './lib/useTheme'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from './lib/types'
@@ -14,6 +14,7 @@ import ServiceEnvironmentsView from './components/Views/ServiceEnvironmentsView'
 import StandaloneEnvServicesView from './components/Views/StandaloneEnvServicesView'
 import ResourceNamespacesView from './components/Views/ResourceNamespacesView'
 import ResourceWorkloadsView from './components/Views/ResourceWorkloadsView'
+import StorageObjectsView from './components/Views/StorageObjectsView'
 import LogConsole from './components/LogConsole/LogConsole'
 import LogsPage from './components/Views/LogsPage'
 import LoginPage from './components/Views/LoginPage'
@@ -43,9 +44,10 @@ type View =
   | { page: 'service-environments'; workspace: Workspace; serviceName: string; serviceLabel: string }
   | { page: 'sf-console'; workspace: Workspace; serviceName: string; serviceLabel: string; environment: Environment }
   | { page: 'sf-files'; workspace: Workspace; serviceName: string; serviceLabel: string; environment: Environment; service: Service }
-  | { page: 'resource-namespaces'; resourceName: string; resourceDescription: string }
+  | { page: 'resource-namespaces'; resourceName: string; resourceDescription: string; resourceType: string }
   | { page: 'resource-workloads'; resourceName: string; namespace: string }
   | { page: 'resource-console'; resourceName: string; namespace: string; kind: string; workload: string }
+  | { page: 'resource-storage-console'; resourceName: string; resourceType: string; objectKey: string }
 
 function viewToHash(view: View): string {
   switch (view.page) {
@@ -72,6 +74,7 @@ function viewToHash(view: View): string {
     case 'resource-namespaces': return `#/resources/${encodeURIComponent(view.resourceName)}`
     case 'resource-workloads': return `#/resources/${encodeURIComponent(view.resourceName)}/${encodeURIComponent(view.namespace)}`
     case 'resource-console': return `#/resources/${encodeURIComponent(view.resourceName)}/${encodeURIComponent(view.namespace)}/${encodeURIComponent(view.kind)}/${encodeURIComponent(view.workload)}`
+    case 'resource-storage-console': return `#/resources/${encodeURIComponent(view.resourceName)}/object/${encodeURIComponent(view.objectKey)}`
   }
 }
 
@@ -168,10 +171,23 @@ async function resolveHash(hash: string): Promise<View> {
     case 'resources': {
       if (parts.length < 2) return { page: 'workspaces' }
       const resName = parts[1]
-      if (parts.length === 2) return { page: 'resource-namespaces', resourceName: resName, resourceDescription: '' }
+      if (parts[2] === 'object' && parts.length >= 4) {
+        try {
+          const res = await adminGetResource(resName)
+          return { page: 'resource-storage-console', resourceName: resName, resourceType: res.type, objectKey: parts.slice(3).join('/') }
+        } catch { return { page: 'workspaces' } }
+      }
+      if (parts.length === 2) {
+        try {
+          const res = await adminGetResource(resName)
+          return { page: 'resource-namespaces', resourceName: resName, resourceDescription: res.description || '', resourceType: res.type }
+        } catch {
+          return { page: 'resource-namespaces', resourceName: resName, resourceDescription: '', resourceType: 'kubernetes' }
+        }
+      }
       if (parts.length === 3) return { page: 'resource-workloads', resourceName: resName, namespace: parts[2] }
       if (parts.length >= 5) return { page: 'resource-console', resourceName: resName, namespace: parts[2], kind: parts[3], workload: parts[4] }
-      return { page: 'resource-namespaces', resourceName: resName, resourceDescription: '' }
+      return { page: 'resource-namespaces', resourceName: resName, resourceDescription: '', resourceType: 'kubernetes' }
     }
     default: return { page: 'workspaces' }
   }
@@ -429,7 +445,7 @@ export default function App() {
       crumbs.push({ label: 'Home', onClick: () => navigate({ page: 'workspaces' }) })
       crumbs.push({
         label: view.resourceName,
-        onClick: () => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '' }),
+        onClick: () => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: 'kubernetes' }),
       })
       crumbs.push({ label: view.namespace })
       return crumbs
@@ -439,13 +455,23 @@ export default function App() {
       crumbs.push({ label: 'Home', onClick: () => navigate({ page: 'workspaces' }) })
       crumbs.push({
         label: view.resourceName,
-        onClick: () => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '' }),
+        onClick: () => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: 'kubernetes' }),
       })
       crumbs.push({
         label: view.namespace,
         onClick: () => navigate({ page: 'resource-workloads', resourceName: view.resourceName, namespace: view.namespace }),
       })
       crumbs.push({ label: view.workload })
+      return crumbs
+    }
+
+    if (view.page === 'resource-storage-console') {
+      crumbs.push({ label: 'Home', onClick: () => navigate({ page: 'workspaces' }) })
+      crumbs.push({
+        label: view.resourceName,
+        onClick: () => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType }),
+      })
+      crumbs.push({ label: view.objectKey.split('/').pop() || view.objectKey })
       return crumbs
     }
 
@@ -566,7 +592,7 @@ export default function App() {
               onSelectEnv={env => navigate({ page: 'standalone-env-services', env })}
               onSelectService={svc => navigate({ page: 'standalone-svc-console', service: svc })}
               onSelectResource={serverMode && (currentUser?.role === 'admin' || (currentUser?.scope || []).some(s => s.startsWith('res:')))
-                ? (name, desc) => navigate({ page: 'resource-namespaces', resourceName: name, resourceDescription: desc })
+                ? (name, desc, type) => navigate({ page: 'resource-namespaces', resourceName: name, resourceDescription: desc, resourceType: type })
                 : undefined}
               userRole={currentUser?.role}
               userScope={currentUser?.scope}
@@ -692,7 +718,15 @@ export default function App() {
             />
           )}
 
-          {view.page === 'resource-namespaces' && (
+          {view.page === 'resource-namespaces' && view.resourceType !== 'kubernetes' && (
+            <StorageObjectsView
+              resourceName={view.resourceName}
+              resourceType={view.resourceType}
+              onViewObject={key => navigate({ page: 'resource-storage-console', resourceName: view.resourceName, resourceType: view.resourceType, objectKey: key })}
+            />
+          )}
+
+          {view.page === 'resource-namespaces' && view.resourceType === 'kubernetes' && (
             <ResourceNamespacesView
               resourceName={view.resourceName}
               onSelect={ns => navigate({ page: 'resource-workloads', resourceName: view.resourceName, namespace: ns })}
@@ -712,6 +746,15 @@ export default function App() {
               streamUrl={resourceStreamURL(view.resourceName, view.namespace, view.kind, view.workload)}
               label={view.workload}
               onBack={() => navigate({ page: 'resource-workloads', resourceName: view.resourceName, namespace: view.namespace })}
+              maxLines={logBufferLines}
+            />
+          )}
+
+          {view.page === 'resource-storage-console' && (
+            <LogConsole
+              streamUrl={storageObjectStreamURL(view.resourceName, view.objectKey)}
+              label={view.objectKey.split('/').pop() || view.objectKey}
+              onBack={() => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType })}
               maxLines={logBufferLines}
             />
           )}

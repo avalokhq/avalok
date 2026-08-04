@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Layers, ChevronRight, Server, Boxes, Plus, Upload, X, Trash2, Pencil, RefreshCw, Globe } from 'lucide-react'
 
-const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import { cn } from '../../lib/cn'
 import { listWorkspaces, fetchStats, fetchConfig, listStandaloneEnvs, listStandaloneServices, adminImportWorkspace, adminDeleteWorkspace, adminDeleteStandaloneEnv, adminDeleteStandaloneService, adminListResources } from '../../lib/api'
 import type { AdminResource } from '../../lib/api'
@@ -26,7 +25,7 @@ interface Props {
   onSelect: (workspace: Workspace) => void
   onSelectEnv?: (env: StandaloneEnvironment) => void
   onSelectService?: (svc: StandaloneService) => void
-  onSelectResource?: (name: string, description: string) => void
+  onSelectResource?: (name: string, description: string, type: string) => void
   userRole?: string
   userScope?: string[]
   serverMode?: boolean
@@ -326,7 +325,7 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
       render: (res: AdminResource) => (
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center shrink-0">
-            <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-5 h-5" />
+            <ProviderIcon provider={res.type} className="w-5 h-5" />
           </div>
           <div className="min-w-0">
             <div className="text-sm font-medium text-[var(--text-primary)]">{res.name}</div>
@@ -529,15 +528,15 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
 
         {/* Resources section */}
         {resources.length > 0 && (
-          <Section title="Resources" description="Connected clusters — browse namespaces and stream logs." className="mb-8">
+          <Section title="Resources" description="Connected infrastructure — browse and stream logs." className="mb-8">
             {layout === 'list' ? (
-              <DataTable columns={resColumns} data={resources} keyFn={res => res.name} onRowClick={res => onSelectResource?.(res.name, res.description || '')} />
+              <DataTable columns={resColumns} data={resources} keyFn={res => res.name} onRowClick={res => onSelectResource?.(res.name, res.description || '', res.type)} />
             ) : (
               <CollectionGrid>
                 {resources.map(res => (
-                  <Card key={res.name} hover padding="lg" onClick={() => onSelectResource?.(res.name, res.description || '')} className="cursor-pointer text-left">
+                  <Card key={res.name} hover padding="lg" onClick={() => onSelectResource?.(res.name, res.description || '', res.type)} className="cursor-pointer text-left">
                     <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center mb-3">
-                      <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-5 h-5" />
+                      <ProviderIcon provider={res.type} className="w-5 h-5" />
                     </div>
                     <div className="text-base text-[var(--text-primary)]">{res.name}</div>
                     {res.description && <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{res.description}</div>}

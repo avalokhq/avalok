@@ -104,9 +104,9 @@ func (s *Server) handleCreateResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validTypes := map[string]bool{"kubernetes": true}
+	validTypes := map[string]bool{"kubernetes": true, "s3": true, "azure-blob": true, "azure-file": true, "gcs": true}
 	if !validTypes[req.Type] {
-		writeError(w, http.StatusBadRequest, "type must be kubernetes")
+		writeError(w, http.StatusBadRequest, "type must be kubernetes, s3, azure-blob, azure-file, or gcs")
 		return
 	}
 
@@ -164,15 +164,24 @@ func (s *Server) handleUpdateResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Type != nil {
-		validTypes := map[string]bool{"kubernetes": true}
+		validTypes := map[string]bool{"kubernetes": true, "s3": true, "azure-blob": true, "azure-file": true, "gcs": true}
 		if !validTypes[*req.Type] {
-			writeError(w, http.StatusBadRequest, "type must be kubernetes")
+			writeError(w, http.StatusBadRequest, "type must be kubernetes, s3, azure-blob, azure-file, or gcs")
 			return
 		}
 		existing.Type = *req.Type
 	}
 	if req.Config != nil {
-		existing.Config = req.Config
+		if existing.Config == nil {
+			existing.Config = req.Config
+		} else {
+			for k, v := range req.Config {
+				if s, ok := v.(string); ok && (s == "" || s == "***redacted***") {
+					continue
+				}
+				existing.Config[k] = v
+			}
+		}
 	}
 	if req.Description != nil {
 		existing.Description = *req.Description
@@ -229,6 +238,11 @@ func (s *Server) handleTestResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if isCloudStorageType(res.Type) {
+		s.handleTestCloudResource(w, r, res)
+		return
+	}
+
 	client, err := buildResourceClient(res)
 	if err != nil {
 		logger.Error("test resource build client failed", "resource", name, "error", err)
@@ -252,6 +266,36 @@ func (s *Server) handleTestResource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
 		"message": fmt.Sprintf("connected to Kubernetes %s", version.GitVersion),
+	})
+}
+
+func (s *Server) handleTestCloudResource(w http.ResponseWriter, r *http.Request, res *store.Resource) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	p, err := buildCloudProvider(ctx, res)
+	if err != nil {
+		logger.Error("test cloud resource failed", "resource", res.Name, "error", err)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+	defer p.Close()
+
+	instances, err := p.ListInstances(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "error",
+			"error":  fmt.Sprintf("connected but failed to list objects: %v", err),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"message": fmt.Sprintf("connected — %d objects found", len(instances)),
 	})
 }
 
@@ -384,6 +428,11 @@ func (s *Server) handleResourceOverview(w http.ResponseWriter, r *http.Request) 
 	res, err := s.store.GetResource(r.Context(), name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "resource not found")
+		return
+	}
+
+	if isCloudStorageType(res.Type) {
+		s.handleStorageOverview(w, r, res)
 		return
 	}
 
@@ -651,6 +700,235 @@ func (s *Server) handleResourceStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ch := stream.MergeAll(streamCtx, streams...)
+
+	var mu sync.Mutex
+	paused := false
+
+	go func() {
+		for {
+			_, data, readErr := conn.Read(ctx)
+			if readErr != nil {
+				cancel()
+				return
+			}
+			var cmd wsCommand
+			if err := json.Unmarshal(data, &cmd); err != nil {
+				continue
+			}
+			mu.Lock()
+			switch cmd.Action {
+			case "pause":
+				paused = true
+			case "resume":
+				paused = false
+			}
+			mu.Unlock()
+		}
+	}()
+
+	for entry := range ch {
+		mu.Lock()
+		isPaused := paused
+		mu.Unlock()
+		if isPaused {
+			continue
+		}
+		err := wsjson.Write(ctx, conn, wsLogEntry{
+			Type:      "log",
+			Timestamp: entry.Timestamp.Format("2006-01-02T15:04:05.000Z07:00"),
+			Source:    entry.Source,
+			Instance:  entry.Instance,
+			Line:      entry.Line,
+		})
+		if err != nil {
+			return
+		}
+	}
+
+	conn.Close(websocket.StatusNormalClosure, "stream ended")
+}
+
+func isCloudStorageType(t string) bool {
+	switch t {
+	case "s3", "azure-blob", "azure-file", "gcs":
+		return true
+	}
+	return false
+}
+
+func buildCloudProvider(ctx context.Context, res *store.Resource) (provider.Provider, error) {
+	p, ok := provider.Get(res.Type)
+	if !ok {
+		return nil, fmt.Errorf("provider %q not available", res.Type)
+	}
+	if err := p.Connect(ctx, res.Config); err != nil {
+		return nil, fmt.Errorf("connecting to %s: %w", res.Type, err)
+	}
+	return p, nil
+}
+
+func (s *Server) handleStorageOverview(w http.ResponseWriter, r *http.Request, res *store.Resource) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	p, err := buildCloudProvider(ctx, res)
+	if err != nil {
+		writeInternalError(w, "failed to connect", err)
+		return
+	}
+	defer p.Close()
+
+	instances, err := p.ListInstances(ctx)
+	if err != nil {
+		writeInternalError(w, "failed to list objects", err)
+		return
+	}
+
+	var totalSize int64
+	for _, inst := range instances {
+		if s, ok := inst.Metadata["size"]; ok {
+			var size int64
+			fmt.Sscanf(s, "%d", &size)
+			totalSize += size
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":             res.Name,
+		"type":             res.Type,
+		"object_count":     len(instances),
+		"total_size_bytes": totalSize,
+	})
+}
+
+func (s *Server) handleListStorageObjects(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r)
+	name := r.PathValue("name")
+	if !user.HasResourceAccess(name) {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	res, err := s.store.GetResource(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "resource not found")
+		return
+	}
+
+	if !isCloudStorageType(res.Type) {
+		writeError(w, http.StatusBadRequest, "resource is not a cloud storage type")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	p, err := buildCloudProvider(ctx, res)
+	if err != nil {
+		writeInternalError(w, "failed to connect", err)
+		return
+	}
+	defer p.Close()
+
+	instances, err := p.ListInstances(ctx)
+	if err != nil {
+		writeInternalError(w, "failed to list objects", err)
+		return
+	}
+
+	prefix := r.URL.Query().Get("prefix")
+
+	type objectResponse struct {
+		Key          string `json:"key"`
+		Name         string `json:"name"`
+		Size         int64  `json:"size"`
+		LastModified string `json:"last_modified"`
+	}
+
+	result := make([]objectResponse, 0, len(instances))
+	for _, inst := range instances {
+		if prefix != "" {
+			if len(inst.ID) < len(prefix) || inst.ID[:len(prefix)] != prefix {
+				continue
+			}
+		}
+		var size int64
+		if s, ok := inst.Metadata["size"]; ok {
+			fmt.Sscanf(s, "%d", &size)
+		}
+		lastMod := ""
+		if t, ok := inst.Metadata["last_modified"]; ok {
+			lastMod = t
+		}
+		result = append(result, objectResponse{
+			Key:          inst.ID,
+			Name:         inst.Name,
+			Size:         size,
+			LastModified: lastMod,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleStorageObjectStream(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r)
+	name := r.PathValue("name")
+	if !user.HasResourceAccess(name) {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	objectKey := r.PathValue("key")
+	if objectKey == "" {
+		writeError(w, http.StatusBadRequest, "object key is required")
+		return
+	}
+
+	res, err := s.store.GetResource(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "resource not found")
+		return
+	}
+
+	if !isCloudStorageType(res.Type) {
+		writeError(w, http.StatusBadRequest, "resource is not a cloud storage type")
+		return
+	}
+
+	if activeWSConns.Load() >= s.wsMaxConnections() {
+		http.Error(w, "too many active connections", http.StatusServiceUnavailable)
+		return
+	}
+
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: s.originPatterns(),
+	})
+	if err != nil {
+		logger.Error("websocket accept error", "error", err)
+		return
+	}
+	activeWSConns.Add(1)
+	defer activeWSConns.Add(-1)
+	defer conn.CloseNow()
+
+	conn.SetReadLimit(s.wsReadLimit())
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	p, err := buildCloudProvider(ctx, res)
+	if err != nil {
+		wsjson.Write(ctx, conn, wsLogEntry{Type: "error", Error: "failed to connect: " + err.Error()})
+		return
+	}
+	defer p.Close()
+
+	ch, err := p.Stream(ctx, objectKey, provider.StreamOpts{Follow: true, Tail: s.streamTailLines()})
+	if err != nil {
+		wsjson.Write(ctx, conn, wsLogEntry{Type: "error", Error: "failed to stream: " + err.Error()})
+		return
+	}
 
 	var mu sync.Mutex
 	paused := false

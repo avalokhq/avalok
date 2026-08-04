@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronDown, ChevronRight, Terminal, LayoutGrid, Rows3, Merge, X, Loader2 } from 'lucide-react'
 
-const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import { cn } from '../../lib/cn'
-import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL } from '../../lib/api'
+import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageObjects, storageObjectStreamURL } from '../../lib/api'
 import type { ResourceWorkloads } from '../../lib/api'
 import type { Workspace, Environment, Service } from '../../lib/types'
 import ProviderIcon from '../ui/ProviderIcon'
@@ -51,10 +50,12 @@ interface TreeSfEnv {
 
 interface TreeResource {
   name: string
+  type: string
   description: string
   expanded: boolean
   loading: boolean
   namespaces: TreeResourceNs[]
+  objects: { key: string; name: string }[]
 }
 
 interface TreeResourceNs {
@@ -169,33 +170,49 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
       const resources = await adminListResources()
       setResourceTree((resources || []).map(r => ({
         name: r.name,
+        type: r.type,
         description: r.description || '',
         expanded: false,
         loading: false,
         namespaces: [],
+        objects: [],
       })))
     } catch { /* ignore */ }
   }
 
+  function isCloudType(type: string) {
+    return type === 's3' || type === 'azure-blob' || type === 'azure-file' || type === 'gcs'
+  }
+
   async function toggleResource(idx: number) {
-    setResourceTree(prev => {
-      const node = prev[idx]
-      if (node.expanded) {
-        return prev.map((n, i) => i === idx ? { ...n, expanded: false } : n)
-      }
-      if (node.namespaces.length > 0) {
-        return prev.map((n, i) => i === idx ? { ...n, expanded: true } : n)
-      }
-      return prev.map((n, i) => i === idx ? { ...n, expanded: true, loading: true } : n)
-    })
     const node = resourceTree[idx]
-    if (!node.expanded && node.namespaces.length === 0) {
+    setResourceTree(prev => {
+      const n = prev[idx]
+      if (n.expanded) {
+        return prev.map((x, i) => i === idx ? { ...x, expanded: false } : x)
+      }
+      const hasChildren = isCloudType(n.type) ? n.objects.length > 0 : n.namespaces.length > 0
+      if (hasChildren) {
+        return prev.map((x, i) => i === idx ? { ...x, expanded: true } : x)
+      }
+      return prev.map((x, i) => i === idx ? { ...x, expanded: true, loading: true } : x)
+    })
+    const hasChildren = isCloudType(node.type) ? node.objects.length > 0 : node.namespaces.length > 0
+    if (!node.expanded && !hasChildren) {
       try {
-        const nsList = await adminListResourceNamespaces(node.name)
-        setResourceTree(prev => prev.map((n, i) => i === idx ? {
-          ...n, loading: false,
-          namespaces: (nsList || []).map(ns => ({ name: ns.name, expanded: false, loading: false, workloads: [] })),
-        } : n))
+        if (isCloudType(node.type)) {
+          const objs = await adminListStorageObjects(node.name)
+          setResourceTree(prev => prev.map((n, i) => i === idx ? {
+            ...n, loading: false,
+            objects: (objs || []).map(o => ({ key: o.key, name: o.name || o.key.split('/').pop() || o.key })),
+          } : n))
+        } else {
+          const nsList = await adminListResourceNamespaces(node.name)
+          setResourceTree(prev => prev.map((n, i) => i === idx ? {
+            ...n, loading: false,
+            namespaces: (nsList || []).map(ns => ({ name: ns.name, expanded: false, loading: false, workloads: [] })),
+          } : n))
+        }
       } catch {
         setResourceTree(prev => prev.map((n, i) => i === idx ? { ...n, loading: false } : n))
       }
@@ -467,11 +484,40 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
                         ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
                         : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
                     }
-                    <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-3.5 h-3.5 shrink-0" />
+                    <ProviderIcon provider={resNode.type} className="w-3.5 h-3.5 shrink-0" />
                     <span className="text-[var(--text-primary)] font-medium text-xs truncate">{resNode.name}</span>
                   </button>
 
-                  {resNode.expanded && resNode.namespaces.map((nsNode, nsIdx) => (
+                  {resNode.expanded && isCloudType(resNode.type) && resNode.objects.map(obj => {
+                    const url = storageObjectStreamURL(resNode.name, obj.key)
+                    const id = `res:${resNode.name}/obj/${obj.key}`
+                    const isActive = activeIds.has(id)
+                    const isFull = sessions.length >= maxForLayout
+
+                    return (
+                      <button
+                        key={obj.key}
+                        onClick={() => isActive ? removeSession(id) : addSession(resNode.name, 'storage', obj.key, obj.name, url)}
+                        disabled={!isActive && isFull}
+                        className={cn(
+                          'w-full flex items-center gap-2 pl-8 pr-3 py-1.5 text-left transition-colors',
+                          isActive
+                            ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
+                            : isFull
+                              ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
+                              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                        )}
+                      >
+                        <SourceDot name={id} />
+                        <span className="flex-1 truncate text-xs">{obj.name}</span>
+                        {isActive && (
+                          <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />
+                        )}
+                      </button>
+                    )
+                  })}
+
+                  {resNode.expanded && !isCloudType(resNode.type) && resNode.namespaces.map((nsNode, nsIdx) => (
                     <div key={nsNode.name}>
                       <button
                         onClick={() => toggleResourceNs(resIdx, nsIdx)}

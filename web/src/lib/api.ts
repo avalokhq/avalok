@@ -281,6 +281,37 @@ export function resourceStreamURL(name: string, namespace: string, kind: string,
   return `${protocol}//${window.location.host}/api/admin/resources/${name}/namespaces/${namespace}/workloads/${kind}/${workload}/stream?token=${token}`
 }
 
+// --- Admin: Storage Resources ---
+
+export interface StorageObject {
+  key: string
+  name: string
+  size: number
+  last_modified: string
+}
+
+export interface StorageOverview {
+  name: string
+  type: string
+  object_count: number
+  total_size_bytes: number
+}
+
+export async function adminGetStorageOverview(name: string): Promise<StorageOverview> {
+  return fetchAPI(`/admin/resources/${name}/overview`)
+}
+
+export async function adminListStorageObjects(name: string, prefix?: string): Promise<StorageObject[]> {
+  const params = prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''
+  return fetchAPI(`/admin/resources/${name}/storage/objects${params}`)
+}
+
+export function storageObjectStreamURL(name: string, key: string): string {
+  const token = getToken()
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/api/admin/resources/${name}/storage/stream/${encodeURIComponent(key)}?token=${token}`
+}
+
 // --- Admin: Settings ---
 
 export async function adminGetSettings(): Promise<Record<string, string>> {
