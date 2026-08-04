@@ -18,6 +18,8 @@ import FormField from '../ui/FormField'
 import IconButton from '../ui/IconButton'
 import Badge from '../ui/Badge'
 
+import ProviderIcon from '../ui/ProviderIcon'
+
 const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import {
   adminListUsers, adminApproveUser, adminDisableUser, adminDeleteUser, adminCreateUser, adminUpdateUser, adminResetPassword,
@@ -1046,7 +1048,7 @@ function ResourcesPanel() {
           <Card key={res.name} className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-5 h-5" />
+                <ProviderIcon provider={res.type} className="w-5 h-5" />
               </div>
               <div>
                 <div className="text-base text-[var(--text-primary)]">{res.name}</div>
@@ -1082,7 +1084,7 @@ function ResourcesPanel() {
           <EmptyState
             icon={<Boxes className="w-6 h-6 text-[var(--text-muted)]" />}
             title="No resources yet"
-            description="Add a Kubernetes cluster to get started."
+            description="Add a Kubernetes cluster or cloud storage to get started."
           />
         )}
       </div>
@@ -1251,6 +1253,92 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+type ResourceType = 'kubernetes' | 's3' | 'azure-blob' | 'azure-file' | 'gcs'
+
+const RESOURCE_TYPE_OPTIONS: { value: ResourceType; label: string }[] = [
+  { value: 'kubernetes', label: 'Kubernetes' },
+  { value: 's3', label: 'S3 / S3-Compatible' },
+  { value: 'azure-blob', label: 'Azure Blob Storage' },
+  { value: 'azure-file', label: 'Azure File Share' },
+  { value: 'gcs', label: 'Google Cloud Storage' },
+]
+
+interface StorageField { key: string; label: string; placeholder: string; required?: boolean; type?: 'text' | 'password' | 'toggle'; hint?: string }
+
+const STORAGE_FIELDS: Record<string, StorageField[]> = {
+  s3: [
+    { key: 'bucket', label: 'Bucket', placeholder: 'my-log-bucket', required: true },
+    { key: 'prefix', label: 'Prefix', placeholder: 'logs/app/', hint: 'Object key prefix' },
+    { key: 'region', label: 'Region', placeholder: 'us-east-1', hint: 'AWS region' },
+    { key: 'endpoint', label: 'Endpoint', placeholder: 'https://minio.example.com', hint: 'Custom endpoint for S3-compatible stores' },
+    { key: 'access_key_id', label: 'Access Key ID', placeholder: '', hint: 'Leave empty for default credential chain' },
+    { key: 'secret_access_key', label: 'Secret Access Key', placeholder: '', type: 'password', hint: 'Leave empty for default credential chain' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', placeholder: '30', hint: 'Seconds between checks for new log content (min 5)' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', hint: 'Glob pattern to filter objects' },
+    { key: 'force_path_style', label: 'Force Path Style', placeholder: '', type: 'toggle', hint: 'Required for some S3-compatible stores' },
+  ],
+  'azure-blob': [
+    { key: 'container', label: 'Container', placeholder: 'logs', required: true },
+    { key: 'prefix', label: 'Prefix', placeholder: 'app/2024/', hint: 'Blob name prefix' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', placeholder: '30', hint: 'Seconds between checks for new log content (min 5)' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', hint: 'Glob pattern to filter blobs' },
+  ],
+  'azure-file': [
+    { key: 'share_name', label: 'Share Name', placeholder: 'logshare', required: true },
+    { key: 'directory', label: 'Directory', placeholder: 'app/logs', hint: 'Directory path within the share' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', placeholder: '30', hint: 'Seconds between checks for new log content (min 5)' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', hint: 'Glob pattern to filter files' },
+  ],
+  gcs: [
+    { key: 'bucket', label: 'Bucket', placeholder: 'my-log-bucket', required: true },
+    { key: 'prefix', label: 'Prefix', placeholder: 'logs/app/', hint: 'Object key prefix' },
+    { key: 'project', label: 'Project ID', placeholder: 'my-gcp-project' },
+    { key: 'credentials_json', label: 'Credentials JSON', placeholder: '', type: 'password', hint: 'Service account JSON content' },
+    { key: 'credentials_file', label: 'Credentials File', placeholder: '/path/to/sa.json', hint: 'Path to service account JSON' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', placeholder: '30', hint: 'Seconds between checks for new log content (min 5)' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', hint: 'Glob pattern to filter objects' },
+  ],
+}
+
+type AzureAuthMethod = 'account-key' | 'connection-string' | 'sas-token' | 'managed-identity'
+
+const AZURE_AUTH_TABS = [
+  { id: 'account-key', label: 'Account Key' },
+  { id: 'connection-string', label: 'Connection String' },
+  { id: 'sas-token', label: 'SAS Token' },
+  { id: 'managed-identity', label: 'Managed Identity' },
+]
+
+const AZURE_AUTH_FIELDS: Record<AzureAuthMethod, StorageField[]> = {
+  'account-key': [
+    { key: 'account_name', label: 'Account Name', placeholder: 'mystorageaccount', required: true },
+    { key: 'account_key', label: 'Account Key', placeholder: '', type: 'password', required: true },
+  ],
+  'connection-string': [
+    { key: 'connection_string', label: 'Connection String', placeholder: '', type: 'password', required: true },
+  ],
+  'sas-token': [
+    { key: 'account_name', label: 'Account Name', placeholder: 'mystorageaccount', required: true },
+    { key: 'sas_token', label: 'SAS Token', placeholder: '', type: 'password', required: true },
+  ],
+  'managed-identity': [
+    { key: 'account_name', label: 'Account Name', placeholder: 'mystorageaccount', required: true, hint: 'Uses DefaultAzureCredential (Managed Identity, Azure CLI, etc.)' },
+  ],
+}
+
+function detectAzureAuth(config?: Record<string, unknown>): AzureAuthMethod {
+  if (!config) return 'account-key'
+  if (config.connection_string) return 'connection-string'
+  if (config.sas_token) return 'sas-token'
+  if (config.account_key) return 'account-key'
+  if (config.account_name) return 'managed-identity'
+  return 'account-key'
+}
+
+function isAzureType(type: string) {
+  return type === 'azure-blob' || type === 'azure-file'
+}
+
 function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone: () => void }) {
   const isEdit = !!editing
 
@@ -1261,7 +1349,9 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
   }
 
   const [name, setName] = useState(editing?.name || '')
+  const [resourceType, setResourceType] = useState<ResourceType>((editing?.type as ResourceType) || 'kubernetes')
   const [authMethod, setAuthMethod] = useState<AuthMethod>(detectAuthMethod(editing?.config))
+  const [azureAuthMethod, setAzureAuthMethod] = useState<AzureAuthMethod>(detectAzureAuth(editing?.config))
   const [apiServerUrl, setApiServerUrl] = useState(
     (editing?.config?.api_server_url as string) || ''
   )
@@ -1275,12 +1365,43 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
     (editing?.config?.context as string) || ''
   )
   const [description, setDescription] = useState(editing?.description || '')
-  const [showInstructions, setShowInstructions] = useState(!isEdit)
+  const [showInstructions, setShowInstructions] = useState(!isEdit && resourceType === 'kubernetes')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [testResult, setTestResult] = useState<{ status: string; error?: string; message?: string } | null>(null)
 
+  const [storageConfig, setStorageConfig] = useState<Record<string, string>>(() => {
+    if (!editing?.config || editing.type === 'kubernetes') return {}
+    const cfg: Record<string, string> = {}
+    for (const [k, v] of Object.entries(editing.config)) {
+      if (typeof v === 'string' && v !== '***redacted***') cfg[k] = v
+      else if (typeof v === 'boolean') cfg[k] = v ? 'true' : ''
+    }
+    return cfg
+  })
+
+  const isCloudType = resourceType !== 'kubernetes'
+
+  function allCloudFields(): StorageField[] {
+    const common = STORAGE_FIELDS[resourceType] || []
+    if (isAzureType(resourceType)) {
+      return [...(AZURE_AUTH_FIELDS[azureAuthMethod] || []), ...common]
+    }
+    return common
+  }
+
   function buildConfig(): Record<string, unknown> {
+    if (isCloudType) {
+      const cfg: Record<string, unknown> = {}
+      for (const field of allCloudFields()) {
+        const val = storageConfig[field.key]
+        if (val) {
+          if (field.type === 'toggle') cfg[field.key] = true
+          else cfg[field.key] = val
+        }
+      }
+      return cfg
+    }
     if (authMethod === 'kubeconfig') {
       const cfg: Record<string, unknown> = {}
       if (kubeconfigContent) cfg.kubeconfig_content = kubeconfigContent
@@ -1297,7 +1418,12 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
 
   function validateForm(): string | null {
     if (!name) return 'Name is required'
-    if (!isEdit) {
+    if (isCloudType && !isEdit) {
+      for (const field of allCloudFields()) {
+        if (field.required && !storageConfig[field.key]) return `${field.label} is required`
+      }
+    }
+    if (!isCloudType && !isEdit) {
       if (authMethod === 'kubeconfig') {
         if (!kubeconfigContent) return 'Kubeconfig content is required'
       } else {
@@ -1320,7 +1446,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
       if (isEdit) {
         await adminUpdateResource(name, { config: Object.keys(config).length > 0 ? config : undefined, description })
       } else {
-        await adminCreateResource({ name, type: 'kubernetes', config, description })
+        await adminCreateResource({ name, type: resourceType, config, description })
       }
       onDone()
     } catch (err: unknown) {
@@ -1340,7 +1466,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
       if (isEdit) {
         await adminUpdateResource(name, { config: Object.keys(config).length > 0 ? config : undefined, description })
       } else {
-        await adminCreateResource({ name, type: 'kubernetes', config, description })
+        await adminCreateResource({ name, type: resourceType, config, description })
       }
       const result = await adminTestResource(name)
       setTestResult(result)
@@ -1352,61 +1478,85 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
     } finally { setLoading(false) }
   }
 
+  function updateStorageField(key: string, value: string) {
+    setStorageConfig(prev => ({ ...prev, [key]: value }))
+  }
+
   const activeCommands = authMethod === 'kubeconfig' ? KUBECONFIG_SETUP_COMMANDS : SA_SETUP_COMMANDS
 
   return (
     <Card padding="none" className="mb-4">
-      {/* Auth Method Selector */}
-      <div className="px-4 pt-4 pb-2">
-        <FormField label="Authentication Method">
-          <Tabs
-            tabs={[
-              { id: 'service-account', label: 'Service Account Token' },
-              { id: 'kubeconfig', label: 'Kubeconfig' },
-            ]}
-            active={authMethod}
-            onChange={(id) => setAuthMethod(id as AuthMethod)}
-          />
-        </FormField>
-      </div>
-
-      {/* Instructions Section */}
-      <div className="border-b border-[var(--border-subtle)]">
-        <button
-          onClick={() => setShowInstructions(!showInstructions)}
-          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--bg-hover)] transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-4 h-4" />
-            <span className="text-base text-[var(--text-primary)]">Setup Instructions</span>
-            <span className="text-xs text-[var(--text-muted)]">
-              {authMethod === 'kubeconfig' ? 'Generate or use an existing kubeconfig' : 'Create a read-only ServiceAccount'}
-            </span>
-          </div>
-          {showInstructions ? <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" /> : <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />}
-        </button>
-
-        {showInstructions && (
-          <div className="px-4 pb-4 space-y-3">
-            <p className="text-xs text-[var(--text-secondary)]">
-              {authMethod === 'kubeconfig'
-                ? 'Generate a kubeconfig with a dedicated ServiceAccount for best security, or use an existing kubeconfig. Avalok needs read-only access to pods, logs, namespaces, and workloads.'
-                : 'These commands create a read-only ServiceAccount on your cluster. Avalok uses this to list namespaces, discover workloads, and stream pod logs. No write access is granted.'}
-            </p>
-            {activeCommands.map((cmd, i) => (
-              <div key={i}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium text-[var(--text-secondary)]">{cmd.title}</span>
-                  <CopyButton text={cmd.command} />
-                </div>
-                <pre className="text-xs font-mono bg-[var(--bg-app)] border border-[var(--border-subtle)] rounded-md px-3 py-2 text-[var(--text-primary)] overflow-x-auto whitespace-pre">
-                  {cmd.command}
-                </pre>
-              </div>
-            ))}
-          </div>
+      {/* Type & Auth Selector */}
+      <div className="px-4 pt-4 pb-2 space-y-3">
+        {!isEdit && (
+          <FormField label="Resource Type">
+            <Select value={resourceType} onChange={e => { setResourceType(e.target.value as ResourceType); setTestResult(null) }}>
+              {RESOURCE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </FormField>
+        )}
+        {!isCloudType && (
+          <FormField label="Authentication Method">
+            <Tabs
+              tabs={[
+                { id: 'service-account', label: 'Service Account Token' },
+                { id: 'kubeconfig', label: 'Kubeconfig' },
+              ]}
+              active={authMethod}
+              onChange={(id) => setAuthMethod(id as AuthMethod)}
+            />
+          </FormField>
+        )}
+        {isAzureType(resourceType) && (
+          <FormField label="Authentication Method">
+            <Tabs
+              tabs={AZURE_AUTH_TABS}
+              active={azureAuthMethod}
+              onChange={(id) => setAzureAuthMethod(id as AzureAuthMethod)}
+            />
+          </FormField>
         )}
       </div>
+
+      {/* K8s Instructions Section */}
+      {!isCloudType && (
+        <div className="border-b border-[var(--border-subtle)]">
+          <button
+            onClick={() => setShowInstructions(!showInstructions)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--bg-hover)] transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-4 h-4" />
+              <span className="text-base text-[var(--text-primary)]">Setup Instructions</span>
+              <span className="text-xs text-[var(--text-muted)]">
+                {authMethod === 'kubeconfig' ? 'Generate or use an existing kubeconfig' : 'Create a read-only ServiceAccount'}
+              </span>
+            </div>
+            {showInstructions ? <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" /> : <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />}
+          </button>
+
+          {showInstructions && (
+            <div className="px-4 pb-4 space-y-3">
+              <p className="text-xs text-[var(--text-secondary)]">
+                {authMethod === 'kubeconfig'
+                  ? 'Generate a kubeconfig with a dedicated ServiceAccount for best security, or use an existing kubeconfig. Avalok needs read-only access to pods, logs, namespaces, and workloads.'
+                  : 'These commands create a read-only ServiceAccount on your cluster. Avalok uses this to list namespaces, discover workloads, and stream pod logs. No write access is granted.'}
+              </p>
+              {activeCommands.map((cmd, i) => (
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-[var(--text-secondary)]">{cmd.title}</span>
+                    <CopyButton text={cmd.command} />
+                  </div>
+                  <pre className="text-xs font-mono bg-[var(--bg-app)] border border-[var(--border-subtle)] rounded-md px-3 py-2 text-[var(--text-primary)] overflow-x-auto whitespace-pre">
+                    {cmd.command}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Form Section */}
       <div className="p-4">
@@ -1420,14 +1570,49 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
         <form onSubmit={handleTestAndSave} className="flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Name" required>
-              <Input value={name} onChange={e => setName(e.target.value)} className={cn(isEdit && 'opacity-60 cursor-not-allowed')} placeholder="production-cluster" required disabled={isEdit} />
+              <Input value={name} onChange={e => setName(e.target.value)} className={cn(isEdit && 'opacity-60 cursor-not-allowed')} placeholder={isCloudType ? 'prod-logs' : 'production-cluster'} required disabled={isEdit} />
             </FormField>
             <FormField label="Description">
-              <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Production GKE cluster" />
+              <Input value={description} onChange={e => setDescription(e.target.value)} placeholder={isCloudType ? 'Production log storage' : 'Production GKE cluster'} />
             </FormField>
           </div>
 
-          {authMethod === 'kubeconfig' ? (
+          {isCloudType ? (
+            <div className="flex flex-col gap-3">
+              {isAzureType(resourceType) && (AZURE_AUTH_FIELDS[azureAuthMethod] || []).map(field => (
+                <FormField key={field.key} label={field.label} required={field.required} hint={field.hint}>
+                  <Input
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    value={storageConfig[field.key] || ''}
+                    onChange={e => updateStorageField(field.key, e.target.value)}
+                    placeholder={isEdit && field.type === 'password' ? 'Leave empty to keep existing...' : field.placeholder}
+                    required={field.required && !isEdit}
+                  />
+                </FormField>
+              ))}
+              {(STORAGE_FIELDS[resourceType] || []).map(field => (
+                field.type === 'toggle' ? (
+                  <div key={field.key} className="flex items-center justify-between py-1">
+                    <div>
+                      <span className="text-xs font-medium text-[var(--text-secondary)]">{field.label}</span>
+                      {field.hint && <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{field.hint}</p>}
+                    </div>
+                    <Toggle checked={!!storageConfig[field.key]} onChange={v => updateStorageField(field.key, v ? 'true' : '')} />
+                  </div>
+                ) : (
+                  <FormField key={field.key} label={field.label} required={field.required} hint={field.hint}>
+                    <Input
+                      type={field.type === 'password' ? 'password' : 'text'}
+                      value={storageConfig[field.key] || ''}
+                      onChange={e => updateStorageField(field.key, e.target.value)}
+                      placeholder={isEdit && field.type === 'password' ? 'Leave empty to keep existing...' : field.placeholder}
+                      required={field.required && !isEdit}
+                    />
+                  </FormField>
+                )
+              ))}
+            </div>
+          ) : authMethod === 'kubeconfig' ? (
             <>
               <FormField label="Kubeconfig" required>
                 <Textarea
