@@ -17,6 +17,10 @@ export const PROVIDERS = [
   { value: 'windows-eventlog', label: 'Windows Event Log', desc: 'Windows Event Viewer' },
   { value: 'iis', label: 'IIS', desc: 'IIS W3C access logs' },
   { value: 'winrm', label: 'WinRM', desc: 'Remote Windows via WinRM' },
+  { value: 's3', label: 'S3', desc: 'AWS S3 or S3-compatible storage (MinIO, Backblaze, etc.)' },
+  { value: 'azure-blob', label: 'Azure Blob', desc: 'Azure Blob Storage container logs' },
+  { value: 'azure-file', label: 'Azure File', desc: 'Azure File Share logs' },
+  { value: 'gcs', label: 'GCS', desc: 'Google Cloud Storage bucket logs' },
 ] as const
 
 export const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
@@ -59,6 +63,46 @@ export const PROVIDER_FIELDS: Record<string, FieldDef[]> = {
     { key: 'path', label: 'File Path', placeholder: 'C:\\Logs\\app.log', help: 'Remote file path on the Windows host' },
     { key: 'command', label: 'PowerShell Command', placeholder: 'Get-Content C:\\Logs\\app.log -Wait', help: 'Custom command (overrides path)' },
   ],
+  s3: [
+    { key: 'bucket', label: 'Bucket', placeholder: 'my-log-bucket', required: true },
+    { key: 'prefix', label: 'Prefix', placeholder: 'logs/app/', help: 'Object key prefix to filter log files' },
+    { key: 'region', label: 'Region', placeholder: 'us-east-1', help: 'AWS region (uses SDK default if empty)' },
+    { key: 'endpoint', label: 'Endpoint', placeholder: 'https://minio.example.com', help: 'Custom endpoint for S3-compatible stores' },
+    { key: 'access_key_id', label: 'Access Key ID', placeholder: '', help: 'Leave empty to use default credential chain' },
+    { key: 'secret_access_key', label: 'Secret Access Key', placeholder: '', type: 'password', help: 'Leave empty to use default credential chain' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', type: 'number', placeholder: '30', help: 'Seconds between checks for new log content' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', help: 'Glob pattern to filter object names' },
+    { key: 'force_path_style', label: 'Force Path Style', type: 'toggle', placeholder: '', help: 'Use path-style addressing (required for some S3-compatible stores)' },
+  ],
+  'azure-blob': [
+    { key: 'container', label: 'Container', placeholder: 'logs', required: true },
+    { key: 'prefix', label: 'Prefix', placeholder: 'app/2024/', help: 'Blob name prefix' },
+    { key: 'account_name', label: 'Account Name', placeholder: 'mystorageaccount', help: 'Storage account name' },
+    { key: 'account_key', label: 'Account Key', placeholder: '', type: 'password', help: 'Storage account key' },
+    { key: 'connection_string', label: 'Connection String', placeholder: '', type: 'password', help: 'Full connection string (alternative to account name + key)' },
+    { key: 'sas_token', label: 'SAS Token', placeholder: '', type: 'password', help: 'Shared Access Signature token' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', type: 'number', placeholder: '30', help: 'Seconds between checks for new log content' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', help: 'Glob pattern to filter blob names' },
+  ],
+  'azure-file': [
+    { key: 'share_name', label: 'Share Name', placeholder: 'logshare', required: true },
+    { key: 'directory', label: 'Directory', placeholder: 'app/logs', help: 'Directory path within the share' },
+    { key: 'account_name', label: 'Account Name', placeholder: 'mystorageaccount', help: 'Storage account name' },
+    { key: 'account_key', label: 'Account Key', placeholder: '', type: 'password', help: 'Storage account key' },
+    { key: 'connection_string', label: 'Connection String', placeholder: '', type: 'password', help: 'Full connection string (alternative to account name + key)' },
+    { key: 'sas_token', label: 'SAS Token', placeholder: '', type: 'password', help: 'Shared Access Signature token' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', type: 'number', placeholder: '30', help: 'Seconds between checks for new log content' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', help: 'Glob pattern to filter file names' },
+  ],
+  gcs: [
+    { key: 'bucket', label: 'Bucket', placeholder: 'my-log-bucket', required: true },
+    { key: 'prefix', label: 'Prefix', placeholder: 'logs/app/', help: 'Object key prefix to filter log files' },
+    { key: 'credentials_json', label: 'Credentials JSON', placeholder: '', type: 'password', help: 'Service account JSON content' },
+    { key: 'credentials_file', label: 'Credentials File', placeholder: '/path/to/sa.json', help: 'Path to service account JSON file' },
+    { key: 'project', label: 'Project ID', placeholder: 'my-gcp-project', help: 'GCP project ID' },
+    { key: 'poll_interval', label: 'Poll Interval (s)', type: 'number', placeholder: '30', help: 'Seconds between checks for new log content' },
+    { key: 'pattern', label: 'File Pattern', placeholder: '*.log', help: 'Glob pattern to filter object names' },
+  ],
 }
 
 export const TARGET_TYPES = [
@@ -100,7 +144,7 @@ export const TARGET_FIELDS: Record<string, FieldDef[]> = {
 }
 
 export const SENSITIVE_KEYS = new Set(
-  Object.values(TARGET_FIELDS)
+  [...Object.values(TARGET_FIELDS), ...Object.values(PROVIDER_FIELDS)]
     .flat()
     .filter(f => f.type === 'password')
     .map(f => f.key)

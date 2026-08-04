@@ -36,6 +36,7 @@ bin/
 bin/*
 avalok
 configs/*
+scripts/*
 
 # Hugo build output
 docs/public/

@@ -1,8 +1,8 @@
 import type { WorkspaceConfig } from './types'
 import { SENSITIVE_KEYS } from './schema'
 
-const SERVICE_BOOLEAN_KEYS = new Set(['all_containers', 'previous', 'sudo', 'read_all'])
-const SERVICE_NUMBER_KEYS = new Set(['tail_lines'])
+const SERVICE_BOOLEAN_KEYS = new Set(['all_containers', 'previous', 'sudo', 'read_all', 'force_path_style'])
+const SERVICE_NUMBER_KEYS = new Set(['tail_lines', 'poll_interval'])
 
 function yamlValue(v: string): string {
   if (!v) return "''"

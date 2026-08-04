@@ -82,9 +82,9 @@ func (s *Server) handleCreateCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true}
+	validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true, "s3": true, "azure-blob": true, "azure-file": true, "gcs": true}
 	if !validTypes[req.TargetType] {
-		writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, or winrm")
+		writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, winrm, s3, azure-blob, azure-file, or gcs")
 		return
 	}
 
@@ -142,9 +142,9 @@ func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if req.TargetType != nil {
-		validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true}
+		validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true, "s3": true, "azure-blob": true, "azure-file": true, "gcs": true}
 		if !validTypes[*req.TargetType] {
-			writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, or winrm")
+			writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, winrm, s3, azure-blob, azure-file, or gcs")
 			return
 		}
 		existing.TargetType = *req.TargetType
@@ -223,6 +223,14 @@ func (s *Server) handleTestCredential(w http.ResponseWriter, r *http.Request) {
 		testProvider = "winrm"
 	case "kubernetes":
 		testProvider = "kubernetes"
+	case "s3":
+		testProvider = "s3"
+	case "azure-blob":
+		testProvider = "azure-blob"
+	case "azure-file":
+		testProvider = "azure-file"
+	case "gcs":
+		testProvider = "gcs"
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("cannot test target type: %s", cred.TargetType))
 		return
@@ -288,6 +296,11 @@ func redactSensitiveKeys(config map[string]any) map[string]any {
 		"bearer_token":       true,
 		"ca_cert":            true,
 		"proxy_url":          true,
+		"secret_access_key":  true,
+		"account_key":        true,
+		"connection_string":  true,
+		"sas_token":          true,
+		"credentials_json":   true,
 	}
 	result := make(map[string]any, len(config))
 	for k, v := range config {
