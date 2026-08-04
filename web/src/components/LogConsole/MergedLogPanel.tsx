@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ArrowDownToLine } from 'lucide-react'
+import { ArrowDownToLine, X } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { streamURL } from '../../lib/api'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
@@ -23,6 +23,7 @@ interface Session {
 interface Props {
   sessions: Session[]
   maxLines?: number
+  onRemoveSession?: (id: string) => void
 }
 
 interface TaggedEntry extends LogEntry {
@@ -69,7 +70,7 @@ function estimateRowHeight(fontSize: number): number {
   return fontSize + 10
 }
 
-export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES }: Props) {
+export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES, onRemoveSession }: Props) {
   const storeRef = useRef<TaggedEntry[]>([])
   const [version, setVersion] = useState(0)
   const [search, setSearch] = useState('')
@@ -261,6 +262,15 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES 
             <div key={s.id} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--bg-app)] text-[10px] text-[var(--text-secondary)]">
               <SourceDot name={s.id} />
               {s.label}
+              {onRemoveSession && (
+                <button
+                  onClick={() => onRemoveSession(s.id)}
+                  className="p-0 ml-0.5 rounded text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+                  title={`Remove ${s.label}`}
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              )}
             </div>
           ))}
         </div>

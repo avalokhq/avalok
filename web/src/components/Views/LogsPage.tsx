@@ -654,7 +654,7 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
         ) : (
           /* ── Merged Mode ── */
           <div className="h-full p-2">
-            <MergedLogPanel sessions={sessions} maxLines={logBufferLines} />
+            <MergedLogPanel sessions={sessions} maxLines={logBufferLines} onRemoveSession={removeSession} />
           </div>
         )}
       </div>
