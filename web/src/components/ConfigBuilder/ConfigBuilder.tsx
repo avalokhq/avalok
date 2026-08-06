@@ -1689,17 +1689,6 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     <Section title="Settings" icon={Settings} defaultOpen={false}>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Log Buffer Size</label>
-                          <input
-                            type="number"
-                            value={config.settings.log_buffer_size || ''}
-                            onChange={e => cfg(d => { d.settings.log_buffer_size = parseInt(e.target.value) || 0 })}
-                            placeholder="5000"
-                            className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
-                          />
-                          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Max log entries to keep in memory</p>
-                        </div>
-                        <div>
                           <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">SSH Timeout</label>
                           <input
                             type="number"

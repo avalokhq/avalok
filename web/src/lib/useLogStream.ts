@@ -17,7 +17,7 @@ export function useLogStream(workspace: string, env: string, service: string, cu
   const bufferRef = useRef<LogEntry[]>([])
   const rafRef = useRef(0)
   const lastFlushRef = useRef(0)
-  const trimThreshold = Math.ceil(maxLines * 1.5)
+  const trimThreshold = Math.ceil(maxLines * 2.0)
 
   useEffect(() => {
     if (!customStreamURL && (!workspace || !env || !service)) return

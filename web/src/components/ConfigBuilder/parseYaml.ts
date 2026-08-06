@@ -31,7 +31,6 @@ export function parseWorkspaceYaml(text: string): WorkspaceConfig {
     services,
     environments,
     settings: {
-      log_buffer_size: rawSettings.log_buffer_size ?? 5000,
       ssh_timeout: rawSettings.ssh_timeout ?? 30,
       hierarchy: rawSettings.hierarchy ?? 'default',
     },

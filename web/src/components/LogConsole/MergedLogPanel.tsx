@@ -89,7 +89,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
   const bufferRef = useRef<TaggedEntry[]>([])
   const rafRef = useRef(0)
   const lastFlushRef = useRef(0)
-  const trimThreshold = Math.ceil(maxLines * 1.5)
+  const trimThreshold = Math.ceil(maxLines * 2.0)
 
   const handleFontSizeChange = useCallback((size: number) => {
     setFontSize(size)

@@ -1785,11 +1785,11 @@ function SettingsPanel() {
                 className="w-24 text-right"
               />
             </SettingsRow>
-            <SettingsRow label="Log buffer size" description="Maximum number of log lines kept in the browser per stream. Older lines are dropped when this limit is reached.">
+            <SettingsRow label="Log buffer size" description="Maximum number of log lines kept in the browser per stream. Older lines are dropped when this limit is reached. Trimming occurs at 2x this value.">
               <Input
                 type="number"
                 min={1000}
-                max={100000}
+                max={10000000}
                 step={1000}
                 value={logBufferLines}
                 onChange={e => setSettings(prev => ({ ...prev, log_buffer_lines: e.target.value }))}

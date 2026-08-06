@@ -32,7 +32,6 @@ environments:
 
 settings:
   ssh_timeout: 30
-  log_buffer_size: 2000
   hierarchy: default
 ```
 
@@ -280,7 +279,6 @@ Optional workspace-level settings.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `ssh_timeout` | int | -- | SSH connection timeout in seconds. |
-| `log_buffer_size` | int | -- | Number of log lines to buffer per service. |
 | `hierarchy` | string | `default` | UI hierarchy template for organizing the sidebar tree. |
 
 ### Hierarchy Templates
@@ -297,7 +295,6 @@ The `hierarchy` setting controls how the sidebar tree is organized:
 ```yaml
 settings:
   ssh_timeout: 30
-  log_buffer_size: 5000
   hierarchy: service-first
 ```
 
@@ -400,7 +397,6 @@ environments:
 
 settings:
   ssh_timeout: 30
-  log_buffer_size: 5000
   hierarchy: default
 ```
 

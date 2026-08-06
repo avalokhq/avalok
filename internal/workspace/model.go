@@ -53,9 +53,8 @@ type ServiceOverride struct {
 }
 
 type Settings struct {
-	SSHTimeout    int    `yaml:"ssh_timeout,omitempty" json:"ssh_timeout,omitempty"`
-	LogBufferSize int    `yaml:"log_buffer_size,omitempty" json:"log_buffer_size,omitempty"`
-	Hierarchy     string `yaml:"hierarchy,omitempty" json:"hierarchy,omitempty"`
+	SSHTimeout int    `yaml:"ssh_timeout,omitempty" json:"ssh_timeout,omitempty"`
+	Hierarchy  string `yaml:"hierarchy,omitempty" json:"hierarchy,omitempty"`
 }
 
 func (w *Workspace) FindService(name string) *Service {

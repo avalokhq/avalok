@@ -275,7 +275,6 @@ environments:
         service_names: [event-logs]
 
 settings:
-  log_buffer_size: 1000            # lines to buffer per service
   ssh_timeout: 10                  # seconds
   hierarchy: default               # default, service-first, product-first, company
 ```

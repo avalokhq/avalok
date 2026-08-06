@@ -117,14 +117,11 @@ function generateWorkspaceYaml(config: WorkspaceConfig, redact: boolean): string
     }
   }
 
-  const { log_buffer_size, ssh_timeout, hierarchy } = config.settings
-  if (log_buffer_size || ssh_timeout || (hierarchy && hierarchy !== 'default')) {
+  const { ssh_timeout, hierarchy } = config.settings
+  if (ssh_timeout || (hierarchy && hierarchy !== 'default')) {
     lines.push('settings:')
     if (hierarchy && hierarchy !== 'default') {
       lines.push(`  hierarchy: ${hierarchy}`)
-    }
-    if (log_buffer_size) {
-      lines.push(`  log_buffer_size: ${log_buffer_size}`)
     }
     if (ssh_timeout) {
       lines.push(`  ssh_timeout: ${ssh_timeout}`)

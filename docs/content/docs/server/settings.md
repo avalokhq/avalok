@@ -38,7 +38,7 @@ Only the fields included in the PUT request are updated; omitted fields retain t
 | `enable_environments` | bool | `true` | Show standalone Environments in the UI |
 | `enable_services` | bool | `true` | Show standalone Services in the UI |
 | `company_name` | string | `""` | Display name shown in the UI header and login page |
-| `log_buffer_lines` | int | `1000` | Number of log lines the frontend keeps in its buffer |
+| `log_buffer_lines` | int | `10000` | Maximum log lines the browser keeps per stream (max `10000000`). Trimming occurs at 2× this value. |
 | `self_registration` | bool | `false` | Allow new users to register via the registration page. Registered users start as `pending` and require admin approval. |
 | `redact_credentials` | bool | `true` | Redact sensitive fields (passwords, keys, tokens) in credential API responses. See [Credential Management]({{< relref "credentials" >}}). |
 | `file_browser_page_size` | int | `500` | Number of lines displayed per page in the file browser |
@@ -61,4 +61,4 @@ The `ws_max_connections` and `ws_max_message_kb` settings protect the server fro
 
 ## Log Streaming
 
-The `stream_tail_lines` setting controls how many historical lines are sent when a user first opens a log stream. A higher value provides more context but increases the initial payload size. The `log_buffer_lines` setting limits how many lines the frontend retains in memory -- older lines are discarded as new ones arrive.
+The `stream_tail_lines` setting controls how many historical lines are sent when a user first opens a log stream. A higher value provides more context but increases the initial payload size. The `log_buffer_lines` setting limits how many lines the browser retains in memory per stream -- once the count reaches 2× this value, older lines are trimmed back down to the configured limit. Accepts values from `1000` to `10000000`.
