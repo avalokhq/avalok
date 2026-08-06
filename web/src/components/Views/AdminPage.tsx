@@ -38,9 +38,10 @@ type Tab = 'users' | 'workspaces' | 'credentials' | 'resources' | 'settings'
 
 interface Props {
   userRole: string
+  onSettingsChange?: (settings: Record<string, string>) => void
 }
 
-export default function AdminPage({ userRole }: Props) {
+export default function AdminPage({ userRole, onSettingsChange }: Props) {
   const [tab, setTab] = useState<Tab>('users')
 
   const tabs = [
@@ -1714,12 +1715,13 @@ function SettingsPanel() {
     try {
       const updated = await adminUpdateSettings({ [key]: String(n) })
       setSettings(updated)
+      onSettingsChange?.(updated)
     } catch {
       setError('Failed to save setting')
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [onSettingsChange])
 
   if (loading) return <Spinner label="Loading settings..." />
 
@@ -1769,7 +1771,7 @@ function SettingsPanel() {
                 onChange={e => setSettings(prev => ({ ...prev, file_browser_page_size: e.target.value }))}
                 onBlur={e => saveNumeric('file_browser_page_size', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
             <SettingsRow label="Initial log tail lines" description="Number of historical log lines to load when opening a stream. 0 = all logs from the beginning.">
@@ -1782,7 +1784,7 @@ function SettingsPanel() {
                 onChange={e => setSettings(prev => ({ ...prev, stream_tail_lines: e.target.value }))}
                 onBlur={e => saveNumeric('stream_tail_lines', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
             <SettingsRow label="Log buffer size" description="Maximum number of log lines kept in the browser per stream. Older lines are dropped when this limit is reached. Trimming occurs at 2x this value.">
@@ -1795,7 +1797,7 @@ function SettingsPanel() {
                 onChange={e => setSettings(prev => ({ ...prev, log_buffer_lines: e.target.value }))}
                 onBlur={e => saveNumeric('log_buffer_lines', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
           </div>
@@ -1838,7 +1840,7 @@ function SettingsPanel() {
                 onChange={e => setSettings(prev => ({ ...prev, ws_max_connections: e.target.value }))}
                 onBlur={e => saveNumeric('ws_max_connections', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
             <SettingsRow label="Max message size (KB)" description="Maximum size of a single WebSocket message from clients. Default: 4 KB.">
@@ -1854,7 +1856,7 @@ function SettingsPanel() {
                   if (!isNaN(n) && n > 0 && n <= 64) saveNumeric('ws_max_message_kb', e.target.value)
                 }}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
           </div>

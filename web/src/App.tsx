@@ -764,7 +764,10 @@ export default function App() {
           )}
 
           {view.page === 'admin' && currentUser && (
-            <AdminPage userRole={currentUser.role} />
+            <AdminPage userRole={currentUser.role} onSettingsChange={s => {
+              const n = parseInt(s['log_buffer_lines'], 10)
+              if (n > 0) setLogBufferLines(n)
+            }} />
           )}
         </main>
       </div>
