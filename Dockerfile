@@ -20,4 +20,4 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=backend /avalok /usr/local/bin/avalok
 EXPOSE 9090
-ENTRYPOINT ["avalok"]
+ENTRYPOINT ["avalok","server","start"]

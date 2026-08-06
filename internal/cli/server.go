@@ -3,6 +3,8 @@ package cli
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/signal"
@@ -102,6 +104,57 @@ func runServerStart(ctx context.Context, configPath string, yamlPaths []string) 
 		return fmt.Errorf("migrations: %w", err)
 	}
 	fmt.Println("Migrations complete.")
+
+	users, err := pgStore.ListUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("checking existing users: %w", err)
+	}
+
+	if len(users) == 0 {
+		adminPassword, err := generateHexSecret(12)
+		if err != nil {
+			return fmt.Errorf("generating admin password: %w", err)
+		}
+
+		hash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hashing admin password: %w", err)
+		}
+
+		adminUser := &store.User{
+			ID:       uuid.New().String(),
+			Username: "admin",
+			Password: string(hash),
+			Role:     "admin",
+			Status:   "active",
+			Scope:    []string{},
+		}
+
+		if err := pgStore.CreateUser(ctx, adminUser); err != nil {
+			return fmt.Errorf("creating admin user: %w", err)
+		}
+
+		credFile := "/var/log/avalok/admin-credentials.txt"
+		credContent := fmt.Sprintf("Username: admin\nPassword: %s\n", adminPassword)
+		os.MkdirAll(filepath.Dir(credFile), 0700)
+		os.WriteFile(credFile, []byte(credContent), 0600)
+
+		go func() {
+			time.Sleep(24 * time.Hour)
+			os.Remove(credFile)
+		}()
+
+		fmt.Println()
+		fmt.Println("========================================")
+		fmt.Println("  ADMIN ACCOUNT CREATED")
+		fmt.Println("========================================")
+		fmt.Printf("  Username: admin\n")
+		fmt.Printf("  Password: %s\n", adminPassword)
+		fmt.Println()
+		fmt.Printf("  Credentials saved to: %s\n", credFile)
+		fmt.Println("  (auto-deleted after 24 hours)")
+		fmt.Println("========================================")
+	}
 
 	credResolver := managed.New(pgStore)
 
@@ -302,27 +355,60 @@ func serverDeployCmd() *cobra.Command {
 	return cmd
 }
 
+func generateHexSecret(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func runServerDeploy() error {
 	composePath := "docker-compose.yml"
+	placeholder := "change-me-to-a-random-secret-at-least-32-chars"
 
 	if _, err := os.Stat(composePath); os.IsNotExist(err) {
+		secret, err := generateHexSecret(16)
+		if err != nil {
+			return fmt.Errorf("generating JWT secret: %w", err)
+		}
+		compose := strings.Replace(dockerComposeTemplate, placeholder, secret, 1)
+
 		fmt.Println("Creating docker-compose.yml in current directory...")
-		if err := os.WriteFile(composePath, []byte(dockerComposeTemplate), 0644); err != nil {
+		if err := os.WriteFile(composePath, []byte(compose), 0644); err != nil {
 			return fmt.Errorf("writing docker-compose.yml: %w", err)
 		}
 		fmt.Println("Created docker-compose.yml")
 		fmt.Println()
-		fmt.Println("Before starting, edit docker-compose.yml and set:")
-		fmt.Println("  - AVALOK_JWT_SECRET to a random 32+ character string")
-		fmt.Println("  - Optionally change POSTGRES_PASSWORD")
+		fmt.Printf("  JWT Secret: %s\n", secret)
 		fmt.Println()
-		fmt.Println("Then run:")
+		fmt.Println("To start:")
 		fmt.Println("  docker compose up -d")
 		fmt.Println()
-		fmt.Println("After containers are running, initialize the admin account:")
-		fmt.Println("  docker compose exec avalok avalok server init")
+		fmt.Println("An admin account is auto-created on first start.")
+		fmt.Println("Check the logs for credentials:")
+		fmt.Println("  docker compose logs avalok")
 	} else {
-		fmt.Println("docker-compose.yml already exists.")
+		data, err := os.ReadFile(composePath)
+		if err != nil {
+			return fmt.Errorf("reading docker-compose.yml: %w", err)
+		}
+
+		if strings.Contains(string(data), placeholder) {
+			secret, err := generateHexSecret(16)
+			if err != nil {
+				return fmt.Errorf("generating JWT secret: %w", err)
+			}
+			updated := strings.Replace(string(data), placeholder, secret, 1)
+			if err := os.WriteFile(composePath, []byte(updated), 0644); err != nil {
+				return fmt.Errorf("writing docker-compose.yml: %w", err)
+			}
+			fmt.Println("Updated JWT secret in docker-compose.yml")
+			fmt.Printf("  JWT Secret: %s\n", secret)
+		} else {
+			fmt.Println("docker-compose.yml already exists.")
+		}
+
 		fmt.Println()
 		fmt.Println("To start:    docker compose up -d")
 		fmt.Println("To stop:     docker compose down")
