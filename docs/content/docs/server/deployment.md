@@ -69,6 +69,10 @@ docker compose up -d
 
 The server is now accessible at `http://localhost:9090`.
 
+## Host Networking
+
+The Avalok container runs with `network_mode: host` so it can reach the same servers your host machine can — including SSH targets, VPN-connected networks, and internal subnets. This means the container shares the host's network stack directly, and port 9090 is exposed on the host without explicit port mapping.
+
 ## Volume Mounts
 
 For connecting to Kubernetes clusters or SSH targets, mount the relevant credential files into the container:

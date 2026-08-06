@@ -422,10 +422,9 @@ func runServerDeploy() error {
 const dockerComposeTemplate = `services:
   avalok:
     image: ghcr.io/avalokhq/avalok:latest
-    ports:
-      - "9090:9090"
+    network_mode: host
     environment:
-      AVALOK_DATABASE_URL: postgres://avalok:avalok@postgres:5432/avalok?sslmode=disable
+      AVALOK_DATABASE_URL: postgres://avalok:avalok@127.0.0.1:5432/avalok?sslmode=disable
       AVALOK_JWT_SECRET: change-me-to-a-random-secret-at-least-32-chars
       AVALOK_BIND_ADDR: "0.0.0.0"
       AVALOK_PORT: "9090"
@@ -440,6 +439,8 @@ const dockerComposeTemplate = `services:
 
   postgres:
     image: postgres:17-alpine
+    ports:
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: avalok
       POSTGRES_PASSWORD: avalok
