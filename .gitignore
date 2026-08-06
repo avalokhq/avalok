@@ -35,6 +35,7 @@ web/dist/
 bin/
 bin/*
 avalok
+avalok.exe
 configs/*
 scripts/*
 

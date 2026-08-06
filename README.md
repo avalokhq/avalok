@@ -87,6 +87,10 @@ Prints 3 access URLs. Share them with whoever needs logs. Close the terminal whe
 For always-on access. Runs as a service so people can log in and view logs on their own, without you being online. PostgreSQL-backed with JWT auth, role-based access control, and managed credentials.
 
 ```bash
+# Quick setup (interactive, handles PostgreSQL + systemd)
+sudo avalok server install
+
+# Or manual setup
 avalok server init --db-url "postgres://..." --jwt-secret "..."
 avalok server start -c config.yaml workspace.yaml
 ```
@@ -300,6 +304,7 @@ avalok server migrate               Run database migrations
   --db-url        PostgreSQL connection string
 
 avalok server deploy                Generate Docker Compose deployment files
+avalok server install               Install as a systemd service (interactive)
 
 avalok tail <workspace/env/service>  Stream logs in terminal (no web UI)
   -f, --follow    Follow log output

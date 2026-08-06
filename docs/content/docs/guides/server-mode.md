@@ -241,13 +241,23 @@ avalok server start --config server.yaml workspace1.yaml workspace2.yaml
 
 ### Run as a systemd service
 
-Create `/etc/systemd/system/avalok.service`:
+The easiest way to set up avalok as a systemd service is the interactive installer:
+
+```bash
+sudo avalok server install
+```
+
+This handles PostgreSQL setup, config generation, system user creation, and systemd unit installation. See [`server install`]({{< relref "../cli/server#server-install" >}}) for details.
+
+#### Manual setup
+
+If you prefer to configure things manually, create `/etc/systemd/system/avalok.service`:
 
 ```ini
 [Unit]
 Description=Avalok Log Access Broker
-After=network.target postgresql.service
-Requires=postgresql.service
+After=network.target
+Wants=network.target
 
 [Service]
 Type=simple
@@ -256,8 +266,11 @@ Group=avalok
 ExecStart=/usr/local/bin/avalok server start --config /etc/avalok/server.yaml
 Restart=on-failure
 RestartSec=5
-Environment=AVALOK_DATABASE_URL=postgres://avalok:password@localhost:5432/avalok?sslmode=disable
-Environment=AVALOK_JWT_SECRET=your-secret-here
+LimitNOFILE=65536
+WorkingDirectory=/etc/avalok
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=avalok
 
 [Install]
 WantedBy=multi-user.target

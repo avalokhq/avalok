@@ -58,6 +58,7 @@ func serverCmd() *cobra.Command {
 	cmd.AddCommand(serverMigrateCmd())
 	cmd.AddCommand(serverInitCmd())
 	cmd.AddCommand(serverDeployCmd())
+	cmd.AddCommand(serverInstallCmd())
 
 	return cmd
 }

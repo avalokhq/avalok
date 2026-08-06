@@ -17,6 +17,7 @@ Parent command for running avalok in persistent multi-user mode. Unlike `avalok 
 | [`server migrate`](#server-migrate) | Run database migrations |
 | [`server init`](#server-init) | Initialize server (migrations + admin account) |
 | [`server deploy`](#server-deploy) | Generate docker-compose.yml for deployment |
+| [`server install`](#server-install) | Install avalok as a systemd service |
 
 ## Environment Variables
 
@@ -246,6 +247,109 @@ You can mount credential files into the avalok container by uncommenting the `vo
 volumes:
   - ~/.kube/config:/etc/avalok/kubeconfig:ro
   - ./ssh-keys:/etc/avalok/ssh-keys:ro
+```
+
+---
+
+## server install
+
+Interactive wizard to install avalok as a systemd service on a Linux machine. Handles PostgreSQL setup, configuration, system user creation, and systemd unit generation.
+
+Requires root privileges.
+
+### Usage
+
+```bash
+sudo avalok server install
+```
+
+### What it does
+
+1. **Checks prerequisites** -- verifies the avalok binary and systemd are available
+2. **Sets up PostgreSQL** -- offers three options:
+   - **Docker container** (recommended) -- creates a Compose file at `/etc/avalok/docker-compose.postgres.yml` and starts the container
+   - **Use existing PostgreSQL** -- prompts for a connection string and tests it
+   - **Install on this machine** -- detects the package manager (apt/dnf/yum), installs PostgreSQL, creates the database and user
+3. **Generates config** -- creates `/etc/avalok/server.yaml` with database URL and a random JWT secret
+4. **Installs systemd service** -- creates `/etc/systemd/system/avalok.service`
+
+### Files created
+
+| File | Purpose |
+|------|---------|
+| `/etc/avalok/server.yaml` | Server configuration (database URL, JWT secret, bind address, port) |
+| `/etc/systemd/system/avalok.service` | systemd service unit |
+| `/etc/avalok/docker-compose.postgres.yml` | PostgreSQL container (Docker option only) |
+| `/var/log/avalok/` | Log directory |
+
+### After installation
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable avalok
+sudo systemctl start avalok
+```
+
+Admin credentials are printed in the service logs on first start:
+
+```bash
+sudo journalctl -u avalok -n 20
+```
+
+### Example output
+
+```
+  Avalok Server Install
+  =====================
+
+  [1/4] Checking prerequisites...
+    ✓ avalok binary found at /usr/local/bin/avalok
+    ✓ systemd detected
+
+  [2/4] PostgreSQL setup
+    How would you like to run PostgreSQL?
+
+      1. Docker container (recommended)
+      2. Use existing PostgreSQL
+      3. Install PostgreSQL on this machine
+
+    Selected: Docker container
+
+    ✓ Docker detected
+    ✓ Generated /etc/avalok/docker-compose.postgres.yml
+
+    Starting PostgreSQL container...
+    ✓ PostgreSQL is ready on localhost:5432
+
+  [3/4] Configuring Avalok...
+    ✓ Generated JWT secret
+    ✓ Created /etc/avalok/server.yaml
+    ✓ Created avalok system user
+    ✓ Created /var/log/avalok directory
+
+  [4/4] Installing systemd service...
+    ✓ Created /etc/systemd/system/avalok.service
+
+  ══════════════════════════════════════════
+
+  Installation complete! Run these commands to start:
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable avalok
+    sudo systemctl start avalok
+
+  Then open http://<your-ip>:9090 in your browser.
+
+  Admin credentials will be printed in the service logs:
+    sudo journalctl -u avalok -n 20
+
+  Useful commands:
+    sudo systemctl status avalok       # check status
+    sudo systemctl restart avalok       # restart
+    sudo journalctl -fu avalok          # follow logs
+
+  Config: /etc/avalok/server.yaml
+  Logs:   /var/log/avalok/
 ```
 
 ---
