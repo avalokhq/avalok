@@ -67,7 +67,7 @@ export default function AdminPage({ userRole, onSettingsChange }: Props) {
         {tab === 'workspaces' && <WorkspacesPanel />}
         {tab === 'credentials' && <CredentialsPanel />}
         {tab === 'resources' && <ResourcesPanel />}
-        {tab === 'settings' && <SettingsPanel />}
+        {tab === 'settings' && <SettingsPanel onSettingsChange={onSettingsChange} />}
       </div>
     </div>
   )
@@ -1680,7 +1680,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
 
 // --- Settings Panel ---
 
-function SettingsPanel() {
+function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Record<string, string>) => void }) {
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
