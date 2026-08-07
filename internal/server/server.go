@@ -142,6 +142,7 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/api/admin/resources/{name}/namespaces/{ns}/workloads/{kind}/{workload}/stream", s.adminOrResourceScoped(s.handleResourceStream))
 		s.mux.HandleFunc("GET /api/admin/resources/{name}/storage/objects", s.adminOrResourceScoped(s.handleListStorageObjects))
 		s.mux.HandleFunc("/api/admin/resources/{name}/storage/stream/{key...}", s.adminOrResourceScoped(s.handleStorageObjectStream))
+		s.mux.HandleFunc("GET /api/admin/resources/{name}/storage/content/{key...}", s.adminOrResourceScoped(s.handleStorageObjectContent))
 
 		s.mux.HandleFunc("GET /api/admin/settings", s.adminOnly(s.handleGetSettings))
 		s.mux.HandleFunc("PUT /api/admin/settings", s.adminOnly(s.handleUpdateSettings))

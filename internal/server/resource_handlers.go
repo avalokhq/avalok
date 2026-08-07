@@ -1,15 +1,20 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/avalokhq/avalok/internal/provider"
+	"github.com/avalokhq/avalok/internal/provider/cloudutil"
 	"github.com/avalokhq/avalok/internal/store"
 	"github.com/avalokhq/avalok/internal/stream"
 	"github.com/coder/websocket"
@@ -273,7 +278,7 @@ func (s *Server) handleTestCloudResource(w http.ResponseWriter, r *http.Request,
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	p, err := buildCloudProvider(ctx, res)
+	p, err := s.buildCloudProvider(ctx, res)
 	if err != nil {
 		logger.Error("test cloud resource failed", "resource", res.Name, "error", err)
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -686,9 +691,14 @@ func (s *Server) handleResourceStream(w http.ResponseWriter, r *http.Request) {
 	streamCtx, streamCancel := context.WithCancel(ctx)
 	defer streamCancel()
 
+	resStreamOpts := provider.StreamOpts{Follow: true, Tail: s.streamTailLines()}
+	if r.URL.Query().Get("mode") == "live" {
+		resStreamOpts = provider.StreamOpts{Follow: true, Since: time.Now()}
+	}
+
 	var streams []<-chan provider.LogEntry
 	for _, inst := range instances {
-		st, sErr := p.Stream(streamCtx, inst.ID, provider.StreamOpts{Follow: true, Tail: s.streamTailLines()})
+		st, sErr := p.Stream(streamCtx, inst.ID, resStreamOpts)
 		if sErr != nil {
 			logger.Warn("resource stream error", "instance", inst.ID, "error", sErr)
 			continue
@@ -756,12 +766,26 @@ func isCloudStorageType(t string) bool {
 	return false
 }
 
-func buildCloudProvider(ctx context.Context, res *store.Resource) (provider.Provider, error) {
+func (s *Server) buildCloudProvider(ctx context.Context, res *store.Resource) (provider.Provider, error) {
 	p, ok := provider.Get(res.Type)
 	if !ok {
 		return nil, fmt.Errorf("provider %q not available", res.Type)
 	}
-	if err := p.Connect(ctx, res.Config); err != nil {
+
+	config := res.Config
+	if _, hasProfile := config["credential_profile"].(string); hasProfile && s.creds != nil {
+		credType := res.Type
+		if credType == "azure-blob" || credType == "azure-file" {
+			credType = "azure-storage"
+		}
+		resolved, err := s.creds.Resolve(ctx, res.Type, credType, config)
+		if err != nil {
+			return nil, fmt.Errorf("resolving credentials: %w", err)
+		}
+		config = resolved.Config
+	}
+
+	if err := p.Connect(ctx, config); err != nil {
 		return nil, fmt.Errorf("connecting to %s: %w", res.Type, err)
 	}
 	return p, nil
@@ -771,7 +795,7 @@ func (s *Server) handleStorageOverview(w http.ResponseWriter, r *http.Request, r
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	p, err := buildCloudProvider(ctx, res)
+	p, err := s.buildCloudProvider(ctx, res)
 	if err != nil {
 		writeInternalError(w, "failed to connect", err)
 		return
@@ -823,12 +847,62 @@ func (s *Server) handleListStorageObjects(w http.ResponseWriter, r *http.Request
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	p, err := buildCloudProvider(ctx, res)
+	p, err := s.buildCloudProvider(ctx, res)
 	if err != nil {
 		writeInternalError(w, "failed to connect", err)
 		return
 	}
 	defer p.Close()
+
+	path := r.URL.Query().Get("path")
+
+	if hs, ok := p.(cloudutil.HierarchicalStore); ok && r.URL.Query().Get("flat") != "true" {
+		lr, err := hs.ListHierarchical(ctx, path)
+		if err != nil {
+			writeInternalError(w, "failed to list objects", err)
+			return
+		}
+
+		type dirResponse struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}
+		type objResponse struct {
+			Key          string `json:"key"`
+			Name         string `json:"name"`
+			Size         int64  `json:"size"`
+			LastModified string `json:"last_modified"`
+		}
+
+		dirs := make([]dirResponse, 0, len(lr.Directories))
+		for _, d := range lr.Directories {
+			dirs = append(dirs, dirResponse{Name: d.Name, Path: d.Path})
+		}
+		objs := make([]objResponse, 0, len(lr.Objects))
+		for _, o := range lr.Objects {
+			lastMod := ""
+			if !o.LastModified.IsZero() {
+				lastMod = o.LastModified.Format(time.RFC3339)
+			}
+			name := o.Key
+			if idx := len(path); idx > 0 && len(name) > idx {
+				name = name[idx:]
+			}
+			objs = append(objs, objResponse{
+				Key:          o.Key,
+				Name:         name,
+				Size:         o.Size,
+				LastModified: lastMod,
+			})
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"path":        lr.Path,
+			"directories": dirs,
+			"objects":     objs,
+		})
+		return
+	}
 
 	instances, err := p.ListInstances(ctx)
 	if err != nil {
@@ -837,6 +911,9 @@ func (s *Server) handleListStorageObjects(w http.ResponseWriter, r *http.Request
 	}
 
 	prefix := r.URL.Query().Get("prefix")
+	if prefix == "" {
+		prefix = path
+	}
 
 	type objectResponse struct {
 		Key          string `json:"key"`
@@ -869,6 +946,71 @@ func (s *Server) handleListStorageObjects(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleStorageObjectContent(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r)
+	name := r.PathValue("name")
+	if !user.HasResourceAccess(name) {
+		writeError(w, http.StatusForbidden, "access denied")
+		return
+	}
+
+	objectKey := r.PathValue("key")
+	if objectKey == "" {
+		writeError(w, http.StatusBadRequest, "object key is required")
+		return
+	}
+
+	res, err := s.store.GetResource(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "resource not found")
+		return
+	}
+
+	if !isCloudStorageType(res.Type) {
+		writeError(w, http.StatusBadRequest, "resource is not a cloud storage type")
+		return
+	}
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	p, err := s.buildCloudProvider(ctx, res)
+	if err != nil {
+		writeInternalError(w, "failed to connect", err)
+		return
+	}
+	defer p.Close()
+
+	objStore, ok := p.(cloudutil.ObjectStore)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "provider does not support direct content access")
+		return
+	}
+
+	rc, err := objStore.GetObject(ctx, objectKey)
+	if err != nil {
+		writeInternalError(w, "failed to download object", err)
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	var reader io.Reader = rc
+	if strings.HasSuffix(strings.ToLower(objectKey), ".gz") {
+		gz, gzErr := gzip.NewReader(rc)
+		if gzErr != nil {
+			writeInternalError(w, "failed to decompress object", gzErr)
+			return
+		}
+		defer gz.Close()
+		reader = gz
+	}
+
+	io.Copy(w, reader)
 }
 
 func (s *Server) handleStorageObjectStream(w http.ResponseWriter, r *http.Request) {
@@ -917,18 +1059,49 @@ func (s *Server) handleStorageObjectStream(w http.ResponseWriter, r *http.Reques
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	p, err := buildCloudProvider(ctx, res)
+	p, err := s.buildCloudProvider(ctx, res)
 	if err != nil {
 		wsjson.Write(ctx, conn, wsLogEntry{Type: "error", Error: "failed to connect: " + err.Error()})
 		return
 	}
 	defer p.Close()
 
-	ch, err := p.Stream(ctx, objectKey, provider.StreamOpts{Follow: true, Tail: s.streamTailLines()})
-	if err != nil {
-		wsjson.Write(ctx, conn, wsLogEntry{Type: "error", Error: "failed to stream: " + err.Error()})
+	streamOpts := provider.StreamOpts{Follow: true, Tail: s.streamTailLines()}
+	if mode := r.URL.Query().Get("mode"); mode != "" {
+		lines := 0
+		if v := r.URL.Query().Get("lines"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				lines = n
+			}
+		}
+		switch mode {
+		case "head":
+			if lines <= 0 {
+				lines = 100
+			}
+			streamOpts = provider.StreamOpts{Head: lines}
+		case "tail":
+			if lines <= 0 {
+				lines = 1000
+			}
+			streamOpts = provider.StreamOpts{Tail: lines, Follow: true}
+		case "live":
+			streamOpts = provider.StreamOpts{SkipInitial: true, Follow: true}
+		}
+	}
+
+	objStore, ok := p.(cloudutil.ObjectStore)
+	if !ok {
+		wsjson.Write(ctx, conn, wsLogEntry{Type: "error", Error: "provider does not support object storage"})
 		return
 	}
+
+	cfg := cloudutil.ParseCommonConfig(res.Config)
+	ch := make(chan provider.LogEntry, 100)
+	go func() {
+		defer close(ch)
+		cloudutil.StreamSingleObject(ctx, objStore, objectKey, res.Type, streamOpts, cfg.PollInterval, ch)
+	}()
 
 	var mu sync.Mutex
 	paused := false
