@@ -19,10 +19,11 @@
   --color-chrome-900: #171717;
   --color-chrome-950: #0a0a0a;
 
-  --color-accent-300: #5a9a87;
-  --color-accent-400: #3a7d68;
-  --color-accent-500: #1e4a3a;
-  --color-accent-600: #14342a;
+  --color-accent-300: #5ab894;
+  --color-accent-400: #3d9a74;
+  --color-accent-500: #1a7a55;
+  --color-accent-600: #12593e;
+  --color-accent-700: #0d4330;
 
   --color-source-0: #22d3ee;
   --color-source-1: #a78bfa;
@@ -39,6 +40,7 @@
 /* ── Dark mode (default) ── */
 html, html.dark {
   --bg-app: #1e1e1e;
+  --bg-app-end: #1a2420;
   --bg-surface: #252526;
   --bg-elevated: #2d2d2d;
   --bg-hover: #383838;
@@ -47,15 +49,15 @@ html, html.dark {
 
   --border-default: #3e3e42;
   --border-subtle: #333333;
-  --border-hover: rgba(74,158,136,0.35);
+  --border-hover: rgba(90,184,148,0.30);
   --border-strong: #4a4a4f;
 
   --text-primary: #cccccc;
   --text-secondary: #969696;
   --text-muted: #737373;
   --text-subtle: #808080;
-  --text-accent: var(--color-accent-400);
-  --accent-bright: #3a8a70;
+  --text-accent: var(--color-accent-300);
+  --accent-bright: var(--color-accent-500);
 
   --log-bg: #1e1e1e;
   --log-line-hover: rgba(255,255,255,0.04);
@@ -71,6 +73,7 @@ html, html.dark {
 /* ── Light mode ── */
 html.light {
   --bg-app: var(--color-chrome-100);
+  --bg-app-end: #edf2f0;
   --bg-surface: #ffffff;
   --bg-elevated: var(--color-chrome-100);
   --bg-hover: var(--color-chrome-200);
@@ -79,7 +82,7 @@ html.light {
 
   --border-default: var(--color-chrome-200);
   --border-subtle: var(--color-chrome-100);
-  --border-hover: rgba(74,158,136,0.20);
+  --border-hover: rgba(26,122,85,0.25);
   --border-strong: var(--color-chrome-300);
 
   --text-primary: var(--color-chrome-900);
@@ -87,7 +90,7 @@ html.light {
   --text-muted: #888888;
   --text-subtle: #888888;
   --text-accent: var(--color-accent-600);
-  --accent-bright: #2d6b58;
+  --accent-bright: var(--color-accent-500);
 
   --log-bg: #ffffff;
   --log-line-hover: var(--color-chrome-50);
@@ -107,7 +110,7 @@ html.light {
 
 body {
   margin: 0;
-  background: var(--bg-app);
+  background: linear-gradient(to bottom, var(--bg-app), var(--bg-app-end)) fixed;
   color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -128,27 +131,21 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(35,83,71,0.15), transparent 70%),
-    linear-gradient(to bottom, var(--bg-app), var(--bg-app));
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(26,122,85,0.12), transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
 html.light .bg-premium::before {
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(35,83,71,0.10), transparent 70%),
-    linear-gradient(to bottom, var(--bg-app), var(--bg-app));
+  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(26,122,85,0.08), transparent 70%);
 }
 .bg-premium > * {
   position: relative;
   z-index: 1;
 }
 
-/* ── Glassmorphism header ── */
-.glass-header {
-  background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+/* ── Brand header ── */
+.brand-header {
+  background: var(--color-accent-500);
 }
 
 

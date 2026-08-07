@@ -563,7 +563,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg-app)] bg-premium">
+    <div className="flex flex-col h-screen overflow-hidden bg-premium">
       <Header
         theme={theme}
         onThemeChange={setTheme}

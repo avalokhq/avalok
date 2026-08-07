@@ -23,29 +23,29 @@ const themeOptions: { value: Theme; icon: React.FC<{ className?: string }> }[] =
 
 export default function Header({ theme, onThemeChange, breadcrumbs, connected, onNavigateHome, onLogout, currentUser }: Props) {
   return (
-    <header className="h-14 shrink-0 flex items-center px-5 gap-4 border-b border-[var(--border-default)] glass-header">
+    <header className="h-14 shrink-0 flex items-center px-5 gap-4 brand-header">
       {/* Logo */}
       <button onClick={onNavigateHome} className="cursor-pointer hover:opacity-70 transition-opacity shrink-0">
-        <AvalokWordmark height={22} />
+        <AvalokWordmark height={22} forceInvert />
       </button>
 
       {/* Breadcrumbs */}
       {breadcrumbs && breadcrumbs.length > 0 && (
         <>
-          <div className="w-px h-5 bg-[var(--border-default)]" />
+          <div className="w-px h-5 bg-white/20" />
           <nav className="flex items-center gap-1 text-sm">
             {breadcrumbs.map((crumb, i) => (
               <span key={i} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
+                {i > 0 && <ChevronRight className="w-3.5 h-3.5 text-white/40" />}
                 {crumb.onClick ? (
                   <button
                     onClick={crumb.onClick}
-                    className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                    className="text-white/70 hover:text-white transition-colors"
                   >
                     {crumb.label}
                   </button>
                 ) : (
-                  <span className="text-[var(--text-primary)] font-medium">{crumb.label}</span>
+                  <span className="text-white font-medium">{crumb.label}</span>
                 )}
               </span>
             ))}
@@ -56,10 +56,10 @@ export default function Header({ theme, onThemeChange, breadcrumbs, connected, o
       <div className="ml-auto flex items-center gap-3">
         {/* Connection status */}
         {connected !== undefined && (
-          <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+          <div className="flex items-center gap-1.5 text-xs text-white/70">
             <span className={cn(
               'w-1.5 h-1.5 rounded-full',
-              connected ? 'bg-[var(--accent-bright)] status-pulse' : 'bg-red-400'
+              connected ? 'bg-white status-pulse' : 'bg-red-400'
             )} />
             {connected ? 'Connected' : 'Disconnected'}
           </div>
@@ -67,16 +67,16 @@ export default function Header({ theme, onThemeChange, breadcrumbs, connected, o
 
         {/* Current user info */}
         {currentUser && (
-          <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-            <span className="font-medium text-[var(--text-primary)]">{currentUser.username}</span>
-            <span className="px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[var(--text-muted)]">
+          <div className="flex items-center gap-1.5 text-xs text-white/70">
+            <span className="font-medium text-white">{currentUser.username}</span>
+            <span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/15 text-white/60">
               {currentUser.role}
             </span>
           </div>
         )}
 
         {/* Theme toggle */}
-        <div className="flex items-center bg-[var(--bg-elevated)] rounded-lg p-0.5 border border-[var(--border-subtle)]">
+        <div className="flex items-center bg-white/10 rounded-lg p-0.5 border border-white/15">
           {themeOptions.map(opt => {
             const Icon = opt.icon
             return (
@@ -86,8 +86,8 @@ export default function Header({ theme, onThemeChange, breadcrumbs, connected, o
                 className={cn(
                   'p-1.5 rounded-md transition-all',
                   theme === opt.value
-                    ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    ? 'bg-white/20 text-white shadow-sm'
+                    : 'text-white/40 hover:text-white/70'
                 )}
                 title={opt.value.charAt(0).toUpperCase() + opt.value.slice(1)}
               >
@@ -101,7 +101,7 @@ export default function Header({ theme, onThemeChange, breadcrumbs, connected, o
         {onLogout && (
           <button
             onClick={onLogout}
-            className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-all"
+            className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-all"
             title="Sign out"
           >
             <LogOut className="w-4 h-4" />
