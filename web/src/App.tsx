@@ -756,6 +756,8 @@ export default function App() {
               label={view.objectKey.split('/').pop() || view.objectKey}
               onBack={() => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType })}
               maxLines={logBufferLines}
+              resourceName={view.resourceName}
+              objectKey={view.objectKey}
             />
           )}
 

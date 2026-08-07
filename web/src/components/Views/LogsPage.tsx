@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronRight, Terminal, LayoutGrid, Rows3, Merge, X, Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Terminal, LayoutGrid, Rows3, Merge, X, Loader2, FolderOpen, FileText } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageObjects, storageObjectStreamURL } from '../../lib/api'
+import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageDirectory, storageObjectStreamURL } from '../../lib/api'
 import type { ResourceWorkloads } from '../../lib/api'
 import type { Workspace, Environment, Service } from '../../lib/types'
 import ProviderIcon from '../ui/ProviderIcon'
@@ -17,6 +17,8 @@ export interface LogSession {
   service: string
   label: string
   streamUrl?: string
+  resourceName?: string
+  objectKey?: string
 }
 
 interface TreeWorkspace {
@@ -48,6 +50,15 @@ interface TreeSfEnv {
   targets: number
 }
 
+interface TreeStorageNode {
+  name: string
+  path: string
+  isDirectory: boolean
+  expanded: boolean
+  loading: boolean
+  children: TreeStorageNode[]
+}
+
 interface TreeResource {
   name: string
   type: string
@@ -55,7 +66,7 @@ interface TreeResource {
   expanded: boolean
   loading: boolean
   namespaces: TreeResourceNs[]
-  objects: { key: string; name: string }[]
+  storageTree: TreeStorageNode[]
 }
 
 interface TreeResourceNs {
@@ -68,6 +79,88 @@ interface TreeResourceNs {
 type LayoutMode = 'grid' | 'tabs' | 'merged'
 
 const LIMITS: Record<LayoutMode, number> = { grid: 6, tabs: 10, merged: 10 }
+
+function StorageTreeNodes({ nodes, resName, resIdx, depth, parentPath, activeIds, isFull, onToggleDir, onSelect }: {
+  nodes: TreeStorageNode[]
+  resName: string
+  resIdx: number
+  depth: number
+  parentPath: number[]
+  activeIds: Set<string>
+  isFull: boolean
+  onToggleDir: (resIdx: number, path: string[]) => void
+  onSelect: (key: string, name: string) => void
+}) {
+  const paddingLeft = 24 + depth * 16
+
+  return (
+    <>
+      {nodes.map((node, nodeIdx) => {
+        const currentPath = [...parentPath, nodeIdx]
+        const pathKey = currentPath.join('.')
+
+        if (node.isDirectory) {
+          return (
+            <div key={pathKey}>
+              <button
+                onClick={() => onToggleDir(resIdx, currentPath.map(String))}
+                style={{ paddingLeft }}
+                className="w-full flex items-center gap-1.5 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
+              >
+                {node.loading
+                  ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
+                  : node.expanded
+                    ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                    : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                }
+                <FolderOpen className="w-3 h-3 text-[var(--text-accent)] shrink-0" />
+                <span className="text-[var(--text-secondary)] font-medium text-xs truncate">{node.name}</span>
+              </button>
+              {node.expanded && node.children.length > 0 && (
+                <StorageTreeNodes
+                  nodes={node.children}
+                  resName={resName}
+                  resIdx={resIdx}
+                  depth={depth + 1}
+                  parentPath={currentPath}
+                  activeIds={activeIds}
+                  isFull={isFull}
+                  onToggleDir={onToggleDir}
+                  onSelect={onSelect}
+                />
+              )}
+            </div>
+          )
+        }
+
+        const id = `res:${resName}/obj/${node.path}`
+        const isActive = activeIds.has(id)
+
+        return (
+          <button
+            key={pathKey}
+            onClick={() => onSelect(node.path, node.name)}
+            disabled={!isActive && isFull}
+            style={{ paddingLeft }}
+            className={cn(
+              'w-full flex items-center gap-2 pr-3 py-1.5 text-left transition-colors',
+              isActive
+                ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
+                : isFull
+                  ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+            )}
+          >
+            <SourceDot name={id} />
+            <FileText className={cn('w-3 h-3 shrink-0', isActive ? 'text-[var(--text-accent)]' : 'text-[var(--text-muted)]')} />
+            <span className="flex-1 truncate text-xs">{node.name}</span>
+            {isActive && <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />}
+          </button>
+        )
+      })}
+    </>
+  )
+}
 
 export default function LogsPage({ onBack: _onBack, userRole, userScope, serverMode, logBufferLines }: { onBack: () => void; userRole?: string; userScope?: string[]; serverMode?: boolean; logBufferLines?: number }) {
   const [sessions, setSessions] = useState<LogSession[]>([])
@@ -175,7 +268,7 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
         expanded: false,
         loading: false,
         namespaces: [],
-        objects: [],
+        storageTree: [],
       })))
     } catch { /* ignore */ }
   }
@@ -191,20 +284,27 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
       if (n.expanded) {
         return prev.map((x, i) => i === idx ? { ...x, expanded: false } : x)
       }
-      const hasChildren = isCloudType(n.type) ? n.objects.length > 0 : n.namespaces.length > 0
+      const hasChildren = isCloudType(n.type) ? n.storageTree.length > 0 : n.namespaces.length > 0
       if (hasChildren) {
         return prev.map((x, i) => i === idx ? { ...x, expanded: true } : x)
       }
       return prev.map((x, i) => i === idx ? { ...x, expanded: true, loading: true } : x)
     })
-    const hasChildren = isCloudType(node.type) ? node.objects.length > 0 : node.namespaces.length > 0
+    const hasChildren = isCloudType(node.type) ? node.storageTree.length > 0 : node.namespaces.length > 0
     if (!node.expanded && !hasChildren) {
       try {
         if (isCloudType(node.type)) {
-          const objs = await adminListStorageObjects(node.name)
+          const result = await adminListStorageDirectory(node.name)
+          const children: TreeStorageNode[] = [
+            ...(result.directories || []).map(d => ({
+              name: d.name, path: d.path, isDirectory: true, expanded: false, loading: false, children: [],
+            })),
+            ...(result.objects || []).map(o => ({
+              name: o.name, path: o.key, isDirectory: false, expanded: false, loading: false, children: [],
+            })),
+          ]
           setResourceTree(prev => prev.map((n, i) => i === idx ? {
-            ...n, loading: false,
-            objects: (objs || []).map(o => ({ key: o.key, name: o.name || o.key.split('/').pop() || o.key })),
+            ...n, loading: false, storageTree: children,
           } : n))
         } else {
           const nsList = await adminListResourceNamespaces(node.name)
@@ -216,6 +316,68 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
       } catch {
         setResourceTree(prev => prev.map((n, i) => i === idx ? { ...n, loading: false } : n))
       }
+    }
+  }
+
+  async function toggleStorageDir(resIdx: number, nodePath: string[]) {
+    const resNode = resourceTree[resIdx]
+    if (!resNode) return
+
+    function findNode(nodes: TreeStorageNode[], path: number[]): TreeStorageNode | null {
+      if (path.length === 0) return null
+      const node = nodes[path[0]]
+      if (!node) return null
+      if (path.length === 1) return node
+      return findNode(node.children, path.slice(1))
+    }
+
+    function updateNode(nodes: TreeStorageNode[], path: number[], updater: (n: TreeStorageNode) => TreeStorageNode): TreeStorageNode[] {
+      return nodes.map((n, i) => {
+        if (i !== path[0]) return n
+        if (path.length === 1) return updater(n)
+        return { ...n, children: updateNode(n.children, path.slice(1), updater) }
+      })
+    }
+
+    const indices = nodePath.map(Number)
+    const node = findNode(resNode.storageTree, indices)
+    if (!node || !node.isDirectory) return
+
+    if (node.expanded) {
+      setResourceTree(prev => prev.map((r, ri) => ri !== resIdx ? r : {
+        ...r, storageTree: updateNode(r.storageTree, indices, n => ({ ...n, expanded: false })),
+      }))
+      return
+    }
+
+    if (node.children.length > 0) {
+      setResourceTree(prev => prev.map((r, ri) => ri !== resIdx ? r : {
+        ...r, storageTree: updateNode(r.storageTree, indices, n => ({ ...n, expanded: true })),
+      }))
+      return
+    }
+
+    setResourceTree(prev => prev.map((r, ri) => ri !== resIdx ? r : {
+      ...r, storageTree: updateNode(r.storageTree, indices, n => ({ ...n, expanded: true, loading: true })),
+    }))
+
+    try {
+      const result = await adminListStorageDirectory(resNode.name, node.path)
+      const children: TreeStorageNode[] = [
+        ...(result.directories || []).map(d => ({
+          name: d.name, path: d.path, isDirectory: true, expanded: false, loading: false, children: [],
+        })),
+        ...(result.objects || []).map(o => ({
+          name: o.name, path: o.key, isDirectory: false, expanded: false, loading: false, children: [],
+        })),
+      ]
+      setResourceTree(prev => prev.map((r, ri) => ri !== resIdx ? r : {
+        ...r, storageTree: updateNode(r.storageTree, indices, n => ({ ...n, loading: false, children })),
+      }))
+    } catch {
+      setResourceTree(prev => prev.map((r, ri) => ri !== resIdx ? r : {
+        ...r, storageTree: updateNode(r.storageTree, indices, n => ({ ...n, loading: false })),
+      }))
     }
   }
 
@@ -253,12 +415,12 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
 
   const maxForLayout = LIMITS[layout]
 
-  const addSession = useCallback((wsName: string, envName: string, svcName: string, label: string, streamUrl?: string) => {
+  const addSession = useCallback((wsName: string, envName: string, svcName: string, label: string, streamUrl?: string, resName?: string, objKey?: string) => {
     const id = streamUrl ? `res:${wsName}/${envName}/${svcName}` : `${wsName}/${envName}/${svcName}`
     setSessions(prev => {
       if (prev.some(s => s.id === id)) return prev
       if (prev.length >= LIMITS[layout]) return prev
-      return [...prev, { id, workspace: wsName, environment: envName, service: svcName, label, streamUrl }]
+      return [...prev, { id, workspace: wsName, environment: envName, service: svcName, label, streamUrl, resourceName: resName, objectKey: objKey }]
     })
     setActiveTab(id)
   }, [layout])
@@ -488,34 +650,24 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
                     <span className="text-[var(--text-primary)] font-medium text-xs truncate">{resNode.name}</span>
                   </button>
 
-                  {resNode.expanded && isCloudType(resNode.type) && resNode.objects.map(obj => {
-                    const url = storageObjectStreamURL(resNode.name, obj.key)
-                    const id = `res:${resNode.name}/obj/${obj.key}`
-                    const isActive = activeIds.has(id)
-                    const isFull = sessions.length >= maxForLayout
-
-                    return (
-                      <button
-                        key={obj.key}
-                        onClick={() => isActive ? removeSession(id) : addSession(resNode.name, 'storage', obj.key, obj.name, url)}
-                        disabled={!isActive && isFull}
-                        className={cn(
-                          'w-full flex items-center gap-2 pl-8 pr-3 py-1.5 text-left transition-colors',
-                          isActive
-                            ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                            : isFull
-                              ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
-                              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                        )}
-                      >
-                        <SourceDot name={id} />
-                        <span className="flex-1 truncate text-xs">{obj.name}</span>
-                        {isActive && (
-                          <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />
-                        )}
-                      </button>
-                    )
-                  })}
+                  {resNode.expanded && isCloudType(resNode.type) && (
+                    <StorageTreeNodes
+                      nodes={resNode.storageTree}
+                      resName={resNode.name}
+                      resIdx={resIdx}
+                      depth={1}
+                      parentPath={[]}
+                      activeIds={activeIds}
+                      isFull={sessions.length >= maxForLayout}
+                      onToggleDir={toggleStorageDir}
+                      onSelect={(key, name) => {
+                        const url = storageObjectStreamURL(resNode.name, key)
+                        const id = `res:${resNode.name}/obj/${key}`
+                        if (activeIds.has(id)) removeSession(id)
+                        else addSession(resNode.name, 'storage', key, name, url, resNode.name, key)
+                      }}
+                    />
+                  )}
 
                   {resNode.expanded && !isCloudType(resNode.type) && resNode.namespaces.map((nsNode, nsIdx) => (
                     <div key={nsNode.name}>
@@ -601,6 +753,8 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
                 streamUrl={session.streamUrl}
                 onClose={() => removeSession(session.id)}
                 maxLines={logBufferLines}
+                resourceName={session.resourceName}
+                objectKey={session.objectKey}
               />
             ))}
           </div>
@@ -646,6 +800,8 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
                     streamUrl={session.streamUrl}
                     onClose={() => removeSession(session.id)}
                     maxLines={logBufferLines}
+                    resourceName={session.resourceName}
+                    objectKey={session.objectKey}
                   />
                 </div>
               ))}
