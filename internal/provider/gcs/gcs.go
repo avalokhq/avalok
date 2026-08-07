@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
@@ -111,6 +112,55 @@ func (p *Provider) ListObjects(ctx context.Context, prefix string) ([]cloudutil.
 	}
 
 	return objects, nil
+}
+
+func (p *Provider) ListHierarchical(ctx context.Context, path string) (*cloudutil.ListResult, error) {
+	result := &cloudutil.ListResult{Path: path}
+
+	prefix := path
+	if p.cfg.Prefix != "" {
+		prefix = p.cfg.Prefix + path
+	}
+
+	query := &storage.Query{
+		Delimiter: "/",
+	}
+	if prefix != "" {
+		query.Prefix = prefix
+	}
+
+	it := p.client.Bucket(p.bucket).Objects(ctx, query)
+	for {
+		attrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("listing objects: %w", err)
+		}
+		if attrs.Prefix != "" {
+			name := attrs.Prefix
+			if prefix != "" && strings.HasPrefix(name, prefix) {
+				name = name[len(prefix):]
+			}
+			name = strings.TrimSuffix(name, "/")
+			result.Directories = append(result.Directories, cloudutil.DirectoryEntry{
+				Name: name,
+				Path: attrs.Prefix,
+			})
+		} else {
+			obj := cloudutil.ObjectInfo{
+				Key:          attrs.Name,
+				Size:         attrs.Size,
+				LastModified: attrs.Updated,
+			}
+			if cloudutil.MatchPattern(attrs.Name, p.cfg.Pattern) {
+				result.Objects = append(result.Objects, obj)
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (p *Provider) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {

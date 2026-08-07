@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 
 	"github.com/avalokhq/avalok/internal/provider"
 	"github.com/avalokhq/avalok/internal/provider/cloudutil"
@@ -137,6 +139,62 @@ func (p *Provider) ListObjects(ctx context.Context, prefix string) ([]cloudutil.
 	}
 
 	return objects, nil
+}
+
+func (p *Provider) ListHierarchical(ctx context.Context, path string) (*cloudutil.ListResult, error) {
+	result := &cloudutil.ListResult{Path: path}
+
+	prefix := path
+	if p.cfg.Prefix != "" {
+		prefix = p.cfg.Prefix + path
+	}
+
+	containerClient := p.client.ServiceClient().NewContainerClient(p.container)
+	opts := &container.ListBlobsHierarchyOptions{}
+	if prefix != "" {
+		opts.Prefix = &prefix
+	}
+
+	pager := containerClient.NewListBlobsHierarchyPager("/", opts)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing blobs: %w", err)
+		}
+
+		for _, bp := range page.Segment.BlobPrefixes {
+			dirPath := *bp.Name
+			name := dirPath
+			if prefix != "" && strings.HasPrefix(name, prefix) {
+				name = name[len(prefix):]
+			}
+			name = strings.TrimSuffix(name, "/")
+			result.Directories = append(result.Directories, cloudutil.DirectoryEntry{
+				Name: name,
+				Path: dirPath,
+			})
+		}
+
+		for _, blob := range page.Segment.BlobItems {
+			var size int64
+			if blob.Properties.ContentLength != nil {
+				size = *blob.Properties.ContentLength
+			}
+			key := *blob.Name
+			obj := cloudutil.ObjectInfo{
+				Key:  key,
+				Size: size,
+			}
+			if blob.Properties.LastModified != nil {
+				obj.LastModified = *blob.Properties.LastModified
+			}
+			if cloudutil.MatchPattern(key, p.cfg.Pattern) {
+				result.Objects = append(result.Objects, obj)
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (p *Provider) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {

@@ -25,6 +25,22 @@ type ObjectStore interface {
 	GetObjectRange(ctx context.Context, key string, offset int64) (io.ReadCloser, error)
 }
 
+type DirectoryEntry struct {
+	Name string
+	Path string
+}
+
+type ListResult struct {
+	Path        string
+	Directories []DirectoryEntry
+	Objects     []ObjectInfo
+}
+
+type HierarchicalStore interface {
+	ObjectStore
+	ListHierarchical(ctx context.Context, path string) (*ListResult, error)
+}
+
 type CommonConfig struct {
 	Prefix       string
 	Pattern      string
@@ -167,7 +183,67 @@ type objectState struct {
 func PollAndStream(ctx context.Context, store ObjectStore, cfg CommonConfig, source string, instance string, opts provider.StreamOpts, ch chan<- provider.LogEntry) {
 	tracked := make(map[string]*objectState)
 
-	readNewContent := func(key string, state *objectState) {
+	sendEntry := func(line string) bool {
+		select {
+		case ch <- provider.LogEntry{
+			Timestamp: time.Now(),
+			Source:    source,
+			Instance:  instance,
+			Line:      line,
+			Raw:       []byte(line),
+		}:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	readContentBuffered := func(key string, state *objectState, limit int) []string {
+		var rc io.ReadCloser
+		var err error
+
+		if state.offset > 0 {
+			rc, err = store.GetObjectRange(ctx, key, state.offset)
+		} else {
+			rc, err = store.GetObject(ctx, key)
+		}
+		if err != nil {
+			return nil
+		}
+		defer rc.Close()
+
+		var reader io.Reader = rc
+		if isGzip(key) {
+			gz, gzErr := gzip.NewReader(rc)
+			if gzErr != nil {
+				return nil
+			}
+			defer gz.Close()
+			reader = gz
+		}
+
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		bytesRead := state.offset
+
+		var lines []string
+		for scanner.Scan() {
+			line := scanner.Text()
+			bytesRead += int64(len(scanner.Bytes())) + 1
+			lines = append(lines, line)
+			if limit > 0 && len(lines) >= limit {
+				break
+			}
+		}
+
+		if !isGzip(key) {
+			state.offset = bytesRead
+		}
+
+		return lines
+	}
+
+	readAndStream := func(key string, state *objectState) {
 		var rc io.ReadCloser
 		var err error
 
@@ -217,35 +293,70 @@ func PollAndStream(ctx context.Context, store ObjectStore, cfg CommonConfig, sou
 		}
 	}
 
-	poll := func() {
+	hasMode := opts.Head > 0 || opts.Tail > 0 || opts.SkipInitial
+
+	if hasMode {
 		objects, err := ListAndFilter(ctx, store, cfg)
 		if err != nil {
+			objects = nil
+		}
+
+		if opts.SkipInitial {
+			for _, obj := range objects {
+				tracked[obj.Key] = &objectState{
+					size:         obj.Size,
+					lastModified: obj.LastModified,
+					offset:       obj.Size,
+				}
+			}
+		} else {
+			var allLines []string
+			for _, obj := range objects {
+				state := &objectState{}
+				tracked[obj.Key] = state
+				limit := 0
+				if opts.Head > 0 {
+					limit = opts.Head - len(allLines)
+					if limit <= 0 {
+						state.size = obj.Size
+						state.lastModified = obj.LastModified
+						continue
+					}
+				}
+				lines := readContentBuffered(obj.Key, state, limit)
+				allLines = append(allLines, lines...)
+				state.size = obj.Size
+				state.lastModified = obj.LastModified
+			}
+
+			if opts.Tail > 0 && len(allLines) > opts.Tail {
+				allLines = allLines[len(allLines)-opts.Tail:]
+			}
+
+			for _, line := range allLines {
+				if !sendEntry(line) {
+					return
+				}
+			}
+		}
+
+		if opts.Head > 0 {
 			return
+		}
+	} else {
+		objects, err := ListAndFilter(ctx, store, cfg)
+		if err != nil {
+			objects = nil
 		}
 
 		for _, obj := range objects {
-			state, exists := tracked[obj.Key]
-			if !exists {
-				state = &objectState{}
-				if !opts.Follow {
-					state.offset = 0
-				}
-				tracked[obj.Key] = state
-				readNewContent(obj.Key, state)
-				state.size = obj.Size
-				state.lastModified = obj.LastModified
-				continue
-			}
-
-			if obj.Size > state.size || obj.LastModified.After(state.lastModified) {
-				readNewContent(obj.Key, state)
-				state.size = obj.Size
-				state.lastModified = obj.LastModified
-			}
+			state := &objectState{}
+			tracked[obj.Key] = state
+			readAndStream(obj.Key, state)
+			state.size = obj.Size
+			state.lastModified = obj.LastModified
 		}
 	}
-
-	poll()
 
 	if !opts.Follow {
 		return
@@ -259,7 +370,199 @@ func PollAndStream(ctx context.Context, store ObjectStore, cfg CommonConfig, sou
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			poll()
+			objects, err := ListAndFilter(ctx, store, cfg)
+			if err != nil {
+				continue
+			}
+
+			for _, obj := range objects {
+				state, exists := tracked[obj.Key]
+				if !exists {
+					state = &objectState{}
+					tracked[obj.Key] = state
+					readAndStream(obj.Key, state)
+					state.size = obj.Size
+					state.lastModified = obj.LastModified
+					continue
+				}
+
+				if obj.Size > state.size || obj.LastModified.After(state.lastModified) {
+					readAndStream(obj.Key, state)
+					state.size = obj.Size
+					state.lastModified = obj.LastModified
+				}
+			}
+		}
+	}
+}
+
+// StreamSingleObject streams one specific storage object on the channel, optionally following for new data.
+func StreamSingleObject(ctx context.Context, store ObjectStore, key string, source string, opts provider.StreamOpts, pollInterval time.Duration, ch chan<- provider.LogEntry) {
+	instance := filepath.Base(key)
+	var offset int64
+
+	sendEntry := func(line string) bool {
+		select {
+		case ch <- provider.LogEntry{
+			Timestamp: time.Now(),
+			Source:    source,
+			Instance:  instance,
+			Line:      line,
+			Raw:       []byte(line),
+		}:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	readAndStream := func() {
+		var rc io.ReadCloser
+		var err error
+		if offset > 0 {
+			rc, err = store.GetObjectRange(ctx, key, offset)
+		} else {
+			rc, err = store.GetObject(ctx, key)
+		}
+		if err != nil {
+			return
+		}
+		defer rc.Close()
+
+		var reader io.Reader = rc
+		if isGzip(key) {
+			gz, gzErr := gzip.NewReader(rc)
+			if gzErr != nil {
+				return
+			}
+			defer gz.Close()
+			reader = gz
+		}
+
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		bytesRead := offset
+
+		for scanner.Scan() {
+			bytesRead += int64(len(scanner.Bytes())) + 1
+			if !sendEntry(scanner.Text()) {
+				return
+			}
+		}
+
+		if !isGzip(key) {
+			offset = bytesRead
+		}
+	}
+
+	readBuffered := func() []string {
+		rc, err := store.GetObject(ctx, key)
+		if err != nil {
+			return nil
+		}
+		defer rc.Close()
+
+		var reader io.Reader = rc
+		if isGzip(key) {
+			gz, gzErr := gzip.NewReader(rc)
+			if gzErr != nil {
+				return nil
+			}
+			defer gz.Close()
+			reader = gz
+		}
+
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		bytesRead := int64(0)
+
+		var lines []string
+		for scanner.Scan() {
+			bytesRead += int64(len(scanner.Bytes())) + 1
+			lines = append(lines, scanner.Text())
+		}
+
+		if !isGzip(key) {
+			offset = bytesRead
+		}
+		return lines
+	}
+
+	if opts.SkipInitial {
+		objects, err := store.ListObjects(ctx, key)
+		if err == nil {
+			for _, obj := range objects {
+				if obj.Key == key {
+					offset = obj.Size
+					break
+				}
+			}
+		}
+	} else if opts.Head > 0 || opts.Tail > 0 {
+		lines := readBuffered()
+		if opts.Head > 0 {
+			if opts.Head < len(lines) {
+				lines = lines[:opts.Head]
+			}
+			for _, line := range lines {
+				if !sendEntry(line) {
+					return
+				}
+			}
+			return
+		}
+		if opts.Tail > 0 && len(lines) > opts.Tail {
+			lines = lines[len(lines)-opts.Tail:]
+		}
+		for _, line := range lines {
+			if !sendEntry(line) {
+				return
+			}
+		}
+	} else {
+		readAndStream()
+	}
+
+	if !opts.Follow {
+		return
+	}
+
+	if pollInterval < 5*time.Second {
+		pollInterval = 5 * time.Second
+	}
+
+	var lastSize int64
+	objects, err := store.ListObjects(ctx, key)
+	if err == nil {
+		for _, obj := range objects {
+			if obj.Key == key {
+				lastSize = obj.Size
+				break
+			}
+		}
+	}
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			objects, err := store.ListObjects(ctx, key)
+			if err != nil {
+				continue
+			}
+			for _, obj := range objects {
+				if obj.Key == key {
+					if obj.Size > lastSize {
+						readAndStream()
+						lastSize = obj.Size
+					}
+					break
+				}
+			}
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -132,6 +133,59 @@ func (p *Provider) ListObjects(ctx context.Context, prefix string) ([]cloudutil.
 	}
 
 	return objects, nil
+}
+
+func (p *Provider) ListHierarchical(ctx context.Context, path string) (*cloudutil.ListResult, error) {
+	result := &cloudutil.ListResult{Path: path}
+
+	prefix := path
+	if p.cfg.Prefix != "" {
+		prefix = p.cfg.Prefix + path
+	}
+
+	delimiter := "/"
+	input := &s3.ListObjectsV2Input{
+		Bucket:    aws.String(p.bucket),
+		Delimiter: aws.String(delimiter),
+	}
+	if prefix != "" {
+		input.Prefix = aws.String(prefix)
+	}
+
+	paginator := s3.NewListObjectsV2Paginator(p.client, input)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing objects: %w", err)
+		}
+
+		for _, cp := range page.CommonPrefixes {
+			dirPath := aws.ToString(cp.Prefix)
+			name := dirPath
+			if prefix != "" && strings.HasPrefix(name, prefix) {
+				name = name[len(prefix):]
+			}
+			name = strings.TrimSuffix(name, "/")
+			result.Directories = append(result.Directories, cloudutil.DirectoryEntry{
+				Name: name,
+				Path: dirPath,
+			})
+		}
+
+		for _, obj := range page.Contents {
+			key := aws.ToString(obj.Key)
+			o := cloudutil.ObjectInfo{
+				Key:          key,
+				Size:         aws.ToInt64(obj.Size),
+				LastModified: aws.ToTime(obj.LastModified),
+			}
+			if cloudutil.MatchPattern(key, p.cfg.Pattern) {
+				result.Objects = append(result.Objects, o)
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (p *Provider) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {

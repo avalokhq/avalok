@@ -172,6 +172,62 @@ func (p *Provider) listFilesRecursive(ctx context.Context, shareClient *share.Cl
 	return objects, nil
 }
 
+func (p *Provider) ListHierarchical(ctx context.Context, path string) (*cloudutil.ListResult, error) {
+	result := &cloudutil.ListResult{Path: path}
+
+	shareClient := p.serviceClient.NewShareClient(p.shareName)
+	dirPath := path
+	if p.directory != "" {
+		if path == "" {
+			dirPath = p.directory
+		} else {
+			dirPath = p.directory + "/" + strings.TrimSuffix(path, "/")
+		}
+	} else {
+		dirPath = strings.TrimSuffix(path, "/")
+	}
+
+	var dirClient *directory.Client
+	if dirPath == "" {
+		dirClient = shareClient.NewRootDirectoryClient()
+	} else {
+		dirClient = shareClient.NewDirectoryClient(dirPath)
+	}
+
+	pager := dirClient.NewListFilesAndDirectoriesPager(&directory.ListFilesAndDirectoriesOptions{})
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing directory %q: %w", dirPath, err)
+		}
+
+		for _, dir := range page.Segment.Directories {
+			name := *dir.Name
+			result.Directories = append(result.Directories, cloudutil.DirectoryEntry{
+				Name: name,
+				Path: path + name + "/",
+			})
+		}
+
+		for _, f := range page.Segment.Files {
+			key := path + *f.Name
+			var size int64
+			if f.Properties != nil && f.Properties.ContentLength != nil {
+				size = *f.Properties.ContentLength
+			}
+			obj := cloudutil.ObjectInfo{
+				Key:  key,
+				Size: size,
+			}
+			if cloudutil.MatchPattern(key, p.cfg.Pattern) {
+				result.Objects = append(result.Objects, obj)
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func (p *Provider) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {
 	filePath := key
 	if p.directory != "" {
