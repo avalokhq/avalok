@@ -16,7 +16,8 @@ import { useLayoutToggle } from '../../lib/useLayoutToggle'
 interface Props {
   resourceName: string
   resourceType: string
-  onViewObject: (key: string) => void
+  onViewObject: (key: string, currentPath: string) => void
+  initialPath?: string
 }
 
 function formatBytes(bytes: number): string {
@@ -116,10 +117,10 @@ function OverviewHeader({ overview, resourceType, onRefresh, refreshing }: {
   )
 }
 
-export default function StorageObjectsView({ resourceName, resourceType, onViewObject }: Props) {
+export default function StorageObjectsView({ resourceName, resourceType, onViewObject, initialPath }: Props) {
   const [listing, setListing] = useState<StorageListResult | null>(null)
   const [overview, setOverview] = useState<StorageOverview | null>(null)
-  const [currentPath, setCurrentPath] = useState('')
+  const [currentPath, setCurrentPath] = useState(initialPath || '')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
@@ -143,7 +144,7 @@ export default function StorageObjectsView({ resourceName, resourceType, onViewO
   }
 
   useEffect(() => {
-    loadDirectory('')
+    loadDirectory(initialPath || '')
     adminGetStorageOverview(resourceName).then(setOverview).catch(() => {})
   }, [resourceName])
 
@@ -232,7 +233,7 @@ export default function StorageObjectsView({ resourceName, resourceType, onViewO
               </Card>
             ))}
             {filteredObjs.map(obj => (
-              <Card key={obj.key} hover padding="none" className="cursor-pointer" onClick={() => onViewObject(obj.key)}>
+              <Card key={obj.key} hover padding="none" className="cursor-pointer" onClick={() => onViewObject(obj.key, currentPath)}>
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <FileText className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
@@ -260,7 +261,7 @@ export default function StorageObjectsView({ resourceName, resourceType, onViewO
               </Card>
             ))}
             {filteredObjs.map(obj => (
-              <Card key={obj.key} hover padding="md" className="cursor-pointer" onClick={() => onViewObject(obj.key)}>
+              <Card key={obj.key} hover padding="md" className="cursor-pointer" onClick={() => onViewObject(obj.key, currentPath)}>
                 <div className="flex items-center gap-2 mb-2">
                   <FileText className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
                   <span className="text-sm font-medium text-[var(--text-primary)] truncate" title={obj.key}>{obj.name}</span>

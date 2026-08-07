@@ -44,10 +44,10 @@ type View =
   | { page: 'service-environments'; workspace: Workspace; serviceName: string; serviceLabel: string }
   | { page: 'sf-console'; workspace: Workspace; serviceName: string; serviceLabel: string; environment: Environment }
   | { page: 'sf-files'; workspace: Workspace; serviceName: string; serviceLabel: string; environment: Environment; service: Service }
-  | { page: 'resource-namespaces'; resourceName: string; resourceDescription: string; resourceType: string }
+  | { page: 'resource-namespaces'; resourceName: string; resourceDescription: string; resourceType: string; storagePath?: string }
   | { page: 'resource-workloads'; resourceName: string; namespace: string }
   | { page: 'resource-console'; resourceName: string; namespace: string; kind: string; workload: string }
-  | { page: 'resource-storage-console'; resourceName: string; resourceType: string; objectKey: string }
+  | { page: 'resource-storage-console'; resourceName: string; resourceType: string; objectKey: string; storagePath?: string }
 
 function viewToHash(view: View): string {
   switch (view.page) {
@@ -469,7 +469,7 @@ export default function App() {
       crumbs.push({ label: 'Home', onClick: () => navigate({ page: 'workspaces' }) })
       crumbs.push({
         label: view.resourceName,
-        onClick: () => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType }),
+        onClick: () => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType, storagePath: view.storagePath }),
       })
       crumbs.push({ label: view.objectKey.split('/').pop() || view.objectKey })
       return crumbs
@@ -722,7 +722,8 @@ export default function App() {
             <StorageObjectsView
               resourceName={view.resourceName}
               resourceType={view.resourceType}
-              onViewObject={key => navigate({ page: 'resource-storage-console', resourceName: view.resourceName, resourceType: view.resourceType, objectKey: key })}
+              initialPath={view.storagePath}
+              onViewObject={(key, browsePath) => navigate({ page: 'resource-storage-console', resourceName: view.resourceName, resourceType: view.resourceType, objectKey: key, storagePath: browsePath })}
             />
           )}
 
@@ -754,7 +755,7 @@ export default function App() {
             <LogConsole
               streamUrl={storageObjectStreamURL(view.resourceName, view.objectKey)}
               label={view.objectKey.split('/').pop() || view.objectKey}
-              onBack={() => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType })}
+              onBack={() => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType, storagePath: view.storagePath })}
               maxLines={logBufferLines}
               resourceName={view.resourceName}
               objectKey={view.objectKey}
