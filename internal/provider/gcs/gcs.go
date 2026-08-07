@@ -118,7 +118,7 @@ func (p *Provider) ListHierarchical(ctx context.Context, path string) (*clouduti
 	result := &cloudutil.ListResult{Path: path}
 
 	prefix := path
-	if p.cfg.Prefix != "" {
+	if p.cfg.Prefix != "" && !strings.HasPrefix(path, p.cfg.Prefix) {
 		prefix = p.cfg.Prefix + path
 	}
 
