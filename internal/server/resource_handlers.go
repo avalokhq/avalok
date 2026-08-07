@@ -289,18 +289,9 @@ func (s *Server) handleTestCloudResource(w http.ResponseWriter, r *http.Request,
 	}
 	defer p.Close()
 
-	instances, err := p.ListInstances(ctx)
-	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "error",
-			"error":  fmt.Sprintf("connected but failed to list objects: %v", err),
-		})
-		return
-	}
-
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
-		"message": fmt.Sprintf("connected — %d objects found", len(instances)),
+		"message": "connected",
 	})
 }
 

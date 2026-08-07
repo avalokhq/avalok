@@ -821,7 +821,11 @@ function CredentialsPanel() {
         {creds.map(c => (
           <Card key={c.name}>
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <ProviderIcon provider={c.target_type} className="w-5 h-5" />
+                </div>
+                <div>
                 <div className="text-base text-[var(--text-primary)]">{c.name}</div>
                 <div className="text-xs text-[var(--text-muted)] mt-0.5">
                   {c.target_type}{c.description ? ` — ${c.description}` : ''}
@@ -831,6 +835,7 @@ function CredentialsPanel() {
                     {testResults[c.name].status === 'ok' ? 'Connection OK' : testResults[c.name].status === 'testing' ? 'Testing...' : testResults[c.name].error}
                   </div>
                 )}
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <Button variant="secondary" size="sm" onClick={() => handleTestClick(c)}>Test</Button>

@@ -1,12 +1,13 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Server, Box,
-  FileText, Terminal, HardDrive, Monitor, ArrowDownToLine,
+  FileText, ArrowDownToLine,
   Copy, Check, Settings, Layers, FolderTree, Save,
   Upload, Eye, EyeOff, X, ChevronLeft,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { AvalokWordmark } from '../ui/AvalokLogo'
+import ProviderIcon from '../ui/ProviderIcon'
 import { useTheme, type Theme } from '../../lib/useTheme'
 import { Sun, Moon, Monitor as MonitorIcon } from 'lucide-react'
 import type { WorkspaceConfig, ServiceDef, EnvironmentDef, TargetDef } from './types'
@@ -21,22 +22,8 @@ import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import Card from '../ui/Card'
 
-const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
-
-const KubernetesIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <img src={KUBERNETES_LOGO} alt="Kubernetes" className={className} />
-)
-
-const PROVIDER_ICONS: Record<string, React.FC<{ className?: string }>> = {
-  file: FileText,
-  docker: Box,
-  kubernetes: KubernetesIcon,
-  journalctl: Terminal,
-  ssh: Terminal,
-  containerd: Box,
-  'windows-eventlog': Monitor,
-  iis: HardDrive,
-}
+const ProviderIconWrapper = (provider: string): React.FC<{ className?: string }> =>
+  ({ className }) => <ProviderIcon provider={provider} className={className} />
 
 function update<T>(prev: T, fn: (draft: T) => void): T {
   const next = structuredClone(prev)
@@ -170,7 +157,7 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose }: {
   onClose: () => void
 }) {
   const fields = PROVIDER_FIELDS[svc.provider] ?? []
-  const Icon = PROVIDER_ICONS[svc.provider] ?? Terminal
+  const Icon = ProviderIconWrapper(svc.provider)
 
   return (
     <div className="border border-[var(--text-accent)]/40 rounded-lg overflow-hidden bg-[var(--bg-app)]">
@@ -228,7 +215,7 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose }: {
           </label>
           <div className="grid grid-cols-4 gap-1.5">
             {PROVIDERS.map(p => {
-              const PIcon = PROVIDER_ICONS[p.value] ?? Terminal
+              const PIcon = ProviderIconWrapper(p.value)
               return (
                 <button
                   key={p.value}
@@ -476,7 +463,7 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
               <div className="flex flex-wrap gap-1.5">
                 {services.map(svc => {
                   const active = target.service_names.includes(svc.name)
-                  const SvcIcon = PROVIDER_ICONS[svc.provider] ?? Terminal
+                  const SvcIcon = ProviderIconWrapper(svc.provider)
                   return (
                     <button
                       key={svc.id}
@@ -1248,7 +1235,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                           </label>
                           <div className="grid grid-cols-4 gap-1.5">
                             {PROVIDERS.map(p => {
-                              const PIcon = PROVIDER_ICONS[p.value] ?? Terminal
+                              const PIcon = ProviderIconWrapper(p.value)
                               return (
                                 <button
                                   key={p.value}
@@ -1491,7 +1478,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {config.services.map(svc => {
-                          const SvcIcon = PROVIDER_ICONS[svc.provider] ?? Terminal
+                          const SvcIcon = ProviderIconWrapper(svc.provider)
                           return (
                             <Card
                               key={svc.id}
