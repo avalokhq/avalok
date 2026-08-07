@@ -870,6 +870,28 @@ function CredentialsPanel() {
   )
 }
 
+const CREDENTIAL_TYPE_OPTIONS = [
+  { value: 'ssh', label: 'SSH' },
+  { value: 'kubernetes', label: 'Kubernetes' },
+  { value: 'winrm', label: 'WinRM' },
+  { value: 's3', label: 'S3 / S3-Compatible' },
+  { value: 'azure-storage', label: 'Azure Storage Account' },
+  { value: 'gcs', label: 'Google Cloud Storage' },
+]
+
+const CRED_AUTH_FIELDS: Record<string, StorageField[]> = {
+  s3: [
+    { key: 'region', label: 'Region', placeholder: 'us-east-1', hint: 'AWS region' },
+    { key: 'access_key_id', label: 'Access Key ID', placeholder: '', hint: 'Leave empty for default credential chain' },
+    { key: 'secret_access_key', label: 'Secret Access Key', placeholder: '', type: 'password', hint: 'Leave empty for default credential chain' },
+    { key: 'endpoint', label: 'Endpoint', placeholder: 'https://minio.example.com', hint: 'Custom endpoint for S3-compatible stores' },
+  ],
+  gcs: [
+    { key: 'credentials_json', label: 'Credentials JSON', placeholder: '', type: 'password', hint: 'Service account JSON content' },
+    { key: 'credentials_file', label: 'Credentials File', placeholder: '/path/to/sa.json', hint: 'Path to service account JSON' },
+  ],
+}
+
 function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState('')
   const [targetType, setTargetType] = useState('ssh')
@@ -877,6 +899,7 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   const [configJson, setConfigJson] = useState('{}')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [azureAuthMethod, setCredAzureAuth] = useState<AzureAuthMethod>('account-key')
 
   const [sshHost, setSshHost] = useState('')
   const [sshUser, setSshUser] = useState('')
@@ -884,6 +907,14 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   const [sshPrivateKey, setSshPrivateKey] = useState('')
   const [sshPassword, setSshPassword] = useState('')
   const [sshPassphrase, setSshPassphrase] = useState('')
+  const [cloudFields, setCloudFields] = useState<Record<string, string>>({})
+
+  const isCloudCredType = targetType === 's3' || targetType === 'azure-storage' || targetType === 'gcs'
+  const isAzureCredType = targetType === 'azure-storage'
+
+  function updateCloudField(key: string, value: string) {
+    setCloudFields(prev => ({ ...prev, [key]: value }))
+  }
 
   function buildConfig(): Record<string, unknown> {
     if (targetType === 'ssh') {
@@ -895,6 +926,16 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
       if (sshPassword) config.password = sshPassword
       if (sshPassphrase) config.passphrase = sshPassphrase
       return config
+    }
+    if (isCloudCredType) {
+      const cfg: Record<string, unknown> = {}
+      const fields = isAzureCredType
+        ? (AZURE_AUTH_FIELDS[azureAuthMethod] || [])
+        : (CRED_AUTH_FIELDS[targetType] || [])
+      for (const f of fields) {
+        if (cloudFields[f.key]) cfg[f.key] = cloudFields[f.key]
+      }
+      return cfg
     }
     return JSON.parse(configJson)
   }
@@ -920,16 +961,24 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="Profile name" required />
           </FormField>
           <FormField label="Target Type">
-            <Select value={targetType} onChange={e => setTargetType(e.target.value)}>
-              <option value="ssh">SSH</option>
-              <option value="kubernetes">Kubernetes</option>
-              <option value="winrm">WinRM</option>
+            <Select value={targetType} onChange={e => { setTargetType(e.target.value); setCloudFields({}) }}>
+              {CREDENTIAL_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </Select>
           </FormField>
         </div>
         <FormField label="Description" hint="optional">
           <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" />
         </FormField>
+
+        {isAzureCredType && (
+          <FormField label="Authentication Method">
+            <Tabs
+              tabs={AZURE_AUTH_TABS}
+              active={azureAuthMethod}
+              onChange={(id) => setCredAzureAuth(id as AzureAuthMethod)}
+            />
+          </FormField>
+        )}
 
         {targetType === 'ssh' ? (
           <>
@@ -965,6 +1014,20 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
               <Input type="password" value={sshPassword} onChange={e => setSshPassword(e.target.value)} placeholder="Password" />
             </FormField>
           </>
+        ) : isCloudCredType ? (
+          <div className="flex flex-col gap-3">
+            {(isAzureCredType ? (AZURE_AUTH_FIELDS[azureAuthMethod] || []) : (CRED_AUTH_FIELDS[targetType] || [])).map(field => (
+              <FormField key={field.key} label={field.label} required={field.required} hint={field.hint}>
+                <Input
+                  type={field.type === 'password' ? 'password' : 'text'}
+                  value={cloudFields[field.key] || ''}
+                  onChange={e => updateCloudField(field.key, e.target.value)}
+                  placeholder={field.placeholder}
+                  required={field.required}
+                />
+              </FormField>
+            ))}
+          </div>
         ) : (
           <FormField label="Configuration" required>
             <Textarea
@@ -1327,6 +1390,12 @@ const AZURE_AUTH_FIELDS: Record<AzureAuthMethod, StorageField[]> = {
   ],
 }
 
+const CRED_AUTH_KEY_SET = new Set([
+  'account_name', 'account_key', 'connection_string', 'sas_token',
+  'access_key_id', 'secret_access_key', 'endpoint',
+  'credentials_json', 'credentials_file',
+])
+
 function detectAzureAuth(config?: Record<string, unknown>): AzureAuthMethod {
   if (!config) return 'account-key'
   if (config.connection_string) return 'connection-string'
@@ -1367,6 +1436,14 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
   )
   const [description, setDescription] = useState(editing?.description || '')
   const [showInstructions, setShowInstructions] = useState(!isEdit && resourceType === 'kubernetes')
+  const [credentials, setCredentials] = useState<AdminCredential[]>([])
+  const [credentialProfile, setCredentialProfile] = useState<string>(
+    (editing?.config?.credential_profile as string) || ''
+  )
+
+  useEffect(() => {
+    adminListCredentials().then(setCredentials).catch(() => {})
+  }, [])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [testResult, setTestResult] = useState<{ status: string; error?: string; message?: string } | null>(null)
@@ -1382,9 +1459,13 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
   })
 
   const isCloudType = resourceType !== 'kubernetes'
+  const usingCredential = !!credentialProfile
+  const credTargetType = (resourceType === 'azure-blob' || resourceType === 'azure-file') ? 'azure-storage' : resourceType
+  const matchingCreds = credentials.filter(c => c.target_type === credTargetType)
 
   function allCloudFields(): StorageField[] {
     const common = STORAGE_FIELDS[resourceType] || []
+    if (usingCredential) return common
     if (isAzureType(resourceType)) {
       return [...(AZURE_AUTH_FIELDS[azureAuthMethod] || []), ...common]
     }
@@ -1394,6 +1475,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
   function buildConfig(): Record<string, unknown> {
     if (isCloudType) {
       const cfg: Record<string, unknown> = {}
+      if (credentialProfile) cfg.credential_profile = credentialProfile
       for (const field of allCloudFields()) {
         const val = storageConfig[field.key]
         if (val) {
@@ -1405,11 +1487,13 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
     }
     if (authMethod === 'kubeconfig') {
       const cfg: Record<string, unknown> = {}
+      if (credentialProfile) cfg.credential_profile = credentialProfile
       if (kubeconfigContent) cfg.kubeconfig_content = kubeconfigContent
       if (kubeconfigContext) cfg.context = kubeconfigContext
       return cfg
     }
     const cfg: Record<string, unknown> = {}
+    if (credentialProfile) cfg.credential_profile = credentialProfile
     if (apiServerUrl) cfg.api_server_url = apiServerUrl
     if (bearerToken) cfg.bearer_token = bearerToken
     if (caCert) cfg.ca_cert = caCert
@@ -1419,6 +1503,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
 
   function validateForm(): string | null {
     if (!name) return 'Name is required'
+    if (usingCredential) return null
     if (isCloudType && !isEdit) {
       for (const field of allCloudFields()) {
         if (field.required && !storageConfig[field.key]) return `${field.label} is required`
@@ -1496,7 +1581,15 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
             </Select>
           </FormField>
         )}
-        {!isCloudType && (
+        {matchingCreds.length > 0 && (
+          <FormField label="Credentials" hint={credentialProfile ? 'Auth fields from credential profile' : 'or enter inline below'}>
+            <Select value={credentialProfile} onChange={e => setCredentialProfile(e.target.value)}>
+              <option value="">Inline credentials</option>
+              {matchingCreds.map(c => <option key={c.name} value={c.name}>{c.name}{c.description ? ` — ${c.description}` : ''}</option>)}
+            </Select>
+          </FormField>
+        )}
+        {!usingCredential && !isCloudType && (
           <FormField label="Authentication Method">
             <Tabs
               tabs={[
@@ -1508,7 +1601,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
             />
           </FormField>
         )}
-        {isAzureType(resourceType) && (
+        {!usingCredential && isAzureType(resourceType) && (
           <FormField label="Authentication Method">
             <Tabs
               tabs={AZURE_AUTH_TABS}
@@ -1580,7 +1673,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
 
           {isCloudType ? (
             <div className="flex flex-col gap-3">
-              {isAzureType(resourceType) && (AZURE_AUTH_FIELDS[azureAuthMethod] || []).map(field => (
+              {!usingCredential && isAzureType(resourceType) && (AZURE_AUTH_FIELDS[azureAuthMethod] || []).map(field => (
                 <FormField key={field.key} label={field.label} required={field.required} hint={field.hint}>
                   <Input
                     type={field.type === 'password' ? 'password' : 'text'}
@@ -1591,7 +1684,7 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
                   />
                 </FormField>
               ))}
-              {(STORAGE_FIELDS[resourceType] || []).map(field => (
+              {(STORAGE_FIELDS[resourceType] || []).filter(f => !usingCredential || !CRED_AUTH_KEY_SET.has(f.key)).map(field => (
                 field.type === 'toggle' ? (
                   <div key={field.key} className="flex items-center justify-between py-1">
                     <div>
@@ -1612,6 +1705,10 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
                   </FormField>
                 )
               ))}
+            </div>
+          ) : usingCredential ? (
+            <div className="text-xs text-[var(--text-secondary)] py-2">
+              Authentication from credential profile <span className="font-medium text-[var(--text-primary)]">{credentialProfile}</span>
             </div>
           ) : authMethod === 'kubeconfig' ? (
             <>
