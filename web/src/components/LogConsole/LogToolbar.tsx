@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import TimeFilter, { type TimeFilterValue } from './TimeFilter'
+import type { LogViewMode } from '../../lib/api'
 
 interface Props {
   search: string
@@ -32,6 +33,9 @@ interface Props {
   onToggleWrap: () => void
   timeFilter?: TimeFilterValue
   onTimeFilterChange?: (v: TimeFilterValue) => void
+  viewMode?: LogViewMode
+  onViewModeChange?: (mode: LogViewMode) => void
+  hasFileMode?: boolean
 }
 
 const LEVELS = [
@@ -47,10 +51,20 @@ export default function LogToolbar({
   search, onSearchChange, paused, onTogglePause, onClear, onScrollToBottom,
   lineCount, totalCount, follow, onToggleFollow, levelFilter, onToggleLevel,
   fontSize, onFontSizeChange, wrap, onToggleWrap, timeFilter, onTimeFilterChange,
+  viewMode, onViewModeChange, hasFileMode,
 }: Props) {
   const sizeIdx = FONT_SIZES.indexOf(fontSize)
   const canDecrease = sizeIdx > 0
   const canIncrease = sizeIdx < FONT_SIZES.length - 1
+
+  const modes: { key: LogViewMode; label: string; title: string }[] = []
+  if (onViewModeChange) {
+    modes.push({ key: 'stream', label: 'Stream', title: 'Stream all logs with live follow' })
+    if (hasFileMode) {
+      modes.push({ key: 'file', label: 'Load File', title: 'Load file content via HTTP (faster for large static files)' })
+    }
+    modes.push({ key: 'live', label: 'Live', title: 'Skip all history, show only new lines' })
+  }
 
   return (
     <div className="flex items-center gap-2 px-3 h-10 shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
@@ -96,6 +110,30 @@ export default function LogToolbar({
           )
         })}
       </div>
+
+      {/* View mode buttons */}
+      {modes.length > 0 && (
+        <div className="flex items-center gap-0.5 border-l border-[var(--border-default)] pl-2 ml-1">
+          {modes.map(m => {
+            const active = viewMode === m.key
+            return (
+              <button
+                key={m.key}
+                onClick={() => onViewModeChange!(m.key)}
+                className={cn(
+                  'px-2 py-0.5 rounded text-xs font-medium transition-colors',
+                  active
+                    ? 'bg-accent-500/20 text-accent-400'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                )}
+                title={m.title}
+              >
+                {m.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {/* Time filter */}
       {onTimeFilterChange && (

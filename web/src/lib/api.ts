@@ -290,6 +290,17 @@ export interface StorageObject {
   last_modified: string
 }
 
+export interface StorageDirectory {
+  name: string
+  path: string
+}
+
+export interface StorageListResult {
+  path: string
+  directories: StorageDirectory[]
+  objects: StorageObject[]
+}
+
 export interface StorageOverview {
   name: string
   type: string
@@ -302,7 +313,12 @@ export async function adminGetStorageOverview(name: string): Promise<StorageOver
 }
 
 export async function adminListStorageObjects(name: string, prefix?: string): Promise<StorageObject[]> {
-  const params = prefix ? `?prefix=${encodeURIComponent(prefix)}` : ''
+  const params = prefix ? `?prefix=${encodeURIComponent(prefix)}&flat=true` : '?flat=true'
+  return fetchAPI(`/admin/resources/${name}/storage/objects${params}`)
+}
+
+export async function adminListStorageDirectory(name: string, path?: string): Promise<StorageListResult> {
+  const params = path ? `?path=${encodeURIComponent(path)}` : ''
   return fetchAPI(`/admin/resources/${name}/storage/objects${params}`)
 }
 
@@ -310,6 +326,18 @@ export function storageObjectStreamURL(name: string, key: string): string {
   const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${window.location.host}/api/admin/resources/${name}/storage/stream/${encodeURIComponent(key)}?token=${token}`
+}
+
+export type LogViewMode = 'stream' | 'file' | 'live'
+
+export function appendLiveMode(url: string, mode: LogViewMode): string {
+  if (mode === 'live') return `${url}&mode=live`
+  return url
+}
+
+export function storageObjectContentURL(name: string, key: string): string {
+  const token = getToken()
+  return `/api/admin/resources/${name}/storage/content/${encodeURIComponent(key)}?token=${token}`
 }
 
 // --- Admin: Settings ---
