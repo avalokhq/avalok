@@ -803,6 +803,22 @@ const CRED_AUTH_FIELDS: Record<string, StorageField[]> = {
     { key: 'credentials_json', label: 'Credentials JSON', placeholder: '', type: 'password', hint: 'Service account JSON content' },
     { key: 'credentials_file', label: 'Credentials File', placeholder: '/path/to/sa.json', hint: 'Path to service account JSON' },
   ],
+  winrm: [
+    { key: 'user', label: 'Username', placeholder: 'Administrator', required: true },
+    { key: 'password', label: 'Password', placeholder: '', type: 'password', required: true },
+    { key: 'port', label: 'Port', placeholder: '5986', hint: '5985 for HTTP, 5986 for HTTPS' },
+    { key: 'use_https', label: 'Use HTTPS', placeholder: '', type: 'toggle' },
+    { key: 'insecure', label: 'Skip TLS Verification', placeholder: '', hint: 'For self-signed certificates', type: 'toggle' },
+    { key: 'host', label: 'Host', placeholder: '10.0.2.100', hint: 'Optional — set only if this credential is for a single server' },
+  ],
+  kubernetes: [
+    { key: 'kubeconfig_content', label: 'Kubeconfig Content', placeholder: 'Paste kubeconfig YAML', hint: 'Full kubeconfig file content' },
+    { key: 'context', label: 'Context', placeholder: 'my-cluster-context', hint: 'Kubeconfig context to use' },
+    { key: 'namespace', label: 'Namespace', placeholder: 'default', hint: 'Default namespace' },
+    { key: 'api_server_url', label: 'API Server URL', placeholder: 'https://k8s.example.com:6443', hint: 'Direct API server URL (alternative to kubeconfig)' },
+    { key: 'bearer_token', label: 'Bearer Token', placeholder: '', type: 'password', hint: 'Service account token' },
+    { key: 'ca_cert', label: 'CA Certificate', placeholder: '/path/to/ca.crt', hint: 'CA cert for TLS verification' },
+  ],
 }
 
 function CreateCredentialForm({ onDone }: { onDone: () => void }) {
@@ -822,7 +838,7 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   const [sshPassphrase, setSshPassphrase] = useState('')
   const [cloudFields, setCloudFields] = useState<Record<string, string>>({})
 
-  const isCloudCredType = targetType === 's3' || targetType === 'azure-storage' || targetType === 'gcs'
+  const hasStructuredFields = targetType in CRED_AUTH_FIELDS || targetType === 'azure-storage'
   const isAzureCredType = targetType === 'azure-storage'
 
   function updateCloudField(key: string, value: string) {
@@ -840,13 +856,19 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
       if (sshPassphrase) config.passphrase = sshPassphrase
       return config
     }
-    if (isCloudCredType) {
+    if (hasStructuredFields) {
       const cfg: Record<string, unknown> = {}
       const fields = isAzureCredType
         ? (AZURE_AUTH_FIELDS[azureAuthMethod] || [])
         : (CRED_AUTH_FIELDS[targetType] || [])
       for (const f of fields) {
-        if (cloudFields[f.key]) cfg[f.key] = cloudFields[f.key]
+        const v = cloudFields[f.key]
+        if (v === undefined || v === '') continue
+        if (f.type === 'toggle') {
+          cfg[f.key] = v === 'true'
+        } else {
+          cfg[f.key] = v
+        }
       }
       return cfg
     }
@@ -874,9 +896,14 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="Profile name" required />
           </FormField>
           <FormField label="Target Type">
-            <Select value={targetType} onChange={e => { setTargetType(e.target.value); setCloudFields({}) }}>
-              {CREDENTIAL_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </Select>
+            <div className="relative">
+              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                <ProviderIcon provider={targetType} className="w-4 h-4" />
+              </div>
+              <Select value={targetType} onChange={e => { setTargetType(e.target.value); setCloudFields({}) }} className="pl-8">
+                {CREDENTIAL_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </div>
           </FormField>
         </div>
         <FormField label="Description" hint="optional">
@@ -927,17 +954,33 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
               <Input type="password" value={sshPassword} onChange={e => setSshPassword(e.target.value)} placeholder="Password" />
             </FormField>
           </>
-        ) : isCloudCredType ? (
+        ) : hasStructuredFields ? (
           <div className="flex flex-col gap-3">
             {(isAzureCredType ? (AZURE_AUTH_FIELDS[azureAuthMethod] || []) : (CRED_AUTH_FIELDS[targetType] || [])).map(field => (
               <FormField key={field.key} label={field.label} required={field.required} hint={field.hint}>
-                <Input
-                  type={field.type === 'password' ? 'password' : 'text'}
-                  value={cloudFields[field.key] || ''}
-                  onChange={e => updateCloudField(field.key, e.target.value)}
-                  placeholder={field.placeholder}
-                  required={field.required}
-                />
+                {field.type === 'toggle' ? (
+                  <Select value={cloudFields[field.key] || ''} onChange={e => updateCloudField(field.key, e.target.value)}>
+                    <option value="">Default</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </Select>
+                ) : field.key === 'kubeconfig_content' ? (
+                  <Textarea
+                    value={cloudFields[field.key] || ''}
+                    onChange={e => updateCloudField(field.key, e.target.value)}
+                    className="h-36 font-mono"
+                    placeholder={field.placeholder}
+                    spellCheck={false}
+                  />
+                ) : (
+                  <Input
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    value={cloudFields[field.key] || ''}
+                    onChange={e => updateCloudField(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                    required={field.required}
+                  />
+                )}
               </FormField>
             ))}
           </div>
