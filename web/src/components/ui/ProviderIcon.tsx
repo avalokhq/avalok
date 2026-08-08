@@ -46,3 +46,24 @@ export default function ProviderIcon({ provider, className }: Props) {
 export function resourceIconUrl(type: string): string | undefined {
   return IMAGE_ICONS[type]?.src
 }
+
+const DISPLAY_NAMES: Record<string, string> = {
+  docker: 'Docker',
+  kubernetes: 'Kubernetes',
+  containerd: 'Containerd',
+  s3: 'S3',
+  'azure-blob': 'Azure Blob',
+  'azure-file': 'Azure File',
+  'azure-storage': 'Azure Storage',
+  gcs: 'GCS',
+  winrm: 'WinRM',
+  'windows-eventlog': 'Windows Event Log',
+  iis: 'IIS',
+  file: 'File',
+  ssh: 'SSH',
+  journalctl: 'Journalctl',
+}
+
+export function providerDisplayName(provider: string): string {
+  return DISPLAY_NAMES[provider] || provider
+}

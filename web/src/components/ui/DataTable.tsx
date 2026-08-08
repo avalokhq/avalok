@@ -4,6 +4,7 @@ interface Column<T> {
   key: string
   header: string
   className?: string
+  align?: 'left' | 'right' | 'center'
   render: (row: T, index: number) => React.ReactNode
 }
 
@@ -22,7 +23,11 @@ export default function DataTable<T>({ columns, data, keyFn, onRowClick, classNa
         <thead>
           <tr className="bg-[var(--bg-elevated)]">
             {columns.map(col => (
-              <th key={col.key} className={cn('text-left px-4 py-2.5 text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider', col.className)}>
+              <th key={col.key} className={cn(
+                'px-4 py-2.5 text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider',
+                col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left',
+                col.className,
+              )}>
                 {col.header}
               </th>
             ))}
@@ -39,7 +44,11 @@ export default function DataTable<T>({ columns, data, keyFn, onRowClick, classNa
               )}
             >
               {columns.map(col => (
-                <td key={col.key} className={cn('px-4 py-3', col.className)}>
+                <td key={col.key} className={cn(
+                  'px-4 py-3',
+                  col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
+                  col.className,
+                )}>
                   {col.render(row, i)}
                 </td>
               ))}
