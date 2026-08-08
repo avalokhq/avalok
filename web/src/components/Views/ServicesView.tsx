@@ -3,7 +3,7 @@ import { Play, RefreshCw, FolderOpen } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { listServices, checkService } from '../../lib/api'
 import type { Workspace, Environment, Service } from '../../lib/types'
-import ProviderIcon from '../ui/ProviderIcon'
+import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
 import SourceDot from '../ui/SourceDot'
 import Badge, { providerVariant } from '../ui/Badge'
 import LayoutToggle from '../ui/LayoutToggle'
@@ -103,11 +103,11 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
               {
                 key: 'provider',
                 header: 'Provider',
-                className: 'w-32',
+                align: 'right' as const,
                 render: (svc) => (
                   <Badge variant={providerVariant(svc.provider)}>
                     <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-                    {svc.provider}
+                    {providerDisplayName(svc.provider)}
                   </Badge>
                 ),
               },
@@ -151,7 +151,7 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
                     <SourceDot name={id} size="md" />
                     <Badge variant={providerVariant(svc.provider)} className="text-[10px]">
                       <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-                      {svc.provider}
+                      {providerDisplayName(svc.provider)}
                     </Badge>
                     <div className="ml-auto">
                       <IconButton onClick={(e) => handleCheck(svc.name, e)} title="Check connection">
