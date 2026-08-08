@@ -22,13 +22,17 @@ No flags are accepted.
 The command prints a sorted list of all registered provider names along with a count:
 
 ```
-Available providers (10):
+Available providers (14):
+  - azure-blob
+  - azure-file
   - containerd
   - docker
   - file
+  - gcs
   - iis
   - journalctl
   - kubernetes
+  - s3
   - self
   - ssh
   - windowseventlog
@@ -39,12 +43,16 @@ Available providers (10):
 
 | Provider | Description |
 |----------|-------------|
+| `azure-blob` | Logs from Azure Blob Storage containers |
+| `azure-file` | Logs from Azure File Shares |
 | `containerd` | Logs from containerd-managed containers |
 | `docker` | Logs from Docker containers via the Docker API |
 | `file` | Tail log files on disk |
+| `gcs` | Logs from Google Cloud Storage buckets |
 | `iis` | IIS (Internet Information Services) web server logs on Windows |
 | `journalctl` | Systemd journal logs on Linux via `journalctl` |
 | `kubernetes` | Logs from Kubernetes pods via the Kubernetes API |
+| `s3` | Logs from AWS S3 or S3-compatible storage |
 | `self` | Avalok's own internal logs |
 | `ssh` | Logs from remote hosts over SSH (wraps other providers) |
 | `windowseventlog` | Windows Event Log entries |

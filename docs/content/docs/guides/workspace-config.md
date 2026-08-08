@@ -43,7 +43,7 @@ settings:
 | `description` | Shown in the UI alongside the workspace name |
 | `services` | What to monitor -- provider type and provider-specific config |
 | `environments` | Where to monitor -- connection targets that run the services |
-| `settings` | Optional -- hierarchy template, SSH timeout, log buffer size |
+| `settings` | Optional -- hierarchy template, SSH timeout |
 
 ---
 

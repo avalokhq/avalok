@@ -13,7 +13,7 @@ Avalok occupies a unique position in the logging tool landscape. It is not a log
 
 | Tool | Category | Approach |
 |---|---|---|
-| **Avalok** | Log access broker | Reads logs in-place from 10 providers; zero infrastructure |
+| **Avalok** | Log access broker | Reads logs in-place from 14 providers; zero infrastructure |
 | **Kubetail** | Kubernetes log tailing | Tails K8s pod logs |
 | **Stern** | Kubernetes log tailing | Tails K8s pod logs with regex filtering |
 | **Logdy** | Local log viewer | Web UI for local log files and stdin |
@@ -39,6 +39,7 @@ Avalok occupies a unique position in the logging tool landscape. It is not a log
 | WinRM (remote Windows) | Yes | -- | -- | -- | -- | -- |
 | IIS logs | Yes | -- | -- | -- | -- | -- |
 | Containerd | Yes | -- | -- | -- | Agent | -- |
+| Cloud storage (S3/Azure/GCS) | Yes | -- | -- | -- | -- | -- |
 | **Interface** | | | | | | |
 | Web UI | Yes | -- | -- | Yes | Grafana | Yes |
 | CLI | Yes | Yes | Yes | Yes | LogCLI | -- |
@@ -68,7 +69,7 @@ Avalok occupies a unique position in the logging tool landscape. It is not a log
 
 **Where Avalok adds value:**
 
-- Avalok supports 10 log providers beyond Kubernetes -- Docker, SSH, file, journalctl, WinRM, Windows Event Log, IIS, containerd, and its own self-logs
+- Avalok supports 14 log providers beyond Kubernetes -- Docker, SSH, file, journalctl, WinRM, Windows Event Log, IIS, containerd, S3, Azure Blob, Azure File, GCS, and its own self-logs
 - Web UI with real-time streaming, search, and file browsing
 - Multi-user access with RBAC and credential management
 - Workspace-based organization across environments
@@ -169,7 +170,7 @@ The ELK Stack is the original open-source log aggregation pipeline. Logstash col
 
 **Where Avalok adds value:**
 
-- Avalok supports 10 providers beyond Docker -- Kubernetes, SSH, file, journalctl, WinRM, Windows Event Log, IIS, containerd
+- Avalok supports 14 providers beyond Docker -- Kubernetes, SSH, file, journalctl, WinRM, Windows Event Log, IIS, containerd, S3, Azure Blob, Azure File, GCS
 - Multi-host support -- access logs from multiple servers through one interface
 - RBAC and multi-user access control
 - File browser for non-streaming log files

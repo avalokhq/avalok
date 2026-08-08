@@ -1,7 +1,7 @@
 ---
 weight: 440
 title: "Credential Management"
-description: "Managed credentials for Kubernetes, SSH, and WinRM targets."
+description: "Managed credentials for Kubernetes, SSH, WinRM, and cloud storage targets."
 icon: "key"
 ---
 
@@ -14,6 +14,9 @@ Avalok Server stores and manages credentials in PostgreSQL, allowing teams to sh
 | **kubernetes** | Kubeconfig data, bearer tokens, or certificate-based auth | Connecting to Kubernetes clusters |
 | **ssh** | SSH keys, passwords, or agent forwarding configuration | Connecting to Linux/Unix hosts |
 | **winrm** | Username/password or certificate-based auth | Connecting to Windows hosts |
+| **s3** | AWS access keys, region, and optional custom endpoint | Connecting to S3 or S3-compatible storage |
+| **azure-storage** | Account key, connection string, SAS token, or managed identity | Connecting to Azure Blob Storage or Azure File Shares |
+| **gcs** | Service account credentials JSON or credentials file path | Connecting to Google Cloud Storage |
 
 ## Creating Credentials
 
@@ -68,6 +71,118 @@ Authorization: Bearer <token>
 }
 ```
 
+### S3 Credential
+
+```json
+{
+  "name": "aws-prod",
+  "target_type": "s3",
+  "config": {
+    "region": "us-east-1",
+    "access_key_id": "AKIA...",
+    "secret_access_key": "..."
+  }
+}
+```
+
+For S3-compatible storage (MinIO, Backblaze, etc.), add the `endpoint` field:
+
+```json
+{
+  "name": "minio-logs",
+  "target_type": "s3",
+  "config": {
+    "endpoint": "https://minio.internal:9000",
+    "access_key_id": "minioadmin",
+    "secret_access_key": "minioadmin"
+  }
+}
+```
+
+### Azure Storage Credential
+
+A single `azure-storage` credential type is used for both Azure Blob Storage and Azure File Share resources. Four authentication methods are supported:
+
+**Account Key:**
+
+```json
+{
+  "name": "azure-storage-prod",
+  "target_type": "azure-storage",
+  "config": {
+    "auth_method": "account-key",
+    "account_name": "mystorageaccount",
+    "account_key": "..."
+  }
+}
+```
+
+**Connection String:**
+
+```json
+{
+  "name": "azure-storage-connstr",
+  "target_type": "azure-storage",
+  "config": {
+    "auth_method": "connection-string",
+    "connection_string": "DefaultEndpointsProtocol=https;AccountName=..."
+  }
+}
+```
+
+**SAS Token:**
+
+```json
+{
+  "name": "azure-storage-sas",
+  "target_type": "azure-storage",
+  "config": {
+    "auth_method": "sas-token",
+    "account_name": "mystorageaccount",
+    "sas_token": "sv=2021-06-08&ss=b&..."
+  }
+}
+```
+
+**Managed Identity:**
+
+```json
+{
+  "name": "azure-storage-mi",
+  "target_type": "azure-storage",
+  "config": {
+    "auth_method": "managed-identity",
+    "account_name": "mystorageaccount"
+  }
+}
+```
+
+Managed Identity uses `DefaultAzureCredential` and works automatically on Azure VMs with an assigned identity.
+
+### GCS Credential
+
+```json
+{
+  "name": "gcs-prod",
+  "target_type": "gcs",
+  "config": {
+    "credentials_json": "{\"type\":\"service_account\",...}"
+  }
+}
+```
+
+Alternatively, reference a credentials file on the server:
+
+```json
+{
+  "name": "gcs-prod-file",
+  "target_type": "gcs",
+  "config": {
+    "credentials_file": "/etc/avalok/gcs-key.json"
+  }
+}
+```
+
 ## Updating Credentials
 
 ```
@@ -84,6 +199,8 @@ Send the full updated credential object. Fields not included are cleared.
 DELETE /api/admin/credentials/{name}
 Authorization: Bearer <token>
 ```
+
+If the credential is referenced by one or more resources, the delete request will fail with a `409 Conflict` response listing the dependent resources. Remove or reassign the resources first, or use `?force=true` to delete anyway.
 
 ## Using Credentials in Workspaces
 

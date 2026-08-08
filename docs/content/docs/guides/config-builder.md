@@ -29,7 +29,7 @@ This starts a local server on port 9091 and opens the config builder in your def
 
 ### Server Mode
 
-In server mode, the config builder is integrated into the admin UI. Navigate to **Admin > Workspaces > Create** to open it. Workspaces created in server mode are saved directly to the database.
+In server mode, the config builder is integrated into the admin UI. Navigate to **Workspaces > Create** to open it. Workspaces created in server mode are saved directly to the database.
 
 ---
 
@@ -131,7 +131,7 @@ Instead of entering raw credentials (SSH keys, passwords), you can select from c
 
 ### Resource Import
 
-In server mode, you can import resources (Kubernetes clusters) that have been configured under **Admin > Resources**. The builder can auto-discover namespaces, deployments, and services from connected Kubernetes clusters and generate service definitions from them.
+In server mode, you can import resources (Kubernetes clusters) that have been configured under **Resources**. The builder can auto-discover namespaces, deployments, and services from connected Kubernetes clusters and generate service definitions from them.
 
 ---
 
@@ -159,7 +159,7 @@ avalok create config -o production.yaml
 
 ### Team Workflow (Server Mode)
 
-1. Admin opens **Admin > Workspaces > Create**
+1. Admin opens **Workspaces > Create**
 2. Builds the workspace visually
 3. Selects credential profiles for SSH and Kubernetes targets
 4. Clicks **Save** to persist the workspace to the database

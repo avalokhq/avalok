@@ -176,72 +176,31 @@ The generated `docker-compose.yml` includes two services:
 
 | Service | Image | Description |
 |---------|-------|-------------|
-| `avalok` | Built from `deploy/Dockerfile` | The avalok server |
+| `avalok` | `ghcr.io/avalokhq/avalok:latest` | The avalok server |
 | `postgres` | `postgres:17-alpine` | PostgreSQL database |
 
 Key details:
 
-- **Port mapping**: `9090:9090` for the avalok web UI and API
+- **Host networking**: the avalok container uses `network_mode: host` so it can reach SSH targets, VPN-connected networks, and internal subnets directly
+- **Auto-generated JWT secret**: `avalok server deploy` generates a random secret automatically
+- **Auto-admin**: on first start, an admin account is created and credentials are printed in the container logs
 - **Volume**: `pgdata` for persistent PostgreSQL data
 - **Health check**: PostgreSQL includes a health check (`pg_isready`) with 5-second intervals
-- **Dependency**: The avalok service waits for PostgreSQL to be healthy before starting
-- **Restart policy**: `unless-stopped` for the avalok service
 
 ### Example
 
 ```bash
-# Generate the file
+# Generate the file (JWT secret is auto-generated)
 avalok server deploy
-
-# Edit the generated file and set your secrets
-# (at minimum, change AVALOK_JWT_SECRET)
 
 # Start the services
 docker compose up -d
 
-# Initialize the admin account
-docker compose exec avalok avalok server init
+# Get the auto-generated admin credentials
+docker compose logs avalok | grep -A 3 "ADMIN ACCOUNT CREATED"
 ```
 
-### Generated docker-compose.yml
-
-```yaml
-services:
-  avalok:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-    ports:
-      - "9090:9090"
-    environment:
-      AVALOK_DATABASE_URL: postgres://avalok:avalok@postgres:5432/avalok?sslmode=disable
-      AVALOK_JWT_SECRET: change-me-to-a-random-secret-at-least-32-chars
-      AVALOK_BIND_ADDR: "0.0.0.0"
-      AVALOK_PORT: "9090"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: avalok
-      POSTGRES_PASSWORD: avalok
-      POSTGRES_DB: avalok
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U avalok"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-volumes:
-  pgdata:
-```
-
-You can mount credential files into the avalok container by uncommenting the `volumes` section:
+You can mount credential files into the avalok container by adding a `volumes` section:
 
 ```yaml
 volumes:
@@ -362,39 +321,26 @@ sudo journalctl -u avalok -n 20
 avalok server deploy
 ```
 
-### 2. Set your secrets
+The JWT secret is generated automatically.
 
-Edit `docker-compose.yml` and replace the placeholder values:
-
-```bash
-# Generate a secure JWT secret
-openssl rand -hex 32
-```
-
-Set `AVALOK_JWT_SECRET` to the generated value. Optionally change `POSTGRES_PASSWORD` (update both the `postgres` service and the connection string in `AVALOK_DATABASE_URL`).
-
-### 3. Start the services
+### 2. Start the services
 
 ```bash
 docker compose up -d
 ```
 
-### 4. Initialize the admin account
+### 3. Get the admin credentials
+
+On first start, an admin account is created automatically. Retrieve the credentials from the logs:
 
 ```bash
-docker compose exec avalok avalok server init
+docker compose logs avalok | grep -A 3 "ADMIN ACCOUNT CREATED"
 ```
+
+### 4. Access the web UI
+
+Open `http://your-server:9090` in your browser and log in with the generated admin credentials. Change the admin password after your first login.
 
 ### 5. Import workspaces
 
-Copy your workspace YAML files into the container or mount them as volumes, then restart with:
-
-```bash
-docker compose exec avalok avalok server start production.yaml
-```
-
-Or manage workspaces through the web UI after logging in as admin.
-
-### 6. Access the web UI
-
-Open `http://your-server:9090` in your browser and log in with the admin credentials you created.
+Manage workspaces through the web UI, or mount YAML files as volumes and restart the container.

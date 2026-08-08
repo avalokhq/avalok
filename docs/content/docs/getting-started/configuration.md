@@ -93,6 +93,10 @@ services:
 | `winrm` | Windows Remote Management command execution. |
 | `windowseventlog` | Windows Event Log entries. |
 | `iis` | IIS web server logs. |
+| `s3` | AWS S3 or S3-compatible storage (MinIO, Backblaze, etc.). |
+| `azure-blob` | Azure Blob Storage container logs. |
+| `azure-file` | Azure File Share logs. |
+| `gcs` | Google Cloud Storage bucket logs. |
 | `self` | Avalok's own internal logs. |
 
 ---

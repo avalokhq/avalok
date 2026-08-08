@@ -80,31 +80,7 @@ This creates a `docker-compose.yml` in the current directory with two services:
 - **avalok** -- the Avalok server on port 9090
 - **postgres** -- PostgreSQL 17 for persistent storage
 
-### Configure secrets
-
-Edit `docker-compose.yml` and set secure values:
-
-```yaml
-services:
-  avalok:
-    environment:
-      AVALOK_DATABASE_URL: postgres://avalok:YOUR_DB_PASSWORD@postgres:5432/avalok?sslmode=disable
-      AVALOK_JWT_SECRET: "your-random-secret-at-least-32-characters"
-
-  postgres:
-    environment:
-      POSTGRES_PASSWORD: YOUR_DB_PASSWORD
-```
-
-{{< alert context="warning" >}}
-The generated `docker-compose.yml` contains placeholder secrets. Always change `AVALOK_JWT_SECRET` and `POSTGRES_PASSWORD` before running in production.
-{{< /alert >}}
-
-Generate a random secret:
-
-```bash
-openssl rand -hex 32
-```
+The `deploy` command auto-generates a random JWT secret. Optionally change the database password in the generated file.
 
 ### Mount credentials (optional)
 
@@ -124,33 +100,15 @@ services:
 docker compose up -d
 ```
 
-### Initialize the admin account
+### Get the admin credentials
+
+On first start, the server runs database migrations and creates an admin account automatically. The credentials are printed in the container logs:
 
 ```bash
-docker compose exec avalok avalok server init
+docker compose logs avalok | grep -A 3 "ADMIN ACCOUNT CREATED"
 ```
 
-You'll be prompted for:
-
-- Admin username
-- Admin email (optional)
-- Admin password (minimum 8 characters)
-
-```
-Running migrations...
-Migrations complete.
-
-Admin username: admin
-Admin email (optional): admin@example.com
-Admin password:
-
-Admin account created: admin (role: admin)
-
-Server initialized. Start with:
-  avalok server start
-```
-
-The init command runs database migrations automatically, so the schema is ready.
+The credentials are also saved to `/var/log/avalok/admin-credentials.txt` inside the container (auto-deleted after 24 hours).
 
 ### Verify
 
@@ -220,12 +178,6 @@ bind_addr: "0.0.0.0"
 port: 9090
 ```
 
-### Initialize
-
-```bash
-avalok server init
-```
-
 ### Start the server
 
 ```bash
@@ -238,6 +190,8 @@ avalok server start --config server.yaml
 # With workspace YAML files imported at startup
 avalok server start --config server.yaml workspace1.yaml workspace2.yaml
 ```
+
+On first start, an admin account is created automatically and the credentials are printed to stdout and saved to `/var/log/avalok/admin-credentials.txt` (auto-deleted after 24 hours).
 
 ### Run as a systemd service
 
@@ -351,19 +305,22 @@ Users can self-register (status: `pending`) and an admin or manager approves the
 
 ### Set Up Credential Profiles
 
-Credential profiles store connection details (SSH keys, kubeconfigs, passwords) centrally. Workspaces reference profiles by name instead of embedding credentials in YAML.
+Credential profiles store connection details centrally. Workspaces and resources reference profiles by name instead of embedding credentials.
 
 Navigate to **Admin > Credentials** to create profiles:
 
 - **SSH profile** -- hostname, username, private key, passphrase
 - **Kubernetes profile** -- kubeconfig content, context, namespace
 - **WinRM profile** -- hostname, username, password, HTTPS settings
+- **S3 profile** -- access key, secret key, region, optional custom endpoint
+- **Azure Storage profile** -- account key, connection string, SAS token, or managed identity
+- **GCS profile** -- service account credentials JSON or file path
 
 ### Import Workspaces
 
 There are three ways to add workspaces:
 
-1. **Config Builder UI** -- navigate to **Admin > Workspaces > Create** to open the visual config builder
+1. **Config Builder UI** -- navigate to **Workspaces** in the sidebar and click **Create** to open the visual config builder
 2. **YAML import** -- use the Admin API to POST workspace YAML
 3. **Startup import** -- pass YAML files when starting the server:
 
@@ -380,6 +337,61 @@ Scope paths use the same format as serve mode:
 - `my-platform` -- access to all environments and services in the workspace
 - `my-platform/production` -- access to all services in the production environment
 - `my-platform/production/api` -- access to only the API service in production
+
+### Set Up Cloud Storage Resources
+
+In addition to Kubernetes resources, Avalok supports cloud storage resources for browsing and streaming log files from object storage. Navigate to **Resources** in the sidebar and click **Create**, then select the resource type:
+
+- **S3 / S3-Compatible** -- bucket, prefix, region, optional custom endpoint
+- **Azure Blob Storage** -- container, prefix
+- **Azure File Share** -- share name, directory
+- **Google Cloud Storage** -- bucket, prefix, project ID
+
+Each cloud storage resource can reference a credential profile for authentication. See [Resources]({{< relref "../server/resources" >}}) and [Credential Management]({{< relref "../server/credentials" >}}) for details.
+
+---
+
+## Web UI Features
+
+### Navigation
+
+The admin panel uses sidebar navigation with dedicated manage pages for each entity type:
+
+- **Dashboard** -- unified table of all workspaces, environments, services, and resources with stats
+- **Workspaces** -- create, edit, and delete workspace configurations
+- **Resources** -- manage Kubernetes clusters and cloud storage connections
+- **Services** -- manage standalone service definitions
+- **Admin** -- user management, credentials, and server settings
+
+### Command Palette
+
+Press **Ctrl+K** (or **Cmd+K** on Mac) to open the command palette. It provides fuzzy search across:
+
+- All entities (workspaces, environments, services, resources, users)
+- Admin pages and sections
+- Individual settings (selecting a setting navigates directly to it and highlights it)
+
+Use arrow keys to navigate results and Enter to select.
+
+### Log Viewer
+
+The log viewer supports three viewing modes, selectable from the toolbar:
+
+| Mode | Description |
+|------|-------------|
+| **Stream** | Real-time WebSocket streaming with tail history (default) |
+| **Load File** | HTTP-based fetch for large static log files -- faster than WebSocket for complete files |
+| **Live** | WebSocket streaming that skips all history and shows only new lines |
+
+The toolbar also includes a **Wrap** toggle to switch between word-wrapped and horizontally-scrolling log lines.
+
+### Storage Browser
+
+Cloud storage resources include a built-in storage browser. Navigate to a cloud storage resource to see a hierarchical folder tree. Click folders to navigate into them, click files to stream their contents in the log viewer. The back button returns you to the last folder you were in.
+
+### Merge View
+
+When viewing logs from multiple sessions, use the merge view layout to combine streams into a single interleaved view. Individual sessions can be removed from the merged view by clicking the close button on their tab.
 
 ---
 
@@ -429,7 +441,8 @@ Environment variables override config file values.
 
 | Command | Description |
 |---|---|
-| `avalok server start` | Start the server |
-| `avalok server init` | Run migrations and create admin account |
+| `avalok server start` | Start the server (auto-creates admin on first run) |
+| `avalok server init` | Run migrations and create admin account interactively |
 | `avalok server migrate` | Run database migrations only |
-| `avalok server deploy` | Generate `docker-compose.yml` |
+| `avalok server deploy` | Generate `docker-compose.yml` with auto-generated JWT secret |
+| `avalok server install` | Interactive wizard to set up systemd service and PostgreSQL |

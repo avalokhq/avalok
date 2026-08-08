@@ -5,7 +5,7 @@ description: "Unified log streaming across your entire infrastructure."
 
 # Avalok Documentation
 
-Avalok is an open-source, unified log streaming tool that lets you view logs from Docker, Kubernetes, SSH, journalctl, files, containerd, WinRM, Windows Event Log, and IIS — all from a single interface.
+Avalok is an open-source, unified log streaming tool that lets you view logs from Docker, Kubernetes, SSH, journalctl, files, containerd, WinRM, Windows Event Log, IIS, and cloud storage (S3, Azure Blob, Azure File, GCS) — all from a single interface.
 
 ## Two Ways to Run
 
@@ -22,7 +22,7 @@ Avalok is an open-source, unified log streaming tool that lets you view logs fro
 ## Explore
 
 - [CLI Reference](/docs/cli/) — Every command, flag, and option
-- [Providers](/docs/providers/) — Connect to 10 different log sources
+- [Providers](/docs/providers/) — Connect to 14 different log sources
 - [Server Mode](/docs/server/) — Deploy for your team with RBAC
 - [Guides](/docs/guides/) — Step-by-step walkthroughs
 - [Comparison](/docs/comparison/) — How Avalok compares to Kubetail, Stern, Logdy, Loki, and more

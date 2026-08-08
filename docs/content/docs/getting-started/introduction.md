@@ -9,7 +9,7 @@ icon: "info"
 
 **Unified log streaming across your entire infrastructure.**
 
-Avalok is an open-source, single-binary log streaming tool that gives you real-time access to logs from Docker, Kubernetes, systemd, plain files, SSH remotes, containerd, WinRM hosts, Windows Event Log, and IIS -- all through one interface. No agents to install, no log pipeline to maintain. Point Avalok at your infrastructure and start reading logs immediately.
+Avalok is an open-source, single-binary log streaming tool that gives you real-time access to logs from Docker, Kubernetes, systemd, plain files, SSH remotes, containerd, WinRM hosts, Windows Event Log, IIS, and cloud storage (S3, Azure Blob, Azure File, GCS) -- all through one interface. No agents to install, no log pipeline to maintain. Point Avalok at your infrastructure and start reading logs immediately.
 
 Avalok ships as a single Go binary with an embedded web UI. Download it, write a short YAML config, and run `avalok serve`. That's it.
 
@@ -24,7 +24,7 @@ Avalok ships as a single Go binary with an embedded web UI. Download it, write a
 
 | Feature | Description |
 |---|---|
-| **10 log providers** | Docker, Kubernetes, journalctl (systemd), file, SSH, containerd, WinRM, Windows Event Log, IIS, and a built-in self-log provider. |
+| **14 log providers** | Docker, Kubernetes, journalctl (systemd), file, SSH, containerd, WinRM, Windows Event Log, IIS, S3, Azure Blob, Azure File, GCS, and a built-in self-log provider. |
 | **Real-time streaming** | Logs stream live over WebSocket with follow mode -- like `tail -f` for your whole stack. |
 | **Embedded web UI** | A full browser-based log viewer is compiled into the binary. No separate frontend to deploy. |
 | **CLI tailing** | Use `avalok tail` to stream logs directly in your terminal, with multi-instance merge. |
@@ -33,6 +33,8 @@ Avalok ships as a single Go binary with an embedded web UI. Download it, write a
 | **Credential management** | In server mode, store and manage SSH keys, kubeconfigs, and passwords centrally with encrypted storage. |
 | **Visual config builder** | Run `avalok create config` to open a browser-based workspace YAML builder -- no manual YAML editing required. |
 | **Kubernetes resource browser** | Browse namespaces, deployments, pods, and services directly in the web UI. |
+| **Cloud storage browser** | Browse and stream log files from S3, Azure Blob, Azure File, and GCS buckets with a built-in folder navigator. |
+| **Command palette** | Press Ctrl+K to fuzzy-search across all entities, pages, and settings. |
 | **Workspace hierarchy** | Organize logs by workspace, environment, and service. Choose from four hierarchy templates. |
 
 ## Two Modes of Operation
