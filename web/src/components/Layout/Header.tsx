@@ -1,4 +1,4 @@
-import { Sun, Moon, Monitor, ChevronRight, LogOut } from 'lucide-react'
+import { Sun, Moon, Monitor, ChevronRight, LogOut, Search } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { AvalokWordmark } from '../ui/AvalokLogo'
 import type { AuthUser } from '../../lib/api'
@@ -13,6 +13,7 @@ interface Props {
   onNavigateHome?: () => void
   onLogout?: () => void
   currentUser?: AuthUser | null
+  onSearchOpen?: () => void
 }
 
 const themeOptions: { value: Theme; icon: React.FC<{ className?: string }> }[] = [
@@ -21,13 +22,27 @@ const themeOptions: { value: Theme; icon: React.FC<{ className?: string }> }[] =
   { value: 'auto', icon: Monitor },
 ]
 
-export default function Header({ theme, onThemeChange, breadcrumbs, connected, onNavigateHome, onLogout, currentUser }: Props) {
+export default function Header({ theme, onThemeChange, breadcrumbs, connected, onNavigateHome, onLogout, currentUser, onSearchOpen }: Props) {
   return (
     <header className="h-14 shrink-0 flex items-center px-5 gap-4 brand-header">
       {/* Logo */}
       <button onClick={onNavigateHome} className="cursor-pointer hover:opacity-70 transition-opacity shrink-0">
         <AvalokWordmark height={22} forceInvert />
       </button>
+
+      {/* Search trigger */}
+      {onSearchOpen && (
+        <button
+          onClick={onSearchOpen}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 border border-white/15 hover:bg-white/15 transition-colors cursor-pointer min-w-[180px]"
+        >
+          <Search className="w-3.5 h-3.5 text-white/40" />
+          <span className="text-xs text-white/40 flex-1 text-left">Search...</span>
+          <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-white/10 border border-white/15 text-[10px] text-white/40 font-mono">
+            Ctrl+K
+          </kbd>
+        </button>
+      )}
 
       {/* Breadcrumbs */}
       {breadcrumbs && breadcrumbs.length > 0 && (
