@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, storageObjectStreamURL, adminGetResource, fetchConfig } from './lib/api'
+import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminUpdateStandaloneEnv, adminUpdateStandaloneService, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, storageObjectStreamURL, adminGetResource, fetchConfig } from './lib/api'
 import type { AuthUser } from './lib/api'
 import { useTheme } from './lib/useTheme'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from './lib/types'
@@ -20,8 +20,13 @@ import LogsPage from './components/Views/LogsPage'
 import LoginPage from './components/Views/LoginPage'
 import RegisterPage from './components/Views/RegisterPage'
 import AdminPage from './components/Views/AdminPage'
+import ManageWorkspacesPage from './components/Views/ManageWorkspacesPage'
+import ManageResourcesPage from './components/Views/ManageResourcesPage'
+import ManageServicesPage from './components/Views/ManageServicesPage'
+import ManageEnvironmentsPage from './components/Views/ManageEnvironmentsPage'
 import ConfigBuilder from './components/ConfigBuilder/ConfigBuilder'
 import FileBrowser from './components/FileBrowser/FileBrowser'
+import SearchDialog from './components/ui/SearchDialog'
 
 type View =
   | { page: 'login' }
@@ -36,6 +41,8 @@ type View =
   | { page: 'create-environment' }
   | { page: 'create-service' }
   | { page: 'edit-workspace'; workspaceName: string }
+  | { page: 'edit-service'; serviceName: string }
+  | { page: 'edit-environment'; environmentName: string }
   | { page: 'files'; workspace: Workspace; environment: Environment; service: Service }
   | { page: 'standalone-env-services'; env: StandaloneEnvironment }
   | { page: 'standalone-env-console'; envName: string; service: Service }
@@ -48,6 +55,10 @@ type View =
   | { page: 'resource-workloads'; resourceName: string; namespace: string }
   | { page: 'resource-console'; resourceName: string; namespace: string; kind: string; workload: string }
   | { page: 'resource-storage-console'; resourceName: string; resourceType: string; objectKey: string; storagePath?: string }
+  | { page: 'manage-workspaces' }
+  | { page: 'manage-resources' }
+  | { page: 'manage-services' }
+  | { page: 'manage-environments' }
 
 function viewToHash(view: View): string {
   switch (view.page) {
@@ -60,6 +71,8 @@ function viewToHash(view: View): string {
     case 'create-environment': return '#/create-environment'
     case 'create-service': return '#/create-service'
     case 'edit-workspace': return `#/edit-workspace/${encodeURIComponent(view.workspaceName)}`
+    case 'edit-service': return `#/edit-service/${encodeURIComponent(view.serviceName)}`
+    case 'edit-environment': return `#/edit-environment/${encodeURIComponent(view.environmentName)}`
     case 'environments': return `#/ws/${encodeURIComponent(view.workspace.name)}`
     case 'workspace-services': return `#/ws/${encodeURIComponent(view.workspace.name)}`
     case 'services': return `#/ws/${encodeURIComponent(view.workspace.name)}/${encodeURIComponent(view.environment.name)}`
@@ -75,6 +88,10 @@ function viewToHash(view: View): string {
     case 'resource-workloads': return `#/resources/${encodeURIComponent(view.resourceName)}/${encodeURIComponent(view.namespace)}`
     case 'resource-console': return `#/resources/${encodeURIComponent(view.resourceName)}/${encodeURIComponent(view.namespace)}/${encodeURIComponent(view.kind)}/${encodeURIComponent(view.workload)}`
     case 'resource-storage-console': return `#/resources/${encodeURIComponent(view.resourceName)}/object/${encodeURIComponent(view.objectKey)}`
+    case 'manage-workspaces': return '#/manage/workspaces'
+    case 'manage-resources': return '#/manage/resources'
+    case 'manage-services': return '#/manage/services'
+    case 'manage-environments': return '#/manage/environments'
   }
 }
 
@@ -92,8 +109,21 @@ async function resolveHash(hash: string): Promise<View> {
     case 'create-workspace': return { page: 'create-workspace' }
     case 'create-environment': return { page: 'create-environment' }
     case 'create-service': return { page: 'create-service' }
+    case 'manage': {
+      if (parts[1] === 'workspaces') return { page: 'manage-workspaces' }
+      if (parts[1] === 'resources') return { page: 'manage-resources' }
+      if (parts[1] === 'services') return { page: 'manage-services' }
+      if (parts[1] === 'environments') return { page: 'manage-environments' }
+      return { page: 'workspaces' }
+    }
     case 'edit-workspace': return parts.length >= 2
       ? { page: 'edit-workspace', workspaceName: parts[1] }
+      : { page: 'workspaces' }
+    case 'edit-service': return parts.length >= 2
+      ? { page: 'edit-service', serviceName: parts[1] }
+      : { page: 'workspaces' }
+    case 'edit-environment': return parts.length >= 2
+      ? { page: 'edit-environment', environmentName: parts[1] }
       : { page: 'workspaces' }
     case 'ws': {
       if (parts.length < 2) return { page: 'workspaces' }
@@ -198,6 +228,17 @@ function isConfigMode() {
   return params.get('mode') === 'config'
 }
 
+const BOOL_TARGET_KEYS = new Set(['insecure', 'sudo', 'use_https', 'insecure_skip_tls'])
+
+function coerceConnection(conn: Record<string, string>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(conn)) {
+    if (!v) continue
+    out[k] = BOOL_TARGET_KEYS.has(k) ? v === 'true' : v
+  }
+  return out
+}
+
 export default function App() {
   const { theme, setTheme } = useTheme()
   const [view, setView] = useState<View>({ page: 'workspaces' })
@@ -206,6 +247,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [logBufferLines, setLogBufferLines] = useState(10000)
+  const [searchOpen, setSearchOpen] = useState(false)
   const isPopState = useRef(false)
 
   const navigate = useCallback((newView: View) => {
@@ -270,6 +312,17 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(prev => !prev)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[var(--bg-app)]">
@@ -285,10 +338,10 @@ export default function App() {
   if (view.page === 'create-workspace') {
     return (
       <ConfigBuilder
-        onBack={() => navigate({ page: 'workspaces' })}
+        onBack={() => navigate({ page: 'manage-workspaces' })}
         onImportToServer={async (yaml) => {
           await adminImportWorkspace(yaml)
-          navigate({ page: 'workspaces' })
+          navigate({ page: 'manage-workspaces' })
         }}
         serverMode={serverMode}
         isAdmin={currentUser?.role === 'admin'}
@@ -300,12 +353,12 @@ export default function App() {
     return (
       <ConfigBuilder
         mode="environment"
-        onBack={() => navigate({ page: 'workspaces' })}
+        onBack={() => navigate({ page: 'manage-environments' })}
         onImportToServer={async (_yaml, cfg) => {
           const targets = (cfg.environments[0]?.targets ?? []).map(t => ({
             name: t.name,
             type: t.type,
-            ...t.connection,
+            ...coerceConnection(t.connection),
             service_names: t.service_names,
             services: t.service_overrides.length > 0 ? t.service_overrides : undefined,
           }))
@@ -316,7 +369,7 @@ export default function App() {
             config: Object.fromEntries(Object.entries(s.config).filter(([, v]) => v)),
           }))
           await adminCreateStandaloneEnv({ name: cfg.name, description: cfg.description || undefined, services, targets })
-          navigate({ page: 'workspaces' })
+          navigate({ page: 'manage-environments' })
         }}
         serverMode={serverMode}
         isAdmin={currentUser?.role === 'admin'}
@@ -328,14 +381,14 @@ export default function App() {
     return (
       <ConfigBuilder
         mode="service"
-        onBack={() => navigate({ page: 'workspaces' })}
+        onBack={() => navigate({ page: 'manage-services' })}
         onImportToServer={async (_yaml, cfg) => {
           const svc = cfg.services[0]
           const t = cfg.environments[0]?.targets[0]
           const target = t ? {
             name: t.name,
             type: t.type,
-            ...t.connection,
+            ...coerceConnection(t.connection),
           } : undefined
           await adminCreateStandaloneService({
             name: cfg.name,
@@ -344,7 +397,7 @@ export default function App() {
             config: svc ? Object.fromEntries(Object.entries(svc.config).filter(([, v]) => v)) : undefined,
             target,
           })
-          navigate({ page: 'workspaces' })
+          navigate({ page: 'manage-services' })
         }}
         serverMode={serverMode}
         isAdmin={currentUser?.role === 'admin'}
@@ -356,10 +409,68 @@ export default function App() {
     return (
       <ConfigBuilder
         editWorkspace={view.workspaceName}
-        onBack={() => navigate({ page: 'workspaces' })}
+        onBack={() => navigate({ page: 'manage-workspaces' })}
         onImportToServer={async (yaml, _cfg) => {
           await adminUpdateWorkspace(view.workspaceName, yaml)
-          navigate({ page: 'workspaces' })
+          navigate({ page: 'manage-workspaces' })
+        }}
+        serverMode={serverMode}
+        isAdmin={currentUser?.role === 'admin'}
+      />
+    )
+  }
+
+  if (view.page === 'edit-service') {
+    return (
+      <ConfigBuilder
+        editService={view.serviceName}
+        mode="service"
+        onBack={() => navigate({ page: 'manage-services' })}
+        onImportToServer={async (_yaml, cfg) => {
+          const svc = cfg.services[0]
+          const t = cfg.environments[0]?.targets[0]
+          const target = t ? {
+            name: t.name,
+            type: t.type,
+            ...coerceConnection(t.connection),
+          } : undefined
+          await adminUpdateStandaloneService(view.serviceName, {
+            name: cfg.name,
+            description: cfg.description || undefined,
+            provider: svc?.provider || 'file',
+            config: svc ? Object.fromEntries(Object.entries(svc.config).filter(([, v]) => v)) : undefined,
+            target,
+          })
+          navigate({ page: 'manage-services' })
+        }}
+        serverMode={serverMode}
+        isAdmin={currentUser?.role === 'admin'}
+      />
+    )
+  }
+
+  if (view.page === 'edit-environment') {
+    return (
+      <ConfigBuilder
+        editEnvironment={view.environmentName}
+        mode="environment"
+        onBack={() => navigate({ page: 'manage-environments' })}
+        onImportToServer={async (_yaml, cfg) => {
+          const targets = (cfg.environments[0]?.targets ?? []).map(t => ({
+            name: t.name,
+            type: t.type,
+            ...coerceConnection(t.connection),
+            service_names: t.service_names,
+            services: t.service_overrides.length > 0 ? t.service_overrides : undefined,
+          }))
+          const services = cfg.services.map(s => ({
+            name: s.name,
+            provider: s.provider,
+            friendly_name: s.friendly_name || undefined,
+            config: Object.fromEntries(Object.entries(s.config).filter(([, v]) => v)),
+          }))
+          await adminUpdateStandaloneEnv(view.environmentName, { name: cfg.name, description: cfg.description || undefined, services, targets })
+          navigate({ page: 'manage-environments' })
         }}
         serverMode={serverMode}
         isAdmin={currentUser?.role === 'admin'}
@@ -409,9 +520,14 @@ export default function App() {
 
     if (view.page === 'workspaces' || view.page === 'login' || view.page === 'register'
       || view.page === 'create-workspace' || view.page === 'edit-workspace'
-      || view.page === 'create-environment' || view.page === 'create-service') return undefined
+      || view.page === 'create-environment' || view.page === 'create-service'
+      || view.page === 'edit-service' || view.page === 'edit-environment') return undefined
     if (view.page === 'logs') return [{ label: 'Logs' }]
     if (view.page === 'admin') return [{ label: 'Administration' }]
+    if (view.page === 'manage-workspaces') return [{ label: 'Workspaces' }]
+    if (view.page === 'manage-resources') return [{ label: 'Resources' }]
+    if (view.page === 'manage-services') return [{ label: 'Services' }]
+    if (view.page === 'manage-environments') return [{ label: 'Environments' }]
 
     if (view.page === 'standalone-env-services') {
       crumbs.push({ label: 'Home', onClick: () => navigate({ page: 'workspaces' }) })
@@ -572,6 +688,7 @@ export default function App() {
         onNavigateHome={() => navigate({ page: 'workspaces' })}
         onLogout={serverMode ? handleLogout : undefined}
         currentUser={currentUser}
+        onSearchOpen={() => setSearchOpen(true)}
       />
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
@@ -581,6 +698,10 @@ export default function App() {
             if (page === 'workspaces') navigate({ page: 'workspaces' })
             else if (page === 'logs') navigate({ page: 'logs' })
             else if (page === 'admin') navigate({ page: 'admin' })
+            else if (page === 'manage-workspaces') navigate({ page: 'manage-workspaces' })
+            else if (page === 'manage-resources') navigate({ page: 'manage-resources' })
+            else if (page === 'manage-services') navigate({ page: 'manage-services' })
+            else if (page === 'manage-environments') navigate({ page: 'manage-environments' })
           }}
           showAdmin={serverMode && !!currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')}
         />
@@ -608,6 +729,12 @@ export default function App() {
                 : undefined}
               onEditWorkspace={serverMode && currentUser?.role === 'admin'
                 ? (name) => navigate({ page: 'edit-workspace', workspaceName: name })
+                : undefined}
+              onEditService={serverMode && currentUser?.role === 'admin'
+                ? (name) => navigate({ page: 'edit-service', serviceName: name })
+                : undefined}
+              onEditEnvironment={serverMode && currentUser?.role === 'admin'
+                ? (name) => navigate({ page: 'edit-environment', environmentName: name })
                 : undefined}
             />
           )}
@@ -766,6 +893,38 @@ export default function App() {
             <LogsPage onBack={() => navigate({ page: 'workspaces' })} userRole={currentUser?.role} userScope={currentUser?.scope} serverMode={serverMode} logBufferLines={logBufferLines} />
           )}
 
+          {view.page === 'manage-workspaces' && (
+            <ManageWorkspacesPage
+              onSelect={handleSelectWorkspace}
+              onCreateWorkspace={() => navigate({ page: 'create-workspace' })}
+              onEditWorkspace={(name) => navigate({ page: 'edit-workspace', workspaceName: name })}
+            />
+          )}
+
+          {view.page === 'manage-resources' && (
+            <ManageResourcesPage
+              onNavigateResource={(name, desc, type) =>
+                navigate({ page: 'resource-namespaces', resourceName: name, resourceDescription: desc, resourceType: type })
+              }
+            />
+          )}
+
+          {view.page === 'manage-services' && (
+            <ManageServicesPage
+              onSelect={svc => navigate({ page: 'standalone-svc-console', service: svc })}
+              onCreateService={() => navigate({ page: 'create-service' })}
+              onEditService={name => navigate({ page: 'edit-service', serviceName: name })}
+            />
+          )}
+
+          {view.page === 'manage-environments' && (
+            <ManageEnvironmentsPage
+              onSelect={env => navigate({ page: 'standalone-env-services', env })}
+              onCreateEnvironment={() => navigate({ page: 'create-environment' })}
+              onEditEnvironment={name => navigate({ page: 'edit-environment', environmentName: name })}
+            />
+          )}
+
           {view.page === 'admin' && currentUser && (
             <AdminPage userRole={currentUser.role} onSettingsChange={s => {
               const n = parseInt(s['log_buffer_lines'], 10)
@@ -776,6 +935,28 @@ export default function App() {
       </div>
 
       <StatusIndicator connected={connected} />
+
+      <SearchDialog
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectWorkspace={handleSelectWorkspace}
+        onSelectEnvironment={env => navigate({ page: 'standalone-env-services', env })}
+        onSelectService={svc => navigate({ page: 'standalone-svc-console', service: svc })}
+        onSelectResource={serverMode && (currentUser?.role === 'admin' || (currentUser?.scope || []).some(s => s.startsWith('res:')))
+          ? (name, desc, type) => navigate({ page: 'resource-namespaces', resourceName: name, resourceDescription: desc, resourceType: type })
+          : undefined}
+        onNavigate={page => {
+          if (page === 'workspaces') navigate({ page: 'workspaces' })
+          else if (page === 'logs') navigate({ page: 'logs' })
+          else if (page === 'admin') navigate({ page: 'admin' })
+          else if (page === 'manage-workspaces') navigate({ page: 'manage-workspaces' })
+          else if (page === 'manage-resources') navigate({ page: 'manage-resources' })
+          else if (page === 'manage-services') navigate({ page: 'manage-services' })
+          else if (page === 'manage-environments') navigate({ page: 'manage-environments' })
+        }}
+        isAdmin={currentUser?.role === 'admin'}
+        serverMode={serverMode}
+      />
     </div>
   )
 }

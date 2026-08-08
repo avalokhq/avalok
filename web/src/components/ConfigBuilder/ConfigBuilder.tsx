@@ -16,7 +16,7 @@ import { PROVIDERS, PROVIDER_FIELDS, TARGET_TYPES, TARGET_FIELDS, type FieldDef 
 import { generateYaml } from './generateYaml'
 import { parseWorkspaceYaml } from './parseYaml'
 import ResourceImporter, { type ConnectResult } from './ResourceImporter'
-import { adminGetWorkspaceYAML, adminGetSettings, adminListCredentials } from '../../lib/api'
+import { adminGetWorkspaceYAML, adminGetStandaloneServiceYAML, adminGetStandaloneEnvYAML, adminGetSettings, adminListCredentials } from '../../lib/api'
 import type { AdminCredential } from '../../lib/api'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
@@ -964,12 +964,14 @@ interface ConfigBuilderProps {
   onImportToServer?: (yaml: string, config: WorkspaceConfig) => Promise<void>
   onBack?: () => void
   editWorkspace?: string
+  editService?: string
+  editEnvironment?: string
   mode?: 'workspace' | 'environment' | 'service'
   serverMode?: boolean
   isAdmin?: boolean
 }
 
-export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace, mode = 'workspace', serverMode, isAdmin }: ConfigBuilderProps = {}) {
+export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace, editService, editEnvironment, mode = 'workspace', serverMode, isAdmin }: ConfigBuilderProps = {}) {
   const { theme, setTheme } = useTheme()
   const [config, setConfig] = useState<WorkspaceConfig>(() => {
     const base = emptyConfig()
@@ -983,7 +985,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
   })
   const [serverImporting, setServerImporting] = useState(false)
   const [serverError, setServerError] = useState('')
-  const [editLoading, setEditLoading] = useState(!!editWorkspace)
+  const [editLoading, setEditLoading] = useState(!!(editWorkspace || editService || editEnvironment))
   const [adminRedact, setAdminRedact] = useState(true)
   const [credentials, setCredentials] = useState<AdminCredential[]>([])
 
@@ -999,14 +1001,20 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
   }, [])
 
   useEffect(() => {
-    if (!editWorkspace) return
-    adminGetWorkspaceYAML(editWorkspace)
+    const editName = editWorkspace || editService || editEnvironment
+    if (!editName) return
+    const fetchFn = editService
+      ? adminGetStandaloneServiceYAML
+      : editEnvironment
+        ? adminGetStandaloneEnvYAML
+        : adminGetWorkspaceYAML
+    fetchFn(editName)
       .then(yamlText => {
         setConfig(parseWorkspaceYaml(yamlText))
       })
-      .catch(() => setServerError('Failed to load workspace'))
+      .catch(() => setServerError('Failed to load configuration'))
       .finally(() => setEditLoading(false))
-  }, [editWorkspace])
+  }, [editWorkspace, editService, editEnvironment])
   const [expandedSvcId, setExpandedSvcId] = useState<string | null>(null)
   const [expandedEnvId, setExpandedEnvId] = useState<string | null>(null)
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null)
@@ -1158,7 +1166,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
         )}
         <div className="w-px h-5 bg-[var(--border-default)]" />
         <span className="text-sm font-medium text-[var(--text-primary)]">
-          {editWorkspace ? 'Edit Workspace' : onImportToServer ? (mode === 'service' ? 'Create Service' : mode === 'environment' ? 'Create Environment' : 'Create Workspace') : 'Config Builder'}
+          {editWorkspace ? 'Edit Workspace' : editService ? 'Edit Service' : editEnvironment ? 'Edit Environment' : onImportToServer ? (mode === 'service' ? 'Create Service' : mode === 'environment' ? 'Create Environment' : 'Create Workspace') : 'Config Builder'}
         </span>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>
@@ -1720,7 +1728,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
               } : undefined}
               importing={serverImporting}
               importError={serverError}
-              saveLabel={editWorkspace ? 'Save Changes' : undefined}
+              saveLabel={(editWorkspace || editService || editEnvironment) ? 'Save Changes' : undefined}
               onCollapse={() => setYamlOpen(false)}
             />
           ) : (
