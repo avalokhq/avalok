@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Search, Server, Monitor, Settings, Folders, Users, KeyRound, CornerDownLeft, SlidersHorizontal } from 'lucide-react'
 import { EntityIconRaw, entityStyle } from './EntityIcon'
 import { cn } from '../../lib/cn'
@@ -100,6 +101,13 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
   const [activeIndex, setActiveIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden'
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -218,14 +226,34 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
     el?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex])
 
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => setVisible(true))
+    } else {
+      setVisible(false)
+    }
+  }, [open])
+
   if (!open) return null
 
   let itemIdx = -1
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh] bg-black/60" onClick={onClose}>
+  return createPortal(
+    <div
+      className={cn(
+        'fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-xl transition-all duration-200',
+        visible ? 'opacity-100' : 'opacity-0'
+      )}
+      onClick={onClose}
+    >
       <div
-        className="bg-[var(--bg-surface)] border border-[var(--border-strong)] rounded-xl shadow-[var(--shadow-dialog)] w-full max-w-lg mx-4 overflow-hidden"
+        className={cn(
+          'bg-[var(--bg-surface)] border border-[var(--color-accent-400)]/40 rounded-xl w-full max-w-lg mx-4 overflow-hidden transition-all duration-200',
+          'shadow-[0_0_20px_rgba(61,154,116,0.15),0_0_40px_rgba(61,154,116,0.08),0_4px_16px_rgba(0,0,0,0.5)]',
+          visible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.97] -translate-y-2'
+        )}
         onClick={e => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -301,6 +329,7 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
           <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] font-mono">Esc</kbd> Close</span>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
