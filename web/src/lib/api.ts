@@ -153,6 +153,30 @@ export async function adminGetWorkspaceYAML(name: string): Promise<string> {
   return res.text()
 }
 
+export async function adminGetStandaloneServiceYAML(name: string): Promise<string> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`/api/admin/services/${name}/yaml`, { headers })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(body.error || res.statusText)
+  }
+  return res.text()
+}
+
+export async function adminGetStandaloneEnvYAML(name: string): Promise<string> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`/api/admin/environments/${name}/yaml`, { headers })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(body.error || res.statusText)
+  }
+  return res.text()
+}
+
 export async function adminUpdateWorkspace(name: string, yamlContent: string): Promise<void> {
   await fetchAPI(`/admin/workspaces/${name}`, {
     method: 'PUT',

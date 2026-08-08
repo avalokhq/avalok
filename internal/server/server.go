@@ -151,11 +151,13 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("POST /api/admin/environments", s.adminOnly(s.handleCreateStandaloneEnv))
 		s.mux.HandleFunc("PUT /api/admin/environments/{name}", s.adminOnly(s.handleUpdateStandaloneEnv))
 		s.mux.HandleFunc("DELETE /api/admin/environments/{name}", s.adminOnly(s.handleDeleteStandaloneEnv))
+		s.mux.HandleFunc("GET /api/admin/environments/{name}/yaml", s.adminOnly(s.handleExportStandaloneEnvYAML))
 
 		s.mux.HandleFunc("GET /api/admin/services", s.adminOnly(s.handleAdminListStandaloneServices))
 		s.mux.HandleFunc("POST /api/admin/services", s.adminOnly(s.handleCreateStandaloneService))
 		s.mux.HandleFunc("PUT /api/admin/services/{name}", s.adminOnly(s.handleUpdateStandaloneService))
 		s.mux.HandleFunc("DELETE /api/admin/services/{name}", s.adminOnly(s.handleDeleteStandaloneService))
+		s.mux.HandleFunc("GET /api/admin/services/{name}/yaml", s.adminOnly(s.handleExportStandaloneServiceYAML))
 	}
 }
 
