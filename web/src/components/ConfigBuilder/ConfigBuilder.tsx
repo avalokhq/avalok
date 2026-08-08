@@ -382,11 +382,13 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
             <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
               Services on this target
             </label>
-            {services.length === 0 ? (
+            {(() => {
+              const targetServices = services.filter(s => !CLOUD_STORAGE_TYPES.has(s.provider))
+              return targetServices.length === 0 ? (
               <p className="text-xs text-[var(--text-muted)] italic">Define global services first</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
-                {services.map(svc => {
+                {targetServices.map(svc => {
                   const active = target.service_names.includes(svc.name)
                   const SvcIcon = ProviderIconWrapper(svc.provider)
                   return (
@@ -413,7 +415,8 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
                   )
                 })}
               </div>
-            )}
+            )
+              })()}
           </div>
 
           {target.service_names.length > 0 && (
@@ -975,7 +978,20 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
   function updateService(id: string, svc: ServiceDef) {
     cfg(d => {
       const idx = d.services.findIndex(s => s.id === id)
-      if (idx >= 0) d.services[idx] = svc
+      if (idx >= 0) {
+        const oldName = d.services[idx].name
+        d.services[idx] = svc
+        if (oldName && oldName !== svc.name) {
+          for (const env of d.environments) {
+            for (const target of env.targets) {
+              target.service_names = target.service_names.map(n => n === oldName ? svc.name : n)
+              for (const ovr of target.service_overrides) {
+                if (ovr.name === oldName) ovr.name = svc.name
+              }
+            }
+          }
+        }
+      }
     })
   }
 
