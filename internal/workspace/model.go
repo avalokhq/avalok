@@ -1,5 +1,7 @@
 package workspace
 
+import "encoding/json"
+
 type Workspace struct {
 	Name        string       `yaml:"name"`
 	Description string       `yaml:"description"`
@@ -82,6 +84,40 @@ func (e *Environment) FindTarget(name string) *Target {
 		}
 	}
 	return nil
+}
+
+var targetPascalToSnake = map[string]string{
+	"Name": "name", "Type": "type", "Host": "host", "User": "user",
+	"Port": "port", "KeyPath": "key_path", "Password": "password",
+	"Passphrase": "passphrase", "Sudo": "sudo", "UseHTTPS": "use_https",
+	"Insecure": "insecure", "Context": "context", "Namespace": "namespace",
+	"Kubeconfig": "kubeconfig", "ProxyURL": "proxy_url",
+	"APIServerURL": "api_server_url", "BearerToken": "bearer_token",
+	"CACert": "ca_cert", "InsecureSkipTLS": "insecure_skip_tls",
+	"KubeconfigContent": "kubeconfig_content",
+	"CredentialProfile": "credential_profile",
+	"ServiceNames": "service_names", "Services": "services",
+}
+
+func (t *Target) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	normalized := make(map[string]json.RawMessage, len(raw))
+	for k, v := range raw {
+		if snake, ok := targetPascalToSnake[k]; ok {
+			normalized[snake] = v
+		} else {
+			normalized[k] = v
+		}
+	}
+	norm, err := json.Marshal(normalized)
+	if err != nil {
+		return err
+	}
+	type Alias Target
+	return json.Unmarshal(norm, (*Alias)(t))
 }
 
 func (t *Target) AllServiceNames() []string {
