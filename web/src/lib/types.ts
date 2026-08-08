@@ -16,6 +16,7 @@ export interface Service {
   friendly_name: string
   provider: string
   target: string
+  resource?: string
   has_log_dir?: boolean
 }
 

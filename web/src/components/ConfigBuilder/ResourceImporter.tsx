@@ -103,6 +103,7 @@ export default function ResourceImporter({ onConnect, onClose, existingServices 
           name: slug,
           provider: 'kubernetes',
           friendly_name: name,
+          resource: '',
           config: svcConfig,
         })
       }

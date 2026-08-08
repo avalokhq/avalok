@@ -16,6 +16,7 @@ export function parseWorkspaceYaml(text: string): WorkspaceConfig {
     name: s.name ?? '',
     provider: s.provider ?? 'file',
     friendly_name: s.friendly_name ?? '',
+    resource: s.resource ?? '',
     config: toStringRecord(s.config),
   }))
 

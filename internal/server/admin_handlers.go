@@ -433,16 +433,11 @@ func (s *Server) handleAdminListWorkspaces(w http.ResponseWriter, r *http.Reques
 
 	result := make([]wsSummary, 0, len(workspaces))
 	for _, ws := range workspaces {
-		svcCount := 0
-		for _, env := range ws.Environments {
-			resolved, _ := ws.Resolve(env.Name)
-			svcCount += len(resolved)
-		}
 		result = append(result, wsSummary{
 			Name:         ws.Name,
 			Description:  ws.Description,
 			Environments: len(ws.Environments),
-			Services:     svcCount,
+			Services:     len(ws.Services),
 		})
 	}
 

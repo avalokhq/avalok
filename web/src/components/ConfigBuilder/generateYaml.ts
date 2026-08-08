@@ -75,7 +75,10 @@ function emitServices(lines: string[], services: import('./types').ServiceDef[])
     if (svc.friendly_name) {
       lines.push(`    friendly_name: ${yamlValue(svc.friendly_name)}`)
     }
-    const cfgEntries = Object.entries(svc.config).filter(([k, v]) => v && !k.startsWith('_'))
+    if (svc.resource) {
+      lines.push(`    resource: ${yamlValue(svc.resource)}`)
+    }
+    const cfgEntries = Object.entries(svc.config).filter(([, v]) => v)
     if (cfgEntries.length > 0) {
       lines.push('    config:')
       for (const [key, value] of cfgEntries) {
@@ -164,7 +167,10 @@ function generateServiceYaml(config: WorkspaceConfig, redact: boolean): string {
   }
   if (svc) {
     lines.push(`provider: ${svc.provider}`)
-    const cfgEntries = Object.entries(svc.config).filter(([k, v]) => v && !k.startsWith('_'))
+    if (svc.resource) {
+      lines.push(`resource: ${yamlValue(svc.resource)}`)
+    }
+    const cfgEntries = Object.entries(svc.config).filter(([, v]) => v)
     if (cfgEntries.length > 0) {
       lines.push('config:')
       for (const [key, value] of cfgEntries) {

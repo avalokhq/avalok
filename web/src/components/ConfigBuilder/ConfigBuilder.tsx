@@ -95,20 +95,18 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose, resource
   const matchingResources = isCloudProvider && resources
     ? resources.filter(r => r.type === svc.provider)
     : []
-  const selectedResource = svc.config._resource_name ?? ''
+  const selectedResource = svc.resource ?? ''
 
   async function handleResourceSelect(resourceName: string) {
     if (!resourceName) {
-      const cleaned = { ...svc.config }
-      delete cleaned._resource_name
-      onChange({ ...svc, config: cleaned })
+      onChange({ ...svc, resource: '', config: {} })
       return
     }
     setLoadingResource(true)
     try {
       const res = await adminGetResource(resourceName, true)
       const resConfig = res.config || {}
-      const newConfig: Record<string, string> = { _resource_name: resourceName }
+      const newConfig: Record<string, string> = {}
       for (const field of fields) {
         if (SERVICE_ONLY_KEYS.has(field.key)) {
           if (svc.config[field.key]) newConfig[field.key] = svc.config[field.key]
@@ -116,7 +114,7 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose, resource
           newConfig[field.key] = String(resConfig[field.key])
         }
       }
-      onChange({ ...svc, config: newConfig })
+      onChange({ ...svc, resource: resourceName, config: newConfig })
     } catch {
       // fall back to manual
     } finally {
@@ -906,7 +904,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
     if (mode === 'environment') {
       base.environments = [{ id: createId(), name: '', targets: [] }]
     } else if (mode === 'service') {
-      base.services = [{ id: createId(), name: '', provider: 'file', friendly_name: '', config: {} }]
+      base.services = [{ id: createId(), name: '', provider: 'file', friendly_name: '', resource: '', config: {} }]
       base.environments = [{ id: createId(), name: '', targets: [{ id: createId(), name: '', type: 'kubernetes', connection: {}, credential_profile: '', service_names: [], service_overrides: [] }] }]
     }
     return base
@@ -970,6 +968,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
       name: '',
       provider: 'file',
       friendly_name: '',
+      resource: '',
       config: {},
     }))
     setExpandedSvcId(newId)

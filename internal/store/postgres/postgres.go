@@ -66,6 +66,7 @@ func (s *Store) GetWorkspace(ctx context.Context, name string) (*workspace.Works
 	if err := json.Unmarshal(configJSON, &w); err != nil {
 		return nil, fmt.Errorf("unmarshaling workspace: %w", err)
 	}
+	w.Normalize()
 	return &w, nil
 }
 
@@ -86,6 +87,7 @@ func (s *Store) ListWorkspaces(ctx context.Context) ([]*workspace.Workspace, err
 		if err := json.Unmarshal(configJSON, &w); err != nil {
 			return nil, fmt.Errorf("unmarshaling workspace: %w", err)
 		}
+		w.Normalize()
 		workspaces = append(workspaces, &w)
 	}
 	return workspaces, rows.Err()

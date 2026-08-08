@@ -11,6 +11,7 @@ export interface ServiceDef {
   name: string
   provider: string
   friendly_name: string
+  resource: string
   config: Record<string, string>
 }
 

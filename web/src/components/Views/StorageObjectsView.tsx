@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronRight, RefreshCw, FileText, HardDrive, Search, FolderOpen, Home } from 'lucide-react'
 import { cn } from '../../lib/cn'
-import { adminListStorageDirectory, adminGetStorageOverview } from '../../lib/api'
+import { adminListStorageDirectory, adminGetStorageOverview, listServiceStorageObjects } from '../../lib/api'
 import type { StorageListResult, StorageOverview } from '../../lib/api'
 import { resourceIconUrl } from '../ui/ProviderIcon'
 import PageHeader from '../ui/PageHeader'
@@ -18,6 +18,7 @@ interface Props {
   resourceType: string
   onViewObject: (key: string, currentPath: string) => void
   initialPath?: string
+  workspaceName?: string
 }
 
 function formatBytes(bytes: number): string {
@@ -117,7 +118,7 @@ function OverviewHeader({ overview, resourceType, onRefresh, refreshing }: {
   )
 }
 
-export default function StorageObjectsView({ resourceName, resourceType, onViewObject, initialPath }: Props) {
+export default function StorageObjectsView({ resourceName, resourceType, onViewObject, initialPath, workspaceName }: Props) {
   const [listing, setListing] = useState<StorageListResult | null>(null)
   const [overview, setOverview] = useState<StorageOverview | null>(null)
   const [currentPath, setCurrentPath] = useState(initialPath || '')
@@ -131,7 +132,11 @@ export default function StorageObjectsView({ resourceName, resourceType, onViewO
     if (showRefresh) setRefreshing(true)
     else setLoading(true)
 
-    adminListStorageDirectory(resourceName, path || undefined)
+    const listFn = workspaceName
+      ? listServiceStorageObjects(workspaceName, resourceName, path || undefined)
+      : adminListStorageDirectory(resourceName, path || undefined)
+
+    listFn
       .then(lr => {
         setListing(lr)
         setError('')
@@ -145,7 +150,9 @@ export default function StorageObjectsView({ resourceName, resourceType, onViewO
 
   useEffect(() => {
     loadDirectory(initialPath || '')
-    adminGetStorageOverview(resourceName).then(setOverview).catch(() => {})
+    if (!workspaceName) {
+      adminGetStorageOverview(resourceName).then(setOverview).catch(() => {})
+    }
   }, [resourceName])
 
   function navigateTo(path: string) {

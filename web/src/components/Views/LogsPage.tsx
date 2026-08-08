@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ChevronDown, ChevronRight, Terminal, LayoutGrid, Rows3, Merge, X, Loader2, FolderOpen, FileText } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageDirectory, storageObjectStreamURL } from '../../lib/api'
+import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageDirectory, storageObjectStreamURL, listServiceStorageObjects, serviceStorageStreamURL } from '../../lib/api'
 import type { ResourceWorkloads } from '../../lib/api'
 import type { Workspace, Environment, Service } from '../../lib/types'
 import ProviderIcon from '../ui/ProviderIcon'
@@ -166,6 +166,7 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
   const [sessions, setSessions] = useState<LogSession[]>([])
   const [tree, setTree] = useState<TreeWorkspace[]>([])
   const [resourceTree, setResourceTree] = useState<TreeResource[]>([])
+  const [svcStorageTrees, setSvcStorageTrees] = useState<Record<string, { expanded: boolean; loading: boolean; tree: TreeStorageNode[] }>>({})
   const [loading, setLoading] = useState(true)
   const [layout, setLayout] = useState<LayoutMode>(() =>
     (localStorage.getItem('avalok-logs-layout') as LayoutMode) || 'grid'
@@ -381,6 +382,90 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
     }
   }
 
+  async function toggleServiceStorage(wsName: string, svcName: string) {
+    const key = `${wsName}/${svcName}`
+    const current = svcStorageTrees[key]
+
+    if (current?.expanded) {
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { ...prev[key], expanded: false } }))
+      return
+    }
+
+    if (current?.tree.length) {
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { ...prev[key], expanded: true } }))
+      return
+    }
+
+    setSvcStorageTrees(prev => ({ ...prev, [key]: { expanded: true, loading: true, tree: [] } }))
+    try {
+      const result = await listServiceStorageObjects(wsName, svcName)
+      const children: TreeStorageNode[] = [
+        ...(result.directories || []).map(d => ({
+          name: d.name, path: d.path, isDirectory: true, expanded: false, loading: false, children: [],
+        })),
+        ...(result.objects || []).map(o => ({
+          name: o.name, path: o.key, isDirectory: false, expanded: false, loading: false, children: [],
+        })),
+      ]
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { expanded: true, loading: false, tree: children } }))
+    } catch {
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { expanded: true, loading: false, tree: [] } }))
+    }
+  }
+
+  async function toggleServiceStorageDir(wsName: string, svcName: string, nodePath: string[]) {
+    const key = `${wsName}/${svcName}`
+    const state = svcStorageTrees[key]
+    if (!state) return
+
+    function findNode(nodes: TreeStorageNode[], path: number[]): TreeStorageNode | null {
+      if (path.length === 0) return null
+      const node = nodes[path[0]]
+      if (!node) return null
+      if (path.length === 1) return node
+      return findNode(node.children, path.slice(1))
+    }
+
+    function updateNode(nodes: TreeStorageNode[], path: number[], updater: (n: TreeStorageNode) => TreeStorageNode): TreeStorageNode[] {
+      return nodes.map((n, i) => {
+        if (i !== path[0]) return n
+        if (path.length === 1) return updater(n)
+        return { ...n, children: updateNode(n.children, path.slice(1), updater) }
+      })
+    }
+
+    const indices = nodePath.map(Number)
+    const node = findNode(state.tree, indices)
+    if (!node || !node.isDirectory) return
+
+    if (node.expanded) {
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { ...prev[key], tree: updateNode(prev[key].tree, indices, n => ({ ...n, expanded: false })) } }))
+      return
+    }
+
+    if (node.children.length > 0) {
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { ...prev[key], tree: updateNode(prev[key].tree, indices, n => ({ ...n, expanded: true })) } }))
+      return
+    }
+
+    setSvcStorageTrees(prev => ({ ...prev, [key]: { ...prev[key], tree: updateNode(prev[key].tree, indices, n => ({ ...n, expanded: true, loading: true })) } }))
+
+    try {
+      const result = await listServiceStorageObjects(wsName, svcName, node.path)
+      const children: TreeStorageNode[] = [
+        ...(result.directories || []).map(d => ({
+          name: d.name, path: d.path, isDirectory: true, expanded: false, loading: false, children: [],
+        })),
+        ...(result.objects || []).map(o => ({
+          name: o.name, path: o.key, isDirectory: false, expanded: false, loading: false, children: [],
+        })),
+      ]
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { ...prev[key], tree: updateNode(prev[key].tree, indices, n => ({ ...n, loading: false, children })) } }))
+    } catch {
+      setSvcStorageTrees(prev => ({ ...prev, [key]: { ...prev[key], tree: updateNode(prev[key].tree, indices, n => ({ ...n, loading: false })) } }))
+    }
+  }
+
   async function toggleResourceNs(resIdx: number, nsIdx: number) {
     setResourceTree(prev => prev.map((r, ri) => ri !== resIdx ? r : {
       ...r,
@@ -535,49 +620,92 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
                 <span className="text-[var(--text-primary)] font-medium text-xs">{wsNode.data.name}</span>
               </button>
 
-              {wsNode.expanded && wsNode.isServiceFirst && wsNode.sfServices.map((svcNode, svcIdx) => (
-                <div key={svcNode.name}>
-                  <button
-                    onClick={() => toggleSfService(wsIdx, svcIdx)}
-                    className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
-                  >
-                    {svcNode.expanded
-                      ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                      : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                    }
-                    <ProviderIcon provider={svcNode.provider} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                    <span className="text-[var(--text-secondary)] font-medium text-xs">{svcNode.friendlyName}</span>
-                  </button>
-
-                  {svcNode.expanded && svcNode.environments.map(env => {
-                    const id = `${svcNode.workspaceName}/${env.name}/${svcNode.name}`
-                    const isActive = activeIds.has(id)
-                    const isFull = sessions.length >= maxForLayout
-
-                    return (
+              {wsNode.expanded && wsNode.isServiceFirst && wsNode.sfServices.map((svcNode, svcIdx) => {
+                if (isCloudType(svcNode.provider)) {
+                  const stKey = `${svcNode.workspaceName}/${svcNode.name}`
+                  const stState = svcStorageTrees[stKey]
+                  const resPrefix = `svc-storage:${svcNode.workspaceName}/${svcNode.name}`
+                  return (
+                    <div key={svcNode.name}>
                       <button
-                        key={env.name}
-                        onClick={() => isActive ? removeSession(id) : addSession(svcNode.workspaceName, env.name, svcNode.name, svcNode.friendlyName)}
-                        disabled={!isActive && isFull}
-                        className={cn(
-                          'w-full flex items-center gap-2 pl-10 pr-3 py-1.5 text-left transition-colors',
-                          isActive
-                            ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                            : isFull
-                              ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
-                              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                        )}
+                        onClick={() => toggleServiceStorage(svcNode.workspaceName, svcNode.name)}
+                        className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
                       >
-                        <SourceDot name={id} />
-                        <span className="flex-1 truncate text-xs">{env.name}</span>
-                        {isActive && (
-                          <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />
-                        )}
+                        {stState?.loading
+                          ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
+                          : stState?.expanded
+                            ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                            : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                        }
+                        <ProviderIcon provider={svcNode.provider} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                        <span className="text-[var(--text-secondary)] font-medium text-xs">{svcNode.friendlyName}</span>
                       </button>
-                    )
-                  })}
-                </div>
-              ))}
+                      {stState?.expanded && stState.tree.length > 0 && (
+                        <StorageTreeNodes
+                          nodes={stState.tree}
+                          resName={resPrefix}
+                          resIdx={0}
+                          depth={2}
+                          parentPath={[]}
+                          activeIds={activeIds}
+                          isFull={sessions.length >= maxForLayout}
+                          onToggleDir={(_idx, path) => toggleServiceStorageDir(svcNode.workspaceName, svcNode.name, path)}
+                          onSelect={(key, name) => {
+                            const url = serviceStorageStreamURL(svcNode.workspaceName, svcNode.name, key)
+                            const id = `res:${resPrefix}/obj/${key}`
+                            if (activeIds.has(id)) removeSession(id)
+                            else addSession(resPrefix, 'obj', key, name, url)
+                          }}
+                        />
+                      )}
+                    </div>
+                  )
+                }
+
+                return (
+                  <div key={svcNode.name}>
+                    <button
+                      onClick={() => toggleSfService(wsIdx, svcIdx)}
+                      className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
+                    >
+                      {svcNode.expanded
+                        ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                        : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                      }
+                      <ProviderIcon provider={svcNode.provider} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                      <span className="text-[var(--text-secondary)] font-medium text-xs">{svcNode.friendlyName}</span>
+                    </button>
+
+                    {svcNode.expanded && svcNode.environments.map(env => {
+                      const id = `${svcNode.workspaceName}/${env.name}/${svcNode.name}`
+                      const isActive = activeIds.has(id)
+                      const isFull = sessions.length >= maxForLayout
+
+                      return (
+                        <button
+                          key={env.name}
+                          onClick={() => isActive ? removeSession(id) : addSession(svcNode.workspaceName, env.name, svcNode.name, svcNode.friendlyName)}
+                          disabled={!isActive && isFull}
+                          className={cn(
+                            'w-full flex items-center gap-2 pl-10 pr-3 py-1.5 text-left transition-colors',
+                            isActive
+                              ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
+                              : isFull
+                                ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                          )}
+                        >
+                          <SourceDot name={id} />
+                          <span className="flex-1 truncate text-xs">{env.name}</span>
+                          {isActive && (
+                            <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
 
               {wsNode.expanded && !wsNode.isServiceFirst && wsNode.environments.map((envNode, envIdx) => (
                 <div key={envNode.data.name}>
@@ -593,6 +721,47 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
                   </button>
 
                   {envNode.expanded && envNode.services.map(svc => {
+                    if (isCloudType(svc.provider)) {
+                      const stKey = `${wsNode.data.name}/${svc.name}`
+                      const stState = svcStorageTrees[stKey]
+                      const resPrefix = `svc-storage:${wsNode.data.name}/${svc.name}`
+                      return (
+                        <div key={svc.name}>
+                          <button
+                            onClick={() => toggleServiceStorage(wsNode.data.name, svc.name)}
+                            className="w-full flex items-center gap-1.5 pl-10 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
+                          >
+                            {stState?.loading
+                              ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
+                              : stState?.expanded
+                                ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                                : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                            }
+                            <ProviderIcon provider={svc.provider} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                            <span className="text-[var(--text-secondary)] font-medium text-xs truncate">{svc.friendly_name || svc.name}</span>
+                          </button>
+                          {stState?.expanded && stState.tree.length > 0 && (
+                            <StorageTreeNodes
+                              nodes={stState.tree}
+                              resName={resPrefix}
+                              resIdx={0}
+                              depth={2}
+                              parentPath={[]}
+                              activeIds={activeIds}
+                              isFull={sessions.length >= maxForLayout}
+                              onToggleDir={(_idx, path) => toggleServiceStorageDir(wsNode.data.name, svc.name, path)}
+                              onSelect={(key, name) => {
+                                const url = serviceStorageStreamURL(wsNode.data.name, svc.name, key)
+                                const id = `res:${resPrefix}/obj/${key}`
+                                if (activeIds.has(id)) removeSession(id)
+                                else addSession(resPrefix, 'obj', key, name, url)
+                              }}
+                            />
+                          )}
+                        </div>
+                      )
+                    }
+
                     const id = `${wsNode.data.name}/${envNode.data.name}/${svc.name}`
                     const isActive = activeIds.has(id)
                     const isFull = sessions.length >= maxForLayout

@@ -41,6 +41,8 @@ func Parse(data []byte) (*Workspace, error) {
 		Settings:     f.Settings,
 	}
 
+	w.Normalize()
+
 	if err := validate(w); err != nil {
 		return nil, err
 	}

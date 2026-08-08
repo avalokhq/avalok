@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminUpdateStandaloneEnv, adminUpdateStandaloneService, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, storageObjectStreamURL, adminGetResource, fetchConfig } from './lib/api'
+import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminUpdateStandaloneEnv, adminUpdateStandaloneService, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, storageObjectStreamURL, serviceStorageStreamURL, adminGetResource, fetchConfig } from './lib/api'
 import type { AuthUser } from './lib/api'
 import { useTheme } from './lib/useTheme'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from './lib/types'
@@ -55,6 +55,8 @@ type View =
   | { page: 'resource-workloads'; resourceName: string; namespace: string }
   | { page: 'resource-console'; resourceName: string; namespace: string; kind: string; workload: string }
   | { page: 'resource-storage-console'; resourceName: string; resourceType: string; objectKey: string; storagePath?: string }
+  | { page: 'service-storage'; workspace: Workspace; service: Service }
+  | { page: 'service-storage-console'; workspace: Workspace; service: Service; objectKey: string; storagePath?: string }
   | { page: 'manage-workspaces' }
   | { page: 'manage-resources' }
   | { page: 'manage-services' }
@@ -88,6 +90,8 @@ function viewToHash(view: View): string {
     case 'resource-workloads': return `#/resources/${encodeURIComponent(view.resourceName)}/${encodeURIComponent(view.namespace)}`
     case 'resource-console': return `#/resources/${encodeURIComponent(view.resourceName)}/${encodeURIComponent(view.namespace)}/${encodeURIComponent(view.kind)}/${encodeURIComponent(view.workload)}`
     case 'resource-storage-console': return `#/resources/${encodeURIComponent(view.resourceName)}/object/${encodeURIComponent(view.objectKey)}`
+    case 'service-storage': return `#/ws/${encodeURIComponent(view.workspace.name)}/storage/${encodeURIComponent(view.service.name)}`
+    case 'service-storage-console': return `#/ws/${encodeURIComponent(view.workspace.name)}/storage/${encodeURIComponent(view.service.name)}/object/${encodeURIComponent(view.objectKey)}`
     case 'manage-workspaces': return '#/manage/workspaces'
     case 'manage-resources': return '#/manage/resources'
     case 'manage-services': return '#/manage/services'
@@ -138,6 +142,15 @@ async function resolveHash(hash: string): Promise<View> {
           return isServiceFirst
             ? { page: 'workspace-services', workspace: ws }
             : { page: 'environments', workspace: ws }
+        }
+
+        if (parts[2] === 'storage' && parts.length >= 4) {
+          const svcs = await listServices(ws.name, (await listEnvironments(ws.name))[0]?.name || '')
+          const svc = svcs.find(s => s.name === parts[3]) || { name: parts[3], friendly_name: '', provider: '', target: '' }
+          if (parts.length >= 6 && parts[4] === 'object') {
+            return { page: 'service-storage-console', workspace: ws, service: svc, objectKey: parts.slice(5).join('/') }
+          }
+          return { page: 'service-storage', workspace: ws, service: svc }
         }
 
         if (parts[2] === 'svc' && parts.length >= 4) {
@@ -593,6 +606,30 @@ export default function App() {
       return crumbs
     }
 
+    if (view.page === 'service-storage') {
+      crumbs.push({ label: 'Home', onClick: () => navigate({ page: 'workspaces' }) })
+      crumbs.push({
+        label: view.workspace.name,
+        onClick: () => navigate({ page: 'environments', workspace: view.workspace }),
+      })
+      crumbs.push({ label: view.service.friendly_name || view.service.name })
+      return crumbs
+    }
+
+    if (view.page === 'service-storage-console') {
+      crumbs.push({ label: 'Home', onClick: () => navigate({ page: 'workspaces' }) })
+      crumbs.push({
+        label: view.workspace.name,
+        onClick: () => navigate({ page: 'environments', workspace: view.workspace }),
+      })
+      crumbs.push({
+        label: view.service.friendly_name || view.service.name,
+        onClick: () => navigate({ page: 'service-storage', workspace: view.workspace, service: view.service }),
+      })
+      crumbs.push({ label: view.objectKey.split('/').pop() || view.objectKey })
+      return crumbs
+    }
+
     crumbs.push({
       label: 'Home',
       onClick: () => navigate({ page: 'workspaces' }),
@@ -772,6 +809,7 @@ export default function App() {
               environment={view.environment}
               onViewLogs={svc => navigate({ page: 'console', workspace: view.workspace, environment: view.environment, service: svc })}
               onBrowseFiles={svc => navigate({ page: 'files', workspace: view.workspace, environment: view.environment, service: svc })}
+              onBrowseStorage={svc => navigate({ page: 'service-storage', workspace: view.workspace, service: svc })}
             />
           )}
 
@@ -887,6 +925,26 @@ export default function App() {
               onBack={() => navigate({ page: 'resource-namespaces', resourceName: view.resourceName, resourceDescription: '', resourceType: view.resourceType, storagePath: view.storagePath })}
               maxLines={logBufferLines}
               resourceName={view.resourceName}
+              objectKey={view.objectKey}
+            />
+          )}
+
+          {view.page === 'service-storage' && (
+            <StorageObjectsView
+              resourceName={view.service.name}
+              resourceType={view.service.provider}
+              onViewObject={(key, browsePath) => navigate({ page: 'service-storage-console', workspace: view.workspace, service: view.service, objectKey: key, storagePath: browsePath })}
+              workspaceName={view.workspace.name}
+            />
+          )}
+
+          {view.page === 'service-storage-console' && (
+            <LogConsole
+              streamUrl={serviceStorageStreamURL(view.workspace.name, view.service.name, view.objectKey)}
+              label={view.objectKey.split('/').pop() || view.objectKey}
+              onBack={() => navigate({ page: 'service-storage', workspace: view.workspace, service: view.service })}
+              maxLines={logBufferLines}
+              resourceName={view.workspace.name}
               objectKey={view.objectKey}
             />
           )}

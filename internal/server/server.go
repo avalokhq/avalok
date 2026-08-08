@@ -86,6 +86,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/ws/{name}/env/{env}/svc/{svc}/check", s.authMiddleware(s.handleCheckService))
 	s.mux.HandleFunc("/api/ws/{name}/env/{env}/svc/{svc}/stream", s.authMiddleware(s.handleStream))
 
+	s.mux.HandleFunc("GET /api/ws/{name}/svc/{svc}/storage/objects", s.authMiddleware(s.handleListServiceStorageObjects))
+	s.mux.HandleFunc("GET /api/ws/{name}/svc/{svc}/storage/content/{key...}", s.authMiddleware(s.handleServiceStorageContent))
+	s.mux.HandleFunc("/api/ws/{name}/svc/{svc}/storage/stream", s.authMiddleware(s.handleServiceStorageStream))
+
 	s.mux.HandleFunc("GET /api/ws/{name}/env/{env}/svc/{svc}/files", s.authMiddleware(s.handleListFiles))
 	s.mux.HandleFunc("GET /api/ws/{name}/env/{env}/svc/{svc}/files/{filename}", s.authMiddleware(s.handleReadFile))
 	s.mux.HandleFunc("GET /api/ws/{name}/env/{env}/svc/{svc}/files/{filename}/download", s.authMiddleware(s.handleDownloadFile))
@@ -479,19 +483,13 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		envCount := 0
-		svcCount := 0
 		for _, env := range ws.Environments {
 			if !user.HasEnvAccess(ws.Name, env.Name) {
 				continue
 			}
 			envCount++
-			resolved, _ := ws.Resolve(env.Name)
-			for _, rs := range resolved {
-				if user.HasAccess(ws.Name, env.Name, rs.Service.Name) {
-					svcCount++
-				}
-			}
 		}
+		svcCount := len(ws.Services)
 		if envCount > 0 {
 			tmpl := workspace.GetTemplate(ws.Settings.Hierarchy)
 			summaries = append(summaries, workspaceSummary{
@@ -599,20 +597,38 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 		FriendlyName string `json:"friendly_name"`
 		Provider     string `json:"provider"`
 		Target       string `json:"target"`
+		Resource     string `json:"resource,omitempty"`
 		HasLogDir    bool   `json:"has_log_dir"`
 	}
 
 	services := make([]serviceSummary, 0)
+	resolvedNames := make(map[string]bool)
 	for _, rs := range resolved {
 		if !user.HasAccess(name, envName, rs.Service.Name) {
 			continue
 		}
+		resolvedNames[rs.Service.Name] = true
 		_, hasLogDir := rs.Config["log_dir"]
 		services = append(services, serviceSummary{
 			Name:         rs.Service.Name,
 			FriendlyName: rs.Service.FriendlyName,
 			Provider:     rs.Service.Provider,
 			Target:       rs.Target.Name,
+			Resource:     rs.Service.Resource,
+			HasLogDir:    hasLogDir,
+		})
+	}
+
+	for _, svc := range ws.Services {
+		if resolvedNames[svc.Name] {
+			continue
+		}
+		_, hasLogDir := svc.Config["log_dir"]
+		services = append(services, serviceSummary{
+			Name:         svc.Name,
+			FriendlyName: svc.FriendlyName,
+			Provider:     svc.Provider,
+			Resource:     svc.Resource,
 			HasLogDir:    hasLogDir,
 		})
 	}

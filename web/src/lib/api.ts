@@ -364,6 +364,24 @@ export function storageObjectContentURL(name: string, key: string): string {
   return `/api/admin/resources/${name}/storage/content/${encodeURIComponent(key)}?token=${token}`
 }
 
+// --- Workspace Service Storage ---
+
+export async function listServiceStorageObjects(workspace: string, service: string, path?: string): Promise<StorageListResult> {
+  const params = path ? `?path=${encodeURIComponent(path)}` : ''
+  return fetchAPI(`/ws/${workspace}/svc/${service}/storage/objects${params}`)
+}
+
+export function serviceStorageStreamURL(workspace: string, service: string, key: string): string {
+  const token = getToken()
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/api/ws/${workspace}/svc/${service}/storage/stream?key=${encodeURIComponent(key)}&token=${token}`
+}
+
+export function serviceStorageContentURL(workspace: string, service: string, key: string): string {
+  const token = getToken()
+  return `/api/ws/${workspace}/svc/${service}/storage/content/${encodeURIComponent(key)}?token=${token}`
+}
+
 // --- Admin: Settings ---
 
 export async function adminGetSettings(): Promise<Record<string, string>> {

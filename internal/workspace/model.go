@@ -14,6 +14,7 @@ type Service struct {
 	Name         string         `yaml:"name"`
 	Provider     string         `yaml:"provider"`
 	FriendlyName string         `yaml:"friendly_name"`
+	Resource     string         `yaml:"resource,omitempty"`
 	Config       map[string]any `yaml:"config"`
 }
 
@@ -57,6 +58,17 @@ type ServiceOverride struct {
 type Settings struct {
 	SSHTimeout int    `yaml:"ssh_timeout,omitempty" json:"ssh_timeout,omitempty"`
 	Hierarchy  string `yaml:"hierarchy,omitempty" json:"hierarchy,omitempty"`
+}
+
+func (w *Workspace) Normalize() {
+	for i := range w.Services {
+		if w.Services[i].Resource == "" && w.Services[i].Config != nil {
+			if rn, ok := w.Services[i].Config["_resource_name"].(string); ok && rn != "" {
+				w.Services[i].Resource = rn
+				delete(w.Services[i].Config, "_resource_name")
+			}
+		}
+	}
 }
 
 func (w *Workspace) FindService(name string) *Service {
@@ -149,6 +161,12 @@ func (w *Workspace) ListUniqueServiceNames() []string {
 					names = append(names, svcName)
 				}
 			}
+		}
+	}
+	for _, svc := range w.Services {
+		if !seen[svc.Name] {
+			seen[svc.Name] = true
+			names = append(names, svc.Name)
 		}
 	}
 	return names
