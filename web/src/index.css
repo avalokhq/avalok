@@ -205,3 +205,13 @@ html.light .bg-premium::before {
 .log-new-line {
   animation: log-blink 2s ease-out;
 }
+
+@keyframes setting-blink {
+  0%, 100% { background-color: transparent; }
+  25% { background-color: rgba(61, 154, 116, 0.15); }
+  50% { background-color: transparent; }
+  75% { background-color: rgba(61, 154, 116, 0.15); }
+}
+.animate-setting-blink {
+  animation: setting-blink 2s ease-in-out;
+}

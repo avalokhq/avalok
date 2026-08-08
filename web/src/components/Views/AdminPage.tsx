@@ -40,11 +40,20 @@ type Tab = 'users' | 'credentials' | 'settings'
 
 interface Props {
   userRole: string
+  initialTab?: string
+  highlightSetting?: string
   onSettingsChange?: (settings: Record<string, string>) => void
+  onHighlightConsumed?: () => void
 }
 
-export default function AdminPage({ userRole, onSettingsChange }: Props) {
-  const [tab, setTab] = useState<Tab>('users')
+export default function AdminPage({ userRole, initialTab, highlightSetting, onSettingsChange, onHighlightConsumed }: Props) {
+  const [tab, setTab] = useState<Tab>((initialTab as Tab) || 'users')
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab as Tab)
+    }
+  }, [initialTab])
 
   const tabs = [
     { id: 'users', label: 'Users', icon: Users },
@@ -65,7 +74,7 @@ export default function AdminPage({ userRole, onSettingsChange }: Props) {
 
         {tab === 'users' && <UsersPanel userRole={userRole} />}
         {tab === 'credentials' && <CredentialsPanel />}
-        {tab === 'settings' && <SettingsPanel onSettingsChange={onSettingsChange} />}
+        {tab === 'settings' && <SettingsPanel onSettingsChange={onSettingsChange} highlightSetting={highlightSetting} onHighlightConsumed={onHighlightConsumed} />}
       </div>
     </div>
   )
@@ -956,11 +965,12 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
 
 // --- Settings Panel ---
 
-function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Record<string, string>) => void }) {
+function SettingsPanel({ onSettingsChange, highlightSetting, onHighlightConsumed }: { onSettingsChange?: (settings: Record<string, string>) => void; highlightSetting?: string; onHighlightConsumed?: () => void }) {
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [blinkKey, setBlinkKey] = useState<string | undefined>(highlightSetting)
 
   useEffect(() => {
     adminGetSettings()
@@ -968,6 +978,20 @@ function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Rec
       .catch(() => setError('Failed to load settings'))
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!highlightSetting || loading) return
+    setBlinkKey(highlightSetting)
+    const el = document.querySelector(`[data-setting-id="${highlightSetting}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    const timer = setTimeout(() => {
+      setBlinkKey(undefined)
+      onHighlightConsumed?.()
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [highlightSetting, loading, onHighlightConsumed])
 
   const toggle = useCallback(async (key: string, current: string) => {
     const next = current === 'true' ? 'false' : 'true'
@@ -1018,13 +1042,13 @@ function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Rec
       <Section title="Entity Visibility" className="mb-8">
         <Card padding="none">
           <div className="px-4">
-            <SettingsRow label="Enable Workspaces" description="Show the Workspaces section on the homepage.">
+            <SettingsRow label="Enable Workspaces" description="Show the Workspaces section on the homepage." settingId="enable_workspaces" highlight={blinkKey === 'enable_workspaces'}>
               <Toggle checked={enableWorkspaces === 'true'} onChange={() => toggle('enable_workspaces', enableWorkspaces)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="Enable Environments" description="Show standalone Environments section on the homepage.">
+            <SettingsRow label="Enable Environments" description="Show standalone Environments section on the homepage." settingId="enable_environments" highlight={blinkKey === 'enable_environments'}>
               <Toggle checked={enableEnvironments === 'true'} onChange={() => toggle('enable_environments', enableEnvironments)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="Enable Services" description="Show standalone Services section on the homepage.">
+            <SettingsRow label="Enable Services" description="Show standalone Services section on the homepage." settingId="enable_services" highlight={blinkKey === 'enable_services'}>
               <Toggle checked={enableServices === 'true'} onChange={() => toggle('enable_services', enableServices)} disabled={saving} />
             </SettingsRow>
           </div>
@@ -1034,10 +1058,10 @@ function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Rec
       <Section title="Server Settings" className="mb-8">
         <Card padding="none">
           <div className="px-4">
-            <SettingsRow label="Redact credentials in UI" description="Hide passwords and passphrases in YAML preview by default. Admins can still toggle visibility per-session.">
+            <SettingsRow label="Redact credentials in UI" description="Hide passwords and passphrases in YAML preview by default. Admins can still toggle visibility per-session." settingId="redact_credentials" highlight={blinkKey === 'redact_credentials'}>
               <Toggle checked={redactCreds === 'true'} onChange={() => toggle('redact_credentials', redactCreds)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="File browser page size" description="Number of lines per page when viewing log files. Large values use more memory.">
+            <SettingsRow label="File browser page size" description="Number of lines per page when viewing log files. Large values use more memory." settingId="file_browser_page_size" highlight={blinkKey === 'file_browser_page_size'}>
               <Input
                 type="number"
                 min={1000}
@@ -1050,7 +1074,7 @@ function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Rec
                 className="w-32 text-right"
               />
             </SettingsRow>
-            <SettingsRow label="Initial log tail lines" description="Number of historical log lines to load when opening a stream. 0 = all logs from the beginning.">
+            <SettingsRow label="Initial log tail lines" description="Number of historical log lines to load when opening a stream. 0 = all logs from the beginning." settingId="stream_tail_lines" highlight={blinkKey === 'stream_tail_lines'}>
               <Input
                 type="number"
                 min={0}
@@ -1063,7 +1087,7 @@ function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Rec
                 className="w-32 text-right"
               />
             </SettingsRow>
-            <SettingsRow label="Log buffer size" description="Maximum number of log lines kept in the browser per stream. Older lines are dropped when this limit is reached. Trimming occurs at 2x this value.">
+            <SettingsRow label="Log buffer size" description="Maximum number of log lines kept in the browser per stream. Older lines are dropped when this limit is reached. Trimming occurs at 2x this value." settingId="log_buffer_lines" highlight={blinkKey === 'log_buffer_lines'}>
               <Input
                 type="number"
                 min={1000}
@@ -1106,7 +1130,7 @@ function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Rec
       >
         <Card padding="none">
           <div className="px-4">
-            <SettingsRow label="Max concurrent connections" description="Maximum number of simultaneous WebSocket connections for log streaming. Default: 100.">
+            <SettingsRow label="Max concurrent connections" description="Maximum number of simultaneous WebSocket connections for log streaming. Default: 100." settingId="ws_max_connections" highlight={blinkKey === 'ws_max_connections'}>
               <Input
                 type="number"
                 min={10}
@@ -1119,7 +1143,7 @@ function SettingsPanel({ onSettingsChange }: { onSettingsChange?: (settings: Rec
                 className="w-32 text-right"
               />
             </SettingsRow>
-            <SettingsRow label="Max message size (KB)" description="Maximum size of a single WebSocket message from clients. Default: 4 KB.">
+            <SettingsRow label="Max message size (KB)" description="Maximum size of a single WebSocket message from clients. Default: 4 KB." settingId="ws_max_message_kb" highlight={blinkKey === 'ws_max_message_kb'}>
               <Input
                 type="number"
                 min={1}

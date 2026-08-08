@@ -248,6 +248,8 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [logBufferLines, setLogBufferLines] = useState(10000)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [adminInitialTab, setAdminInitialTab] = useState<string | undefined>()
+  const [adminHighlightSetting, setAdminHighlightSetting] = useState<string | undefined>()
   const isPopState = useRef(false)
 
   const navigate = useCallback((newView: View) => {
@@ -926,10 +928,16 @@ export default function App() {
           )}
 
           {view.page === 'admin' && currentUser && (
-            <AdminPage userRole={currentUser.role} onSettingsChange={s => {
-              const n = parseInt(s['log_buffer_lines'], 10)
-              if (n > 0) setLogBufferLines(n)
-            }} />
+            <AdminPage
+              userRole={currentUser.role}
+              initialTab={adminInitialTab}
+              highlightSetting={adminHighlightSetting}
+              onSettingsChange={s => {
+                const n = parseInt(s['log_buffer_lines'], 10)
+                if (n > 0) setLogBufferLines(n)
+              }}
+              onHighlightConsumed={() => { setAdminInitialTab(undefined); setAdminHighlightSetting(undefined) }}
+            />
           )}
         </main>
       </div>
@@ -948,7 +956,12 @@ export default function App() {
         onNavigate={page => {
           if (page === 'workspaces') navigate({ page: 'workspaces' })
           else if (page === 'logs') navigate({ page: 'logs' })
-          else if (page === 'admin') navigate({ page: 'admin' })
+          else if (page.startsWith('admin')) {
+            const parts = page.split(':')
+            setAdminInitialTab(parts[1] || 'users')
+            setAdminHighlightSetting(parts[2] || undefined)
+            navigate({ page: 'admin' })
+          }
           else if (page === 'manage-workspaces') navigate({ page: 'manage-workspaces' })
           else if (page === 'manage-resources') navigate({ page: 'manage-resources' })
           else if (page === 'manage-services') navigate({ page: 'manage-services' })

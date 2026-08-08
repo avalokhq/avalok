@@ -126,21 +126,21 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
         { kind: 'page', id: 'page-manage-svc', name: 'Manage Services', description: 'Create, edit, delete services', icon: <Server className="w-4 h-4" />, data: 'manage-services' },
         { kind: 'page', id: 'page-manage-env', name: 'Manage Environments', description: 'Create, edit, delete environments', icon: <EntityIconRaw kind="environment" className="w-4 h-4" />, data: 'manage-environments' },
         { kind: 'page', id: 'page-manage-res', name: 'Manage Resources', description: 'Add and configure resources', icon: <EntityIconRaw kind="resource" className="w-4 h-4" />, data: 'manage-resources' },
-        { kind: 'page', id: 'page-admin', name: 'Administration', description: 'Users, credentials, server settings', icon: <Settings className="w-4 h-4" />, data: 'admin' },
-        { kind: 'page', id: 'page-admin-users', name: 'User Management', description: 'Manage user accounts and roles', icon: <Users className="w-4 h-4" />, data: 'admin' },
-        { kind: 'page', id: 'page-admin-creds', name: 'Credential Profiles', description: 'Manage authentication credentials', icon: <KeyRound className="w-4 h-4" />, data: 'admin' },
+        { kind: 'page', id: 'page-admin', name: 'Administration', description: 'Users, credentials, server settings', icon: <Settings className="w-4 h-4" />, data: 'admin:users' },
+        { kind: 'page', id: 'page-admin-users', name: 'User Management', description: 'Manage user accounts and roles', icon: <Users className="w-4 h-4" />, data: 'admin:users' },
+        { kind: 'page', id: 'page-admin-creds', name: 'Credential Profiles', description: 'Manage authentication credentials', icon: <KeyRound className="w-4 h-4" />, data: 'admin:credentials' },
       )
 
       pages.push(
-        { kind: 'setting', id: 'setting-ws-toggle', name: 'Enable Workspaces', description: 'Show Workspaces section on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-env-toggle', name: 'Enable Environments', description: 'Show standalone Environments on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-svc-toggle', name: 'Enable Services', description: 'Show standalone Services on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-redact', name: 'Redact Credentials', description: 'Hide passwords in YAML preview', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-filebrowser', name: 'File Browser Page Size', description: 'Lines per page when viewing log files', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-tail', name: 'Initial Log Tail Lines', description: 'Historical lines loaded when opening a stream', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-buffer', name: 'Log Buffer Size', description: 'Max log lines kept in browser per stream', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-ws-conns', name: 'Max Concurrent Connections', description: 'Simultaneous WebSocket connections limit', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
-        { kind: 'setting', id: 'setting-ws-msg', name: 'Max Message Size', description: 'Maximum WebSocket message size from clients', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin' },
+        { kind: 'setting', id: 'setting-ws-toggle', name: 'Enable Workspaces', description: 'Show Workspaces section on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_workspaces' },
+        { kind: 'setting', id: 'setting-env-toggle', name: 'Enable Environments', description: 'Show standalone Environments on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_environments' },
+        { kind: 'setting', id: 'setting-svc-toggle', name: 'Enable Services', description: 'Show standalone Services on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_services' },
+        { kind: 'setting', id: 'setting-redact', name: 'Redact Credentials', description: 'Hide passwords in YAML preview', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:redact_credentials' },
+        { kind: 'setting', id: 'setting-filebrowser', name: 'File Browser Page Size', description: 'Lines per page when viewing log files', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:file_browser_page_size' },
+        { kind: 'setting', id: 'setting-tail', name: 'Initial Log Tail Lines', description: 'Historical lines loaded when opening a stream', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:stream_tail_lines' },
+        { kind: 'setting', id: 'setting-buffer', name: 'Log Buffer Size', description: 'Max log lines kept in browser per stream', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:log_buffer_lines' },
+        { kind: 'setting', id: 'setting-ws-conns', name: 'Max Concurrent Connections', description: 'Simultaneous WebSocket connections limit', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:ws_max_connections' },
+        { kind: 'setting', id: 'setting-ws-msg', name: 'Max Message Size', description: 'Maximum WebSocket message size from clients', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:ws_max_message_kb' },
       )
     }
 
