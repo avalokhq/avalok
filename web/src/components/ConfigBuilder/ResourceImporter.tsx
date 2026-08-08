@@ -32,7 +32,7 @@ export default function ResourceImporter({ onConnect, onClose, existingServices 
   useEffect(() => {
     setLoading('resources')
     adminListResources()
-      .then(r => setResources(r || []))
+      .then(r => setResources((r || []).filter(res => res.type === 'kubernetes')))
       .catch(() => setError('Failed to load resources'))
       .finally(() => setLoading(''))
   }, [])
