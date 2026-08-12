@@ -207,6 +207,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
 
   const filtered = useMemo(() => {
     void version
+    for (let i = 0; i < logs.length; i++) logs[i]._lineNum = i + 1
     let result = filterByTime(logs, timeFilter)
     if (levelFilter.size < 4) {
       result = result.filter(l => levelFilter.has(parseLevel(l.line)))
@@ -233,7 +234,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
   }, [filtered, sessions])
 
   const rowHeight = estimateRowHeight(fontSize)
-  const lineNumWidth = `${Math.max(4, String(filtered.length).length) + 1}ch`
+  const lineNumWidth = `${Math.max(4, String(logs.length).length) + 1}ch`
   const shouldFollow = follow && !paused
 
   const virtualizer = useVirtualizer({
@@ -347,7 +348,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
                   }}
                 >
                   <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums" style={{ width: lineNumWidth }}>
-                    {vRow.index + 1}
+                    {entry._lineNum ?? vRow.index + 1}
                   </span>
 
                   {entry.timestamp && (

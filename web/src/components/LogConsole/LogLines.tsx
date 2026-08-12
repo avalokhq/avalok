@@ -51,7 +51,7 @@ function estimateRowHeight(fontSize: number): number {
 export default function LogLines({ logs, follow, showTimestamp, showSource, search, fontSize, wrap, totalCount = 0, connected }: Props) {
   const parentRef = useRef<HTMLDivElement>(null)
   const rowHeight = estimateRowHeight(fontSize)
-  const lineNumWidth = `${Math.max(4, String(logs.length).length) + 1}ch`
+  const lineNumWidth = `${Math.max(4, String(totalCount || logs.length).length) + 1}ch`
 
   const virtualizer = useVirtualizer({
     count: logs.length,
@@ -121,7 +121,7 @@ export default function LogLines({ logs, follow, showTimestamp, showSource, sear
             >
               {/* Line number */}
               <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums" style={{ width: lineNumWidth }}>
-                {vRow.index + 1}
+                {entry._lineNum ?? vRow.index + 1}
               </span>
 
               {/* Timestamp */}
