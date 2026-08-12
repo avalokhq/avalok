@@ -112,12 +112,12 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 		s.mux.HandleFunc("GET /api/auth/me", s.authMiddleware(s.handleMe))
 
-		s.mux.HandleFunc("GET /api/admin/users", s.adminOrManager(s.handleListUsers))
-		s.mux.HandleFunc("GET /api/admin/users/{id}", s.adminOrManager(s.handleGetUser))
+		s.mux.HandleFunc("GET /api/admin/users", s.adminOnly(s.handleListUsers))
+		s.mux.HandleFunc("GET /api/admin/users/{id}", s.adminOnly(s.handleGetUser))
 		s.mux.HandleFunc("POST /api/admin/users", s.adminOnly(s.handleCreateUser))
-		s.mux.HandleFunc("PUT /api/admin/users/{id}", s.adminOrManager(s.handleUpdateUser))
+		s.mux.HandleFunc("PUT /api/admin/users/{id}", s.adminOnly(s.handleUpdateUser))
 		s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.adminOnly(s.handleDeleteUser))
-		s.mux.HandleFunc("POST /api/admin/users/{id}/approve", s.adminOrManager(s.handleApproveUser))
+		s.mux.HandleFunc("POST /api/admin/users/{id}/approve", s.adminOnly(s.handleApproveUser))
 		s.mux.HandleFunc("POST /api/admin/users/{id}/disable", s.adminOnly(s.handleDisableUser))
 		s.mux.HandleFunc("POST /api/admin/users/{id}/reset-password", s.adminOnly(s.handleResetPassword))
 
@@ -489,7 +489,12 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 			}
 			envCount++
 		}
-		svcCount := len(ws.Services)
+		svcCount := 0
+		for _, svc := range ws.Services {
+			if user.HasWorkspaceServiceAccess(ws.Name, svc.Name) {
+				svcCount++
+			}
+		}
 		if envCount > 0 {
 			tmpl := workspace.GetTemplate(ws.Settings.Hierarchy)
 			summaries = append(summaries, workspaceSummary{
@@ -519,17 +524,23 @@ func (s *Server) handleGetWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(user.Scope) > 0 {
-		var filtered []workspace.Environment
+		var filteredEnvs []workspace.Environment
 		for _, env := range ws.Environments {
 			if user.HasEnvAccess(name, env.Name) {
-				filtered = append(filtered, env)
+				filteredEnvs = append(filteredEnvs, env)
+			}
+		}
+		var filteredSvcs []workspace.Service
+		for _, svc := range ws.Services {
+			if user.HasWorkspaceServiceAccess(name, svc.Name) {
+				filteredSvcs = append(filteredSvcs, svc)
 			}
 		}
 		ws = &workspace.Workspace{
 			Name:         ws.Name,
 			Description:  ws.Description,
-			Services:     ws.Services,
-			Environments: filtered,
+			Services:     filteredSvcs,
+			Environments: filteredEnvs,
 			Settings:     ws.Settings,
 		}
 	}
@@ -623,6 +634,9 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 		if resolvedNames[svc.Name] {
 			continue
 		}
+		if !user.HasAccess(name, envName, svc.Name) {
+			continue
+		}
 		_, hasLogDir := svc.Config["log_dir"]
 		services = append(services, serviceSummary{
 			Name:         svc.Name,
@@ -667,7 +681,7 @@ func (s *Server) handleListWorkspaceServices(w http.ResponseWriter, r *http.Requ
 		envs := ws.ListEnvironmentsForService(svcName)
 		envCount := 0
 		for _, env := range envs {
-			if user.HasEnvAccess(name, env.Name) {
+			if user.HasAccess(name, env.Name, svcName) {
 				envCount++
 			}
 		}
@@ -708,7 +722,7 @@ func (s *Server) handleListServiceEnvironments(w http.ResponseWriter, r *http.Re
 	envs := ws.ListEnvironmentsForService(svcName)
 	summaries := make([]envSummary, 0, len(envs))
 	for _, env := range envs {
-		if !user.HasEnvAccess(name, env.Name) {
+		if !user.HasAccess(name, env.Name, svcName) {
 			continue
 		}
 		summaries = append(summaries, envSummary{

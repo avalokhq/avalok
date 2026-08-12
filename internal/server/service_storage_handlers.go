@@ -79,7 +79,7 @@ func (s *Server) handleListServiceStorageObjects(w http.ResponseWriter, r *http.
 	wsName := r.PathValue("name")
 	svcName := r.PathValue("svc")
 
-	if !user.HasWorkspaceAccess(wsName) {
+	if !user.HasWorkspaceServiceAccess(wsName, svcName) {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
@@ -154,7 +154,7 @@ func (s *Server) handleServiceStorageContent(w http.ResponseWriter, r *http.Requ
 	svcName := r.PathValue("svc")
 	objectKey := r.PathValue("key")
 
-	if !user.HasWorkspaceAccess(wsName) {
+	if !user.HasWorkspaceServiceAccess(wsName, svcName) {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
@@ -210,7 +210,7 @@ func (s *Server) handleServiceStorageStream(w http.ResponseWriter, r *http.Reque
 	svcName := r.PathValue("svc")
 	objectKey := r.URL.Query().Get("key")
 
-	if !user.HasWorkspaceAccess(wsName) {
+	if !user.HasWorkspaceServiceAccess(wsName, svcName) {
 		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
