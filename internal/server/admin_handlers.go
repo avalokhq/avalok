@@ -96,8 +96,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	if req.Role == "" {
 		req.Role = "reader"
 	}
-	if req.Role != "admin" && req.Role != "manager" && req.Role != "reader" {
-		writeError(w, http.StatusBadRequest, "role must be admin, manager, or reader")
+	if req.Role != "admin" && req.Role != "reader" {
+		writeError(w, http.StatusBadRequest, "role must be admin or reader")
 		return
 	}
 
@@ -167,16 +167,6 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if actor.Role == "manager" && user.Role == "admin" {
-		writeError(w, http.StatusForbidden, "managers cannot modify admin users")
-		return
-	}
-
-	if actor.Role == "manager" && actor.ID == id {
-		writeError(w, http.StatusForbidden, "managers cannot modify their own account")
-		return
-	}
-
 	var req struct {
 		Role      *string  `json:"role"`
 		Status    *string  `json:"status"`
@@ -189,12 +179,8 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Role != nil {
-		if actor.Role != "admin" {
-			writeError(w, http.StatusForbidden, "only admins can change roles")
-			return
-		}
-		if *req.Role != "admin" && *req.Role != "manager" && *req.Role != "reader" {
-			writeError(w, http.StatusBadRequest, "role must be admin, manager, or reader")
+		if *req.Role != "admin" && *req.Role != "reader" {
+			writeError(w, http.StatusBadRequest, "role must be admin or reader")
 			return
 		}
 		user.Role = *req.Role

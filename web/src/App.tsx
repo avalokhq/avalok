@@ -742,7 +742,7 @@ export default function App() {
             else if (page === 'manage-services') navigate({ page: 'manage-services' })
             else if (page === 'manage-environments') navigate({ page: 'manage-environments' })
           }}
-          showAdmin={serverMode && !!currentUser && (currentUser.role === 'admin' || currentUser.role === 'manager')}
+          showAdmin={serverMode && !!currentUser && currentUser.role === 'admin'}
         />
 
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">

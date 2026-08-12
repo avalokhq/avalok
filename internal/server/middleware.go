@@ -23,10 +23,6 @@ func (s *Server) adminOnly(next http.HandlerFunc) http.HandlerFunc {
 	return s.requireRole("admin")(next)
 }
 
-func (s *Server) adminOrManager(next http.HandlerFunc) http.HandlerFunc {
-	return s.requireRole("admin", "manager")(next)
-}
-
 func (s *Server) adminOrResourceScoped(next http.HandlerFunc) http.HandlerFunc {
 	return s.authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		user := userFromContext(r)
