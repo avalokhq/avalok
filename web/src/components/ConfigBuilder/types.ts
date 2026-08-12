@@ -11,6 +11,7 @@ export interface ServiceDef {
   name: string
   provider: string
   friendly_name: string
+  resource: string
   config: Record<string, string>
 }
 
@@ -36,7 +37,6 @@ export interface ServiceOverrideDef {
 }
 
 export interface SettingsDef {
-  log_buffer_size: number
   ssh_timeout: number
   hierarchy: string
 }
@@ -51,6 +51,6 @@ export function emptyConfig(): WorkspaceConfig {
     description: '',
     services: [],
     environments: [],
-    settings: { log_buffer_size: 5000, ssh_timeout: 30, hierarchy: 'default' },
+    settings: { ssh_timeout: 30, hierarchy: 'default' },
   }
 }

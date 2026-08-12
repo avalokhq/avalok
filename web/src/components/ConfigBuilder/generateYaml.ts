@@ -1,8 +1,8 @@
 import type { WorkspaceConfig } from './types'
 import { SENSITIVE_KEYS } from './schema'
 
-const SERVICE_BOOLEAN_KEYS = new Set(['all_containers', 'previous', 'sudo', 'read_all'])
-const SERVICE_NUMBER_KEYS = new Set(['tail_lines'])
+const SERVICE_BOOLEAN_KEYS = new Set(['all_containers', 'previous', 'sudo', 'read_all', 'force_path_style'])
+const SERVICE_NUMBER_KEYS = new Set(['tail_lines', 'poll_interval'])
 
 function yamlValue(v: string): string {
   if (!v) return "''"
@@ -75,6 +75,9 @@ function emitServices(lines: string[], services: import('./types').ServiceDef[])
     if (svc.friendly_name) {
       lines.push(`    friendly_name: ${yamlValue(svc.friendly_name)}`)
     }
+    if (svc.resource) {
+      lines.push(`    resource: ${yamlValue(svc.resource)}`)
+    }
     const cfgEntries = Object.entries(svc.config).filter(([, v]) => v)
     if (cfgEntries.length > 0) {
       lines.push('    config:')
@@ -117,14 +120,11 @@ function generateWorkspaceYaml(config: WorkspaceConfig, redact: boolean): string
     }
   }
 
-  const { log_buffer_size, ssh_timeout, hierarchy } = config.settings
-  if (log_buffer_size || ssh_timeout || (hierarchy && hierarchy !== 'default')) {
+  const { ssh_timeout, hierarchy } = config.settings
+  if (ssh_timeout || (hierarchy && hierarchy !== 'default')) {
     lines.push('settings:')
     if (hierarchy && hierarchy !== 'default') {
       lines.push(`  hierarchy: ${hierarchy}`)
-    }
-    if (log_buffer_size) {
-      lines.push(`  log_buffer_size: ${log_buffer_size}`)
     }
     if (ssh_timeout) {
       lines.push(`  ssh_timeout: ${ssh_timeout}`)
@@ -167,6 +167,9 @@ function generateServiceYaml(config: WorkspaceConfig, redact: boolean): string {
   }
   if (svc) {
     lines.push(`provider: ${svc.provider}`)
+    if (svc.resource) {
+      lines.push(`resource: ${yamlValue(svc.resource)}`)
+    }
     const cfgEntries = Object.entries(svc.config).filter(([, v]) => v)
     if (cfgEntries.length > 0) {
       lines.push('config:')

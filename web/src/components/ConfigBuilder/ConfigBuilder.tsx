@@ -1,42 +1,32 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Server, Box,
-  FileText, Terminal, HardDrive, Monitor, ArrowDownToLine,
+  FileText, ArrowDownToLine,
   Copy, Check, Settings, Layers, FolderTree, Save,
   Upload, Eye, EyeOff, X, ChevronLeft,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { AvalokWordmark } from '../ui/AvalokLogo'
+import ProviderIcon from '../ui/ProviderIcon'
 import { useTheme, type Theme } from '../../lib/useTheme'
 import { Sun, Moon, Monitor as MonitorIcon } from 'lucide-react'
 import type { WorkspaceConfig, ServiceDef, EnvironmentDef, TargetDef } from './types'
 import { createId, emptyConfig } from './types'
-import { PROVIDERS, PROVIDER_FIELDS, TARGET_TYPES, TARGET_FIELDS, type FieldDef } from './schema'
+import { PROVIDERS, PROVIDER_FIELDS, TARGET_TYPES, TARGET_FIELDS } from './schema'
 import { generateYaml } from './generateYaml'
 import { parseWorkspaceYaml } from './parseYaml'
 import ResourceImporter, { type ConnectResult } from './ResourceImporter'
-import { adminGetWorkspaceYAML, adminGetSettings, adminListCredentials } from '../../lib/api'
-import type { AdminCredential } from '../../lib/api'
+import { adminGetWorkspaceYAML, adminGetStandaloneServiceYAML, adminGetStandaloneEnvYAML, adminGetSettings, adminListCredentials, adminListResources, adminGetResource } from '../../lib/api'
+import type { AdminCredential, AdminResource } from '../../lib/api'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import Card from '../ui/Card'
+import IconSelect from './IconSelect'
+import CredentialSelector from './CredentialSelector'
+import { ConfigField, TextField } from './fields'
 
-const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
-
-const KubernetesIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <img src={KUBERNETES_LOGO} alt="Kubernetes" className={className} />
-)
-
-const PROVIDER_ICONS: Record<string, React.FC<{ className?: string }>> = {
-  file: FileText,
-  docker: Box,
-  kubernetes: KubernetesIcon,
-  journalctl: Terminal,
-  ssh: Terminal,
-  containerd: Box,
-  'windows-eventlog': Monitor,
-  iis: HardDrive,
-}
+const ProviderIconWrapper = (provider: string): React.FC<{ className?: string }> =>
+  ({ className }) => <ProviderIcon provider={provider} className={className} />
 
 function update<T>(prev: T, fn: (draft: T) => void): T {
   const next = structuredClone(prev)
@@ -44,83 +34,7 @@ function update<T>(prev: T, fn: (draft: T) => void): T {
   return next
 }
 
-// ── Field renderer ──
-
-function ConfigField({ field, value, onChange }: {
-  field: FieldDef
-  value: string
-  onChange: (v: string) => void
-}) {
-  if (field.type === 'toggle') {
-    const checked = value === 'true' || value === true as any
-    return (
-      <div className="flex items-center justify-between py-1">
-        <div>
-          <span className="text-xs font-medium text-[var(--text-secondary)]">{field.label}</span>
-          {field.help && (
-            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{field.help}</p>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => onChange(checked ? '' : 'true')}
-          className={cn(
-            'relative w-9 h-5 rounded-full transition-colors shrink-0',
-            checked ? 'bg-[var(--text-accent)]' : 'bg-[var(--border-default)]'
-          )}
-        >
-          <span className={cn(
-            'absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-            checked && 'translate-x-4'
-          )} />
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-        {field.label}
-        {field.required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      <input
-        type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={field.placeholder}
-        className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
-      />
-      {field.help && (
-        <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{field.help}</p>
-      )}
-    </div>
-  )
-}
-
-function TextField({ label, value, onChange, placeholder, required }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  required?: boolean
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-        {label}
-        {required && <span className="text-red-400 ml-0.5">*</span>}
-      </label>
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
-      />
-    </div>
-  )
-}
+// ConfigField and TextField imported from ./fields
 
 // ── Section wrapper ──
 
@@ -162,15 +76,53 @@ function Section({ title, icon: Icon, children, count, defaultOpen = true, actio
 
 // ── Service detail form (shown below grid when selected) ──
 
-function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose }: {
+const CLOUD_STORAGE_TYPES = new Set(['s3', 'azure-blob', 'azure-file', 'gcs'])
+const SERVICE_ONLY_KEYS = new Set(['prefix', 'poll_interval', 'pattern', 'directory'])
+
+function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose, resources }: {
   svc: ServiceDef
   onChange: (svc: ServiceDef) => void
   onRemove: () => void
   onClone: () => void
   onClose: () => void
+  resources?: AdminResource[]
 }) {
   const fields = PROVIDER_FIELDS[svc.provider] ?? []
-  const Icon = PROVIDER_ICONS[svc.provider] ?? Terminal
+  const Icon = ProviderIconWrapper(svc.provider)
+  const [loadingResource, setLoadingResource] = useState(false)
+
+  const isCloudProvider = CLOUD_STORAGE_TYPES.has(svc.provider)
+  const matchingResources = isCloudProvider && resources
+    ? resources.filter(r => r.type === svc.provider)
+    : []
+  const selectedResource = svc.resource ?? ''
+
+  async function handleResourceSelect(resourceName: string) {
+    if (!resourceName) {
+      onChange({ ...svc, resource: '', config: {} })
+      return
+    }
+    setLoadingResource(true)
+    try {
+      const res = await adminGetResource(resourceName, true)
+      const resConfig = res.config || {}
+      const newConfig: Record<string, string> = {}
+      for (const field of fields) {
+        if (SERVICE_ONLY_KEYS.has(field.key)) {
+          if (svc.config[field.key]) newConfig[field.key] = svc.config[field.key]
+        } else if (resConfig[field.key] != null) {
+          newConfig[field.key] = String(resConfig[field.key])
+        }
+      }
+      onChange({ ...svc, resource: resourceName, config: newConfig })
+    } catch {
+      // fall back to manual
+    } finally {
+      setLoadingResource(false)
+    }
+  }
+
+  const serviceFields = fields.filter(f => SERVICE_ONLY_KEYS.has(f.key))
 
   return (
     <div className="border border-[var(--text-accent)]/40 rounded-lg overflow-hidden bg-[var(--bg-app)]">
@@ -214,51 +166,101 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose }: {
             placeholder="api"
             required
           />
-          <TextField
-            label="Friendly Name"
-            value={svc.friendly_name}
-            onChange={v => onChange({ ...svc, friendly_name: v })}
-            placeholder="REST API"
+          <IconSelect
+            label="Provider"
+            required
+            value={svc.provider}
+            onChange={v => onChange({ ...svc, provider: v, config: {} })}
+            options={PROVIDERS}
           />
         </div>
-
-        <div>
-          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-            Provider<span className="text-red-400 ml-0.5">*</span>
-          </label>
-          <div className="grid grid-cols-4 gap-1.5">
-            {PROVIDERS.map(p => {
-              const PIcon = PROVIDER_ICONS[p.value] ?? Terminal
-              return (
-                <button
-                  key={p.value}
-                  onClick={() => onChange({ ...svc, provider: p.value, config: {} })}
-                  className={cn(
-                    'flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-all border',
-                    svc.provider === p.value
-                      ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                      : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                  )}
-                >
-                  <PIcon className="w-3 h-3 shrink-0" />
-                  {p.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
+        <TextField
+          label="Friendly Name"
+          value={svc.friendly_name}
+          onChange={v => onChange({ ...svc, friendly_name: v })}
+          placeholder="REST API"
+        />
 
         {fields.length > 0 && (
-          <div className="space-y-3 pt-1 border-t border-[var(--border-subtle)]">
+          <div className="pt-1 border-t border-[var(--border-subtle)] space-y-3">
             <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Provider Config</span>
-            {fields.map(field => (
-              <ConfigField
-                key={field.key}
-                field={field}
-                value={svc.config[field.key] ?? ''}
-                onChange={v => onChange({ ...svc, config: { ...svc.config, [field.key]: v } })}
-              />
-            ))}
+
+            {matchingResources.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Connection</label>
+                <div className="grid grid-cols-2 gap-1.5 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => handleResourceSelect('')}
+                    className={cn(
+                      'px-2 py-1.5 rounded-md text-xs transition-all border',
+                      !selectedResource
+                        ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
+                        : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
+                    )}
+                  >
+                    Manual
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (!selectedResource && matchingResources[0]) handleResourceSelect(matchingResources[0].name) }}
+                    className={cn(
+                      'px-2 py-1.5 rounded-md text-xs transition-all border',
+                      selectedResource
+                        ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
+                        : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
+                    )}
+                  >
+                    From Resource
+                  </button>
+                </div>
+
+                {selectedResource && (
+                  <div className="mb-3">
+                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Resource</label>
+                    <select
+                      value={selectedResource}
+                      onChange={e => handleResourceSelect(e.target.value)}
+                      disabled={loadingResource}
+                      className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
+                    >
+                      {matchingResources.map(r => (
+                        <option key={r.name} value={r.name}>{r.name}{r.description ? ` — ${r.description}` : ''}</option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Connection details from Admin &gt; Resources</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedResource ? (
+              serviceFields.length > 0 && (
+                <div className="grid grid-cols-2 gap-3">
+                  {serviceFields.map(field => (
+                    <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
+                      <ConfigField
+                        field={field}
+                        value={svc.config[field.key] ?? ''}
+                        onChange={v => onChange({ ...svc, config: { ...svc.config, [field.key]: v } })}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {fields.map(field => (
+                  <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
+                    <ConfigField
+                      field={field}
+                      value={svc.config[field.key] ?? ''}
+                      onChange={v => onChange({ ...svc, config: { ...svc.config, [field.key]: v } })}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -322,139 +324,47 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
       </button>
       {expanded && (
         <div className="p-3 space-y-3">
-          <TextField
-            label="Target Name"
-            value={target.name}
-            onChange={v => onChange({ ...target, name: v.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
-            placeholder="prod-cluster"
-            required
-          />
-
-          <div>
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-              Type<span className="text-red-400 ml-0.5">*</span>
-            </label>
-            <div className="grid grid-cols-4 gap-1.5">
-              {TARGET_TYPES.map(t => (
-                <button
-                  key={t.value}
-                  onClick={() => onChange({ ...target, type: t.value, connection: {} })}
-                  className={cn(
-                    'px-2 py-1.5 rounded-md text-xs transition-all border',
-                    target.type === t.value
-                      ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                      : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-2 gap-3">
+            <TextField
+              label="Target Name"
+              value={target.name}
+              onChange={v => onChange({ ...target, name: v.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
+              placeholder="prod-cluster"
+              required
+            />
+            <IconSelect
+              label="Type"
+              required
+              value={target.type}
+              onChange={v => onChange({ ...target, type: v, connection: {}, credential_profile: '' })}
+              options={TARGET_TYPES}
+            />
           </div>
 
-          {(() => {
-            const hasCredentials = credentials && credentials.filter(c => c.target_type === target.type).length > 0 && (target.type === 'ssh' || target.type === 'winrm')
-            const useProfile = hasCredentials && target.credential_profile !== ''
-            const targetFieldKeys = new Set(['host', 'port', 'sudo', 'use_https', 'insecure'])
-            const targetFields = fields.filter(f => targetFieldKeys.has(f.key))
-            const authFields = fields.filter(f => !targetFieldKeys.has(f.key))
-
-            if (!hasCredentials) {
-              return fields.length > 0 ? (
-                <div className="space-y-3">
-                  {fields.map(field => (
-                    <ConfigField
-                      key={field.key}
-                      field={field}
-                      value={target.connection[field.key] ?? ''}
-                      onChange={v => onChange({ ...target, connection: { ...target.connection, [field.key]: v } })}
-                    />
-                  ))}
+          {credentials && credentials.length > 0 ? (
+            <CredentialSelector
+              targetType={target.type}
+              credentials={credentials}
+              credentialProfile={target.credential_profile}
+              connection={target.connection}
+              fields={fields}
+              onSelectProfile={(name, kept) => onChange({ ...target, credential_profile: name, connection: kept })}
+              onClearProfile={() => onChange({ ...target, credential_profile: '' })}
+              onConnectionChange={(key, v) => onChange({ ...target, connection: { ...target.connection, [key]: v } })}
+            />
+          ) : fields.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              {fields.map(field => (
+                <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
+                  <ConfigField
+                    field={field}
+                    value={target.connection[field.key] ?? ''}
+                    onChange={v => onChange({ ...target, connection: { ...target.connection, [field.key]: v } })}
+                  />
                 </div>
-              ) : null
-            }
-
-            return (
-              <>
-                {targetFields.length > 0 && (
-                  <div className="space-y-3">
-                    {targetFields.map(field => (
-                      <ConfigField
-                        key={field.key}
-                        field={field}
-                        value={target.connection[field.key] ?? ''}
-                        onChange={v => onChange({ ...target, connection: { ...target.connection, [field.key]: v } })}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Authentication</label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      onClick={() => onChange({ ...target, credential_profile: '' })}
-                      className={cn(
-                        'px-2 py-1.5 rounded-md text-xs transition-all border',
-                        !useProfile
-                          ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                          : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                      )}
-                    >
-                      Manual
-                    </button>
-                    <button
-                      onClick={() => {
-                        const first = credentials!.filter(c => c.target_type === target.type)[0]
-                        if (first) {
-                          const kept: Record<string, string> = {}
-                          for (const k of targetFieldKeys) {
-                            if (target.connection[k]) kept[k] = target.connection[k]
-                          }
-                          onChange({ ...target, credential_profile: first.name, connection: kept })
-                        }
-                      }}
-                      className={cn(
-                        'px-2 py-1.5 rounded-md text-xs transition-all border',
-                        useProfile
-                          ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                          : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                      )}
-                    >
-                      Credential Profile
-                    </button>
-                  </div>
-                </div>
-
-                {useProfile ? (
-                  <div>
-                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Profile</label>
-                    <select
-                      value={target.credential_profile}
-                      onChange={e => onChange({ ...target, credential_profile: e.target.value })}
-                      className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
-                    >
-                      {credentials!.filter(c => c.target_type === target.type).map(c => (
-                        <option key={c.name} value={c.name}>{c.name}{c.description ? ` — ${c.description}` : ''}</option>
-                      ))}
-                    </select>
-                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Managed credential from Admin &gt; Credentials</p>
-                  </div>
-                ) : authFields.length > 0 ? (
-                  <div className="space-y-3">
-                    {authFields.map(field => (
-                      <ConfigField
-                        key={field.key}
-                        field={field}
-                        value={target.connection[field.key] ?? ''}
-                        onChange={v => onChange({ ...target, connection: { ...target.connection, [field.key]: v } })}
-                      />
-                    ))}
-                  </div>
-                ) : null}
-              </>
-            )
-          })()}
+              ))}
+            </div>
+          ) : null}
 
           {onConnectFromResource && target.type === 'kubernetes' && (
             <button
@@ -470,13 +380,15 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
             <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
               Services on this target
             </label>
-            {services.length === 0 ? (
+            {(() => {
+              const targetServices = services.filter(s => !CLOUD_STORAGE_TYPES.has(s.provider))
+              return targetServices.length === 0 ? (
               <p className="text-xs text-[var(--text-muted)] italic">Define global services first</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
-                {services.map(svc => {
+                {targetServices.map(svc => {
                   const active = target.service_names.includes(svc.name)
-                  const SvcIcon = PROVIDER_ICONS[svc.provider] ?? Terminal
+                  const SvcIcon = ProviderIconWrapper(svc.provider)
                   return (
                     <button
                       key={svc.id}
@@ -501,7 +413,8 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
                   )
                 })}
               </div>
-            )}
+            )
+              })()}
           </div>
 
           {target.service_names.length > 0 && (
@@ -977,28 +890,31 @@ interface ConfigBuilderProps {
   onImportToServer?: (yaml: string, config: WorkspaceConfig) => Promise<void>
   onBack?: () => void
   editWorkspace?: string
+  editService?: string
+  editEnvironment?: string
   mode?: 'workspace' | 'environment' | 'service'
   serverMode?: boolean
   isAdmin?: boolean
 }
 
-export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace, mode = 'workspace', serverMode, isAdmin }: ConfigBuilderProps = {}) {
+export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace, editService, editEnvironment, mode = 'workspace', serverMode, isAdmin }: ConfigBuilderProps = {}) {
   const { theme, setTheme } = useTheme()
   const [config, setConfig] = useState<WorkspaceConfig>(() => {
     const base = emptyConfig()
     if (mode === 'environment') {
       base.environments = [{ id: createId(), name: '', targets: [] }]
     } else if (mode === 'service') {
-      base.services = [{ id: createId(), name: '', provider: 'file', friendly_name: '', config: {} }]
+      base.services = [{ id: createId(), name: '', provider: 'file', friendly_name: '', resource: '', config: {} }]
       base.environments = [{ id: createId(), name: '', targets: [{ id: createId(), name: '', type: 'kubernetes', connection: {}, credential_profile: '', service_names: [], service_overrides: [] }] }]
     }
     return base
   })
   const [serverImporting, setServerImporting] = useState(false)
   const [serverError, setServerError] = useState('')
-  const [editLoading, setEditLoading] = useState(!!editWorkspace)
+  const [editLoading, setEditLoading] = useState(!!(editWorkspace || editService || editEnvironment))
   const [adminRedact, setAdminRedact] = useState(true)
   const [credentials, setCredentials] = useState<AdminCredential[]>([])
+  const [resources, setResources] = useState<AdminResource[]>([])
 
   useEffect(() => {
     adminGetSettings()
@@ -1008,18 +924,27 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
       adminListCredentials()
         .then(c => setCredentials(c || []))
         .catch(() => {})
+      adminListResources()
+        .then(r => setResources(r || []))
+        .catch(() => {})
     }
   }, [])
 
   useEffect(() => {
-    if (!editWorkspace) return
-    adminGetWorkspaceYAML(editWorkspace)
+    const editName = editWorkspace || editService || editEnvironment
+    if (!editName) return
+    const fetchFn = editService
+      ? adminGetStandaloneServiceYAML
+      : editEnvironment
+        ? adminGetStandaloneEnvYAML
+        : adminGetWorkspaceYAML
+    fetchFn(editName)
       .then(yamlText => {
         setConfig(parseWorkspaceYaml(yamlText))
       })
-      .catch(() => setServerError('Failed to load workspace'))
+      .catch(() => setServerError('Failed to load configuration'))
       .finally(() => setEditLoading(false))
-  }, [editWorkspace])
+  }, [editWorkspace, editService, editEnvironment])
   const [expandedSvcId, setExpandedSvcId] = useState<string | null>(null)
   const [expandedEnvId, setExpandedEnvId] = useState<string | null>(null)
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null)
@@ -1043,6 +968,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
       name: '',
       provider: 'file',
       friendly_name: '',
+      resource: '',
       config: {},
     }))
     setExpandedSvcId(newId)
@@ -1051,7 +977,20 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
   function updateService(id: string, svc: ServiceDef) {
     cfg(d => {
       const idx = d.services.findIndex(s => s.id === id)
-      if (idx >= 0) d.services[idx] = svc
+      if (idx >= 0) {
+        const oldName = d.services[idx].name
+        d.services[idx] = svc
+        if (oldName && oldName !== svc.name) {
+          for (const env of d.environments) {
+            for (const target of env.targets) {
+              target.service_names = target.service_names.map(n => n === oldName ? svc.name : n)
+              for (const ovr of target.service_overrides) {
+                if (ovr.name === oldName) ovr.name = svc.name
+              }
+            }
+          }
+        }
+      }
     })
   }
 
@@ -1171,7 +1110,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
         )}
         <div className="w-px h-5 bg-[var(--border-default)]" />
         <span className="text-sm font-medium text-[var(--text-primary)]">
-          {editWorkspace ? 'Edit Workspace' : onImportToServer ? (mode === 'service' ? 'Create Service' : mode === 'environment' ? 'Create Environment' : 'Create Workspace') : 'Config Builder'}
+          {editWorkspace ? 'Edit Workspace' : editService ? 'Edit Service' : editEnvironment ? 'Edit Environment' : onImportToServer ? (mode === 'service' ? 'Create Service' : mode === 'environment' ? 'Create Environment' : 'Create Workspace') : 'Config Builder'}
         </span>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>
@@ -1236,48 +1175,35 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     const fields = PROVIDER_FIELDS[svc.provider] ?? []
                     return (
                       <>
-                        <TextField
-                          label="Friendly Name"
-                          value={svc.friendly_name}
-                          onChange={v => cfg(d => { if (d.services[0]) d.services[0].friendly_name = v })}
-                          placeholder="REST API"
-                        />
-                        <div>
-                          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-                            Provider<span className="text-red-400 ml-0.5">*</span>
-                          </label>
-                          <div className="grid grid-cols-4 gap-1.5">
-                            {PROVIDERS.map(p => {
-                              const PIcon = PROVIDER_ICONS[p.value] ?? Terminal
-                              return (
-                                <button
-                                  key={p.value}
-                                  onClick={() => cfg(d => { if (d.services[0]) { d.services[0].provider = p.value; d.services[0].config = {} } })}
-                                  className={cn(
-                                    'flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-all border',
-                                    svc.provider === p.value
-                                      ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                                      : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                                  )}
-                                >
-                                  <PIcon className="w-3 h-3 shrink-0" />
-                                  {p.label}
-                                </button>
-                              )
-                            })}
-                          </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <TextField
+                            label="Friendly Name"
+                            value={svc.friendly_name}
+                            onChange={v => cfg(d => { if (d.services[0]) d.services[0].friendly_name = v })}
+                            placeholder="REST API"
+                          />
+                          <IconSelect
+                            label="Provider"
+                            required
+                            value={svc.provider}
+                            onChange={v => cfg(d => { if (d.services[0]) { d.services[0].provider = v; d.services[0].config = {} } })}
+                            options={PROVIDERS}
+                          />
                         </div>
                         {fields.length > 0 && (
-                          <div className="space-y-3 pt-1 border-t border-[var(--border-subtle)]">
+                          <div className="pt-1 border-t border-[var(--border-subtle)] space-y-3">
                             <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Provider Config</span>
-                            {fields.map(field => (
-                              <ConfigField
-                                key={field.key}
-                                field={field}
-                                value={svc.config[field.key] ?? ''}
-                                onChange={v => cfg(d => { if (d.services[0]) d.services[0].config[field.key] = v })}
-                              />
-                            ))}
+                            <div className="grid grid-cols-2 gap-3">
+                              {fields.map(field => (
+                                <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
+                                  <ConfigField
+                                    field={field}
+                                    value={svc.config[field.key] ?? ''}
+                                    onChange={v => cfg(d => { if (d.services[0]) d.services[0].config[field.key] = v })}
+                                  />
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </>
@@ -1291,143 +1217,46 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                   const fields = TARGET_FIELDS[target.type] ?? []
                   return (
                     <Section title="Target" icon={Server} defaultOpen>
-                      <TextField
-                        label="Target Name"
-                        value={target.name}
-                        onChange={v => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].name = v.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
-                        placeholder="prod-server"
-                        required
-                      />
-                      <div>
-                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-                          Type<span className="text-red-400 ml-0.5">*</span>
-                        </label>
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {TARGET_TYPES.map(t => (
-                            <button
-                              key={t.value}
-                              onClick={() => cfg(d => { if (d.environments[0]?.targets[0]) { d.environments[0].targets[0].type = t.value; d.environments[0].targets[0].connection = {} } })}
-                              className={cn(
-                                'px-2 py-1.5 rounded-md text-xs transition-all border',
-                                target.type === t.value
-                                  ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                                  : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                              )}
-                            >
-                              {t.label}
-                            </button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <TextField
+                          label="Target Name"
+                          value={target.name}
+                          onChange={v => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].name = v.toLowerCase().replace(/[^a-z0-9-]/g, '-') })}
+                          placeholder="prod-server"
+                          required
+                        />
+                        <IconSelect
+                          label="Type"
+                          required
+                          value={target.type}
+                          onChange={v => cfg(d => { if (d.environments[0]?.targets[0]) { d.environments[0].targets[0].type = v; d.environments[0].targets[0].connection = {}; d.environments[0].targets[0].credential_profile = '' } })}
+                          options={TARGET_TYPES}
+                        />
+                      </div>
+                      {serverMode && credentials.length > 0 ? (
+                        <CredentialSelector
+                          targetType={target.type}
+                          credentials={credentials}
+                          credentialProfile={target.credential_profile}
+                          connection={target.connection}
+                          fields={fields}
+                          onSelectProfile={(name, kept) => cfg(d => { if (d.environments[0]?.targets[0]) { d.environments[0].targets[0].credential_profile = name; d.environments[0].targets[0].connection = kept } })}
+                          onClearProfile={() => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].credential_profile = '' })}
+                          onConnectionChange={(key, v) => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].connection[key] = v })}
+                        />
+                      ) : fields.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          {fields.map(field => (
+                            <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
+                              <ConfigField
+                                field={field}
+                                value={target.connection[field.key] ?? ''}
+                                onChange={v => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].connection[field.key] = v })}
+                              />
+                            </div>
                           ))}
                         </div>
-                      </div>
-                      {(() => {
-                        const matchingCreds = credentials.filter(c => c.target_type === target.type)
-                        const hasCredentials = serverMode && matchingCreds.length > 0 && (target.type === 'ssh' || target.type === 'winrm')
-                        const useProfile = hasCredentials && target.credential_profile !== ''
-                        const targetFieldKeys = new Set(['host', 'port', 'sudo', 'use_https', 'insecure'])
-                        const targetSpecificFields = fields.filter(f => targetFieldKeys.has(f.key))
-                        const authSpecificFields = fields.filter(f => !targetFieldKeys.has(f.key))
-
-                        if (!hasCredentials) {
-                          return fields.length > 0 ? (
-                            <div className="space-y-3">
-                              {fields.map(field => (
-                                <ConfigField
-                                  key={field.key}
-                                  field={field}
-                                  value={target.connection[field.key] ?? ''}
-                                  onChange={v => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].connection[field.key] = v })}
-                                />
-                              ))}
-                            </div>
-                          ) : null
-                        }
-
-                        return (
-                          <>
-                            {targetSpecificFields.length > 0 && (
-                              <div className="space-y-3">
-                                {targetSpecificFields.map(field => (
-                                  <ConfigField
-                                    key={field.key}
-                                    field={field}
-                                    value={target.connection[field.key] ?? ''}
-                                    onChange={v => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].connection[field.key] = v })}
-                                  />
-                                ))}
-                              </div>
-                            )}
-
-                            <div>
-                              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Authentication</label>
-                              <div className="grid grid-cols-2 gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].credential_profile = '' })}
-                                  className={cn(
-                                    'px-2 py-1.5 rounded-md text-xs transition-all border',
-                                    !useProfile
-                                      ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                                      : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                                  )}
-                                >
-                                  Manual
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const first = matchingCreds[0]
-                                    if (first) cfg(d => {
-                                      if (d.environments[0]?.targets[0]) {
-                                        d.environments[0].targets[0].credential_profile = first.name
-                                        const kept: Record<string, string> = {}
-                                        for (const k of targetFieldKeys) {
-                                          if (d.environments[0].targets[0].connection[k]) kept[k] = d.environments[0].targets[0].connection[k]
-                                        }
-                                        d.environments[0].targets[0].connection = kept
-                                      }
-                                    })
-                                  }}
-                                  className={cn(
-                                    'px-2 py-1.5 rounded-md text-xs transition-all border',
-                                    useProfile
-                                      ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                                      : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                                  )}
-                                >
-                                  Credential Profile
-                                </button>
-                              </div>
-                            </div>
-
-                            {useProfile ? (
-                              <div>
-                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Profile</label>
-                                <select
-                                  value={target.credential_profile}
-                                  onChange={e => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].credential_profile = e.target.value })}
-                                  className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
-                                >
-                                  {matchingCreds.map(c => (
-                                    <option key={c.name} value={c.name}>{c.name}{c.description ? ` — ${c.description}` : ''}</option>
-                                  ))}
-                                </select>
-                                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Managed credential from Admin &gt; Credentials</p>
-                              </div>
-                            ) : authSpecificFields.length > 0 ? (
-                              <div className="space-y-3">
-                                {authSpecificFields.map(field => (
-                                  <ConfigField
-                                    key={field.key}
-                                    field={field}
-                                    value={target.connection[field.key] ?? ''}
-                                    onChange={v => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].connection[field.key] = v })}
-                                  />
-                                ))}
-                              </div>
-                            ) : null}
-                          </>
-                        )
-                      })()}
+                      ) : null}
                     </Section>
                   )
                 })()}
@@ -1491,7 +1320,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {config.services.map(svc => {
-                          const SvcIcon = PROVIDER_ICONS[svc.provider] ?? Terminal
+                          const SvcIcon = ProviderIconWrapper(svc.provider)
                           return (
                             <Card
                               key={svc.id}
@@ -1521,6 +1350,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                           onRemove={() => { removeService(expandedSvcId); setExpandedSvcId(null) }}
                           onClone={() => cloneService(expandedSvcId)}
                           onClose={() => setExpandedSvcId(null)}
+                          resources={serverMode ? resources : undefined}
                         />
                       )}
                     </div>
@@ -1689,17 +1519,6 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     <Section title="Settings" icon={Settings} defaultOpen={false}>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Log Buffer Size</label>
-                          <input
-                            type="number"
-                            value={config.settings.log_buffer_size || ''}
-                            onChange={e => cfg(d => { d.settings.log_buffer_size = parseInt(e.target.value) || 0 })}
-                            placeholder="5000"
-                            className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
-                          />
-                          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Max log entries to keep in memory</p>
-                        </div>
-                        <div>
                           <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">SSH Timeout</label>
                           <input
                             type="number"
@@ -1744,7 +1563,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
               } : undefined}
               importing={serverImporting}
               importError={serverError}
-              saveLabel={editWorkspace ? 'Save Changes' : undefined}
+              saveLabel={(editWorkspace || editService || editEnvironment) ? 'Save Changes' : undefined}
               onCollapse={() => setYamlOpen(false)}
             />
           ) : (

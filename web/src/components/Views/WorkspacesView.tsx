@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Layers, ChevronRight, Server, Boxes, Plus, Upload, X, Trash2, Pencil, RefreshCw, Globe } from 'lucide-react'
+import { ChevronRight, Server, Plus, Upload, X, Trash2, Pencil, RefreshCw } from 'lucide-react'
 
-const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import { cn } from '../../lib/cn'
 import { listWorkspaces, fetchStats, fetchConfig, listStandaloneEnvs, listStandaloneServices, adminImportWorkspace, adminDeleteWorkspace, adminDeleteStandaloneEnv, adminDeleteStandaloneService, adminListResources } from '../../lib/api'
 import type { AdminResource } from '../../lib/api'
@@ -9,12 +8,12 @@ import type { Workspace, StandaloneEnvironment, StandaloneService, GroupedStats,
 import LayoutToggle from '../ui/LayoutToggle'
 import CollectionGrid from '../ui/CollectionGrid'
 import { useLayoutToggle } from '../../lib/useLayoutToggle'
-import ProviderIcon from '../ui/ProviderIcon'
+import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
+import EntityIcon, { EntityIconRaw, entityStyle } from '../ui/EntityIcon'
 import Badge, { providerVariant } from '../ui/Badge'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
 import Card from '../ui/Card'
-import Section from '../ui/Section'
 import StatsGrid from '../ui/StatsGrid'
 import DataTable from '../ui/DataTable'
 import EmptyState from '../ui/EmptyState'
@@ -26,7 +25,7 @@ interface Props {
   onSelect: (workspace: Workspace) => void
   onSelectEnv?: (env: StandaloneEnvironment) => void
   onSelectService?: (svc: StandaloneService) => void
-  onSelectResource?: (name: string, description: string) => void
+  onSelectResource?: (name: string, description: string, type: string) => void
   userRole?: string
   userScope?: string[]
   serverMode?: boolean
@@ -34,9 +33,19 @@ interface Props {
   onCreateEnvironment?: () => void
   onCreateService?: () => void
   onEditWorkspace?: (name: string) => void
+  onEditService?: (name: string) => void
+  onEditEnvironment?: (name: string) => void
 }
 
-export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService, onSelectResource, userRole, userScope, serverMode, onCreateWorkspace, onCreateEnvironment, onCreateService, onEditWorkspace }: Props) {
+type DashboardItem = {
+  kind: 'workspace' | 'environment' | 'service' | 'resource'
+  name: string
+  description: string
+  data: Workspace | StandaloneEnvironment | StandaloneService | AdminResource
+}
+
+
+export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService, onSelectResource, userRole, userScope, serverMode, onCreateWorkspace, onCreateEnvironment, onCreateService, onEditWorkspace, onEditService, onEditEnvironment }: Props) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [standaloneEnvs, setStandaloneEnvs] = useState<StandaloneEnvironment[]>([])
   const [standaloneServices, setStandaloneServices] = useState<StandaloneService[]>([])
@@ -96,12 +105,12 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
     return (
       <div className="flex-1 overflow-auto">
         <div className="px-8 lg:px-16 py-8">
-          <div className="grid gap-4 mb-6 grid-cols-1 sm:grid-cols-3">
-            {[1,2,3].map(i => <div key={i} className="skeleton h-24" />)}
+          <div className="grid gap-4 mb-6 grid-cols-2 sm:grid-cols-4">
+            {[1,2,3,4].map(i => <div key={i} className="skeleton h-24" />)}
           </div>
           <div className="skeleton h-6 w-40 mb-6 !rounded-lg" />
           <div className="grid gap-4">
-            {[1,2,3].map(i => <div key={i} className="skeleton h-20" />)}
+            {[1,2,3].map(i => <div key={i} className="skeleton h-16" />)}
           </div>
         </div>
       </div>
@@ -120,9 +129,9 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
       statsItems.push({
         label: 'Workspaces',
         value: stats.workspace_stats.count,
-        icon: <Layers className="w-4 h-4" />,
-        accent: 'text-[var(--text-accent)]',
-        bg: 'bg-accent-500/10',
+        icon: <EntityIconRaw kind="workspace" className="w-4 h-4" />,
+        accent: entityStyle('workspace').color,
+        bg: entityStyle('workspace').bg,
         sub: [
           { label: 'Environments', value: stats.workspace_stats.environments ?? 0 },
           { label: 'Services', value: stats.workspace_stats.services },
@@ -135,9 +144,9 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
       statsItems.push({
         label: 'Environments',
         value: stats.environment_stats.count,
-        icon: <Boxes className="w-4 h-4" />,
-        accent: 'text-blue-400',
-        bg: 'bg-blue-500/10',
+        icon: <EntityIconRaw kind="environment" className="w-4 h-4" />,
+        accent: entityStyle('environment').color,
+        bg: entityStyle('environment').bg,
         sub: [
           { label: 'Services', value: stats.environment_stats.services },
           { label: 'Up', value: stats.environment_stats.up, color: 'text-emerald-400' },
@@ -149,9 +158,9 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
       statsItems.push({
         label: 'Services',
         value: stats.service_stats.count,
-        icon: <Server className="w-4 h-4" />,
-        accent: 'text-emerald-400',
-        bg: 'bg-emerald-500/10',
+        icon: <EntityIconRaw kind="service" className="w-4 h-4" />,
+        accent: entityStyle('service').color,
+        bg: entityStyle('service').bg,
         sub: [
           { label: 'Up', value: stats.service_stats.up, color: 'text-emerald-400' },
           ...(stats.service_stats.down > 0 ? [{ label: 'Down', value: stats.service_stats.down, color: 'text-red-400' }] : []),
@@ -159,190 +168,165 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
       })
     }
   }
+  if (resources.length > 0) {
+    statsItems.push({
+      label: 'Resources',
+      value: resources.length,
+      icon: <EntityIconRaw kind="resource" className="w-4 h-4" />,
+      accent: entityStyle('resource').color,
+      bg: entityStyle('resource').bg,
+      sub: [],
+    })
+  }
 
   /* ── Create-menu items ── */
   const createMenuItems = [
-    ...(showWs && onCreateWorkspace ? [{ label: 'Workspace', icon: <Layers className="w-4 h-4 text-[var(--text-accent)]" />, onClick: onCreateWorkspace }] : []),
-    ...(showEnv && onCreateEnvironment ? [{ label: 'Environment', icon: <Globe className="w-4 h-4 text-blue-400" />, onClick: onCreateEnvironment }] : []),
-    ...(showSvc && onCreateService ? [{ label: 'Service', icon: <Server className="w-4 h-4 text-emerald-400" />, onClick: onCreateService }] : []),
+    ...(showWs && onCreateWorkspace ? [{ label: 'Workspace', icon: <EntityIconRaw kind="workspace" className={cn('w-4 h-4', entityStyle('workspace').color)} />, onClick: onCreateWorkspace }] : []),
+    ...(showEnv && onCreateEnvironment ? [{ label: 'Environment', icon: <EntityIconRaw kind="environment" className={cn('w-4 h-4', entityStyle('environment').color)} />, onClick: onCreateEnvironment }] : []),
+    ...(showSvc && onCreateService ? [{ label: 'Service', icon: <EntityIconRaw kind="service" className={cn('w-4 h-4', entityStyle('service').color)} />, onClick: onCreateService }] : []),
   ]
 
-  /* ── Workspace columns (list view) ── */
-  const wsColumns = [
+  /* ── Build unified items list ── */
+  const allItems: DashboardItem[] = [
+    ...(showWs ? workspaces.map(ws => ({ kind: 'workspace' as const, name: ws.name, description: ws.description || '', data: ws })) : []),
+    ...(showEnv ? standaloneEnvs.map(env => ({ kind: 'environment' as const, name: env.name, description: env.description || '', data: env })) : []),
+    ...(showSvc ? standaloneServices.map(svc => ({ kind: 'service' as const, name: svc.name, description: svc.description || '', data: svc })) : []),
+    ...resources.map(res => ({ kind: 'resource' as const, name: res.name, description: res.description || '', data: res })),
+  ]
+
+  function handleItemClick(item: DashboardItem) {
+    switch (item.kind) {
+      case 'workspace': onSelect(item.data as Workspace); break
+      case 'environment': onSelectEnv?.(item.data as StandaloneEnvironment); break
+      case 'service': onSelectService?.(item.data as StandaloneService); break
+      case 'resource': {
+        const r = item.data as AdminResource
+        onSelectResource?.(r.name, r.description || '', r.type)
+        break
+      }
+    }
+  }
+
+  function handleItemEdit(e: React.MouseEvent, item: DashboardItem) {
+    e.stopPropagation()
+    switch (item.kind) {
+      case 'workspace': onEditWorkspace?.(item.name); break
+      case 'environment': onEditEnvironment?.(item.name); break
+      case 'service': onEditService?.(item.name); break
+    }
+  }
+
+  function handleItemDelete(e: React.MouseEvent, item: DashboardItem) {
+    switch (item.kind) {
+      case 'workspace': handleDeleteWs(e, item.name); break
+      case 'environment': handleDeleteEnv(e, item.name); break
+      case 'service': handleDeleteSvc(e, item.name); break
+    }
+  }
+
+  function renderDetails(item: DashboardItem) {
+    switch (item.kind) {
+      case 'workspace': {
+        const ws = item.data as Workspace
+        return (
+          <div className="flex items-center justify-end gap-3 text-xs text-[var(--text-secondary)]">
+            <span>{ws.environments} env{ws.environments !== 1 ? 's' : ''}</span>
+            <span className="flex items-center gap-1"><Server className="w-3 h-3" />{ws.services} svc{ws.services !== 1 ? 's' : ''}</span>
+          </div>
+        )
+      }
+      case 'environment': {
+        const env = item.data as StandaloneEnvironment
+        return (
+          <div className="flex items-center justify-end gap-1 text-xs text-[var(--text-secondary)]">
+            <Server className="w-3 h-3" />{env.services} service{env.services !== 1 ? 's' : ''}
+          </div>
+        )
+      }
+      case 'service': {
+        const svc = item.data as StandaloneService
+        return (
+          <Badge variant={providerVariant(svc.provider)}>
+            <ProviderIcon provider={svc.provider} className="w-3 h-3" />
+            {providerDisplayName(svc.provider)}
+          </Badge>
+        )
+      }
+      case 'resource': {
+        const res = item.data as AdminResource
+        return (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
+            {providerDisplayName(res.type) || res.type}
+          </span>
+        )
+      }
+    }
+  }
+
+  /* ── Unified columns ── */
+  const columns = [
     {
       key: 'name',
       header: 'Name',
-      render: (ws: Workspace) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center shrink-0">
-            <Layers className="w-4 h-4 text-[var(--text-accent)]" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-[var(--text-primary)]">{ws.name}</span>
-              {ws.hierarchy?.name === 'service-first' && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">service-first</span>
-              )}
+      render: (item: DashboardItem) => {
+        const style = entityStyle(item.kind)
+        const ws = item.kind === 'workspace' ? item.data as Workspace : null
+        return (
+          <div className="flex items-center gap-3">
+            {item.kind === 'service' || item.kind === 'resource'
+              ? <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', style.bg, style.color)}>
+                  <ProviderIcon provider={item.kind === 'service' ? (item.data as StandaloneService).provider : (item.data as AdminResource).type} className="w-5 h-5" />
+                </div>
+              : <EntityIcon kind={item.kind} />}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-[var(--text-primary)]">{item.name}</span>
+                {ws?.hierarchy?.name === 'service-first' && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">service-first</span>
+                )}
+              </div>
+              {item.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{item.description}</div>}
             </div>
-            {ws.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{ws.description}</div>}
           </div>
-        </div>
-      ),
+        )
+      },
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (item: DashboardItem) => {
+        const style = entityStyle(item.kind)
+        return (
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', style.badge)}>
+            {style.label}
+          </span>
+        )
+      },
     },
     {
       key: 'details',
       header: 'Details',
-      className: 'w-48',
-      render: (ws: Workspace) => (
-        <div className="flex items-center gap-3 text-xs text-[var(--text-secondary)]">
-          <span>{ws.environments} env{ws.environments !== 1 ? 's' : ''}</span>
-          <span className="flex items-center gap-1"><Server className="w-3 h-3" />{ws.services} service{ws.services !== 1 ? 's' : ''}</span>
-        </div>
-      ),
+      align: 'right' as const,
+      render: (item: DashboardItem) => renderDetails(item),
     },
     ...(isAdmin ? [{
       key: 'actions',
       header: '',
       className: 'w-24',
-      render: (ws: Workspace) => (
-        <div className="flex items-center gap-0.5 justify-end">
-          <IconButton variant={'accent' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); onEditWorkspace?.(ws.name) }} title="Edit workspace">
-            <Pencil className="w-4 h-4" />
-          </IconButton>
-          <IconButton variant={'danger' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleDeleteWs(e, ws.name)} title="Delete workspace">
-            <Trash2 className="w-4 h-4" />
-          </IconButton>
-        </div>
-      ),
+      render: (item: DashboardItem) => {
+        if (item.kind === 'resource') return null
+        return (
+          <div className="flex items-center gap-0.5 justify-end">
+            <IconButton variant={'accent' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleItemEdit(e, item)} title={`Edit ${item.kind}`}>
+              <Pencil className="w-4 h-4" />
+            </IconButton>
+            <IconButton variant={'danger' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleItemDelete(e, item)} title="Delete">
+              <Trash2 className="w-4 h-4" />
+            </IconButton>
+          </div>
+        )
+      },
     }] : []),
-    {
-      key: 'arrow',
-      header: '',
-      className: 'w-8',
-      render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-    },
-  ]
-
-  /* ── Environment columns (list view) ── */
-  const envColumns = [
-    {
-      key: 'name',
-      header: 'Name',
-      render: (env: StandaloneEnvironment) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-            <Globe className="w-4 h-4 text-blue-400" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-[var(--text-primary)]">{env.name}</div>
-            {env.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{env.description}</div>}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'details',
-      header: 'Details',
-      className: 'w-48',
-      render: (env: StandaloneEnvironment) => (
-        <div className="flex items-center gap-1 text-xs text-[var(--text-secondary)]">
-          <Server className="w-3 h-3" />{env.services} service{env.services !== 1 ? 's' : ''}
-        </div>
-      ),
-    },
-    ...(isAdmin ? [{
-      key: 'actions',
-      header: '',
-      className: 'w-16',
-      render: (env: StandaloneEnvironment) => (
-        <div className="flex items-center justify-end">
-          <IconButton variant={'danger' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleDeleteEnv(e, env.name)} title="Delete">
-            <Trash2 className="w-4 h-4" />
-          </IconButton>
-        </div>
-      ),
-    }] : []),
-    {
-      key: 'arrow',
-      header: '',
-      className: 'w-8',
-      render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-    },
-  ]
-
-  /* ── Service columns (list view) ── */
-  const svcColumns = [
-    {
-      key: 'name',
-      header: 'Name',
-      render: (svc: StandaloneService) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-            <Server className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-[var(--text-primary)]">{svc.name}</div>
-            {svc.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{svc.description}</div>}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'provider',
-      header: 'Provider',
-      className: 'w-40',
-      render: (svc: StandaloneService) => (
-        <Badge variant={providerVariant(svc.provider)}>
-          <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-          {svc.provider}
-        </Badge>
-      ),
-    },
-    ...(isAdmin ? [{
-      key: 'actions',
-      header: '',
-      className: 'w-16',
-      render: (svc: StandaloneService) => (
-        <div className="flex items-center justify-end">
-          <IconButton variant={'danger' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleDeleteSvc(e, svc.name)} title="Delete">
-            <Trash2 className="w-4 h-4" />
-          </IconButton>
-        </div>
-      ),
-    }] : []),
-    {
-      key: 'arrow',
-      header: '',
-      className: 'w-8',
-      render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-    },
-  ]
-
-  /* ── Resource columns (list view) ── */
-  const resColumns = [
-    {
-      key: 'name',
-      header: 'Name',
-      render: (res: AdminResource) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center shrink-0">
-            <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-[var(--text-primary)]">{res.name}</div>
-            {res.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{res.description}</div>}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'type',
-      header: 'Type',
-      className: 'w-32',
-      render: (res: AdminResource) => (
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-500/10 text-accent-400 border border-accent-500/20 font-medium">{res.type}</span>
-      ),
-    },
     {
       key: 'arrow',
       header: '',
@@ -391,164 +375,62 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
         )}
 
         {/* Stats */}
-        {stats && statsItems.length > 0 && <StatsGrid items={statsItems} />}
+        {statsItems.length > 0 && <StatsGrid items={statsItems} />}
 
-        {/* Workspaces section */}
-        {showWs && (
-          <Section title="Workspaces" description="Manage grouped environments and services." className="mb-8">
-            {workspaces.length > 0 ? (
-              layout === 'list' ? (
-                <DataTable columns={wsColumns} data={workspaces} keyFn={ws => ws.name} onRowClick={onSelect} />
-              ) : (
-                <CollectionGrid>
-                  {workspaces.map(ws => (
-                    <Card key={ws.name} hover padding="lg" onClick={() => onSelect(ws)} className="cursor-pointer text-left group">
-                      <div className="flex items-center gap-2 mb-3 w-full">
-                        <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center">
-                          <Layers className="w-4 h-4 text-[var(--text-accent)]" />
-                        </div>
-                        {ws.hierarchy?.name === 'service-first' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">service-first</span>
-                        )}
-                      </div>
-                      <div className="text-base text-[var(--text-primary)]">{ws.name}</div>
-                      <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{ws.description}</div>
-                      <div className="flex items-center gap-3 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                        <span>{ws.environments} env{ws.environments !== 1 ? 's' : ''}</span>
-                        <span className="flex items-center gap-1"><Server className="w-3 h-3" />{ws.services}</span>
-                        {isAdmin && (
-                          <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                            <IconButton variant="accent" onClick={e => { e.stopPropagation(); onEditWorkspace?.(ws.name) }} title="Edit">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </IconButton>
-                            <IconButton variant="danger" onClick={e => handleDeleteWs(e, ws.name)} title="Delete">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </IconButton>
+        {/* Unified table / grid */}
+        {allItems.length > 0 ? (
+          layout === 'list' ? (
+            <DataTable columns={columns} data={allItems} keyFn={item => `${item.kind}-${item.name}`} onRowClick={handleItemClick} />
+          ) : (
+            <CollectionGrid>
+              {allItems.map(item => {
+                const style = entityStyle(item.kind)
+                const ws = item.kind === 'workspace' ? item.data as Workspace : null
+                return (
+                  <Card key={`${item.kind}-${item.name}`} hover padding="lg" onClick={() => handleItemClick(item)} className="cursor-pointer text-left group">
+                    <div className="flex items-center gap-2 mb-3 w-full">
+                      {item.kind === 'service' || item.kind === 'resource'
+                        ? <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', style.bg, style.color)}>
+                            <ProviderIcon provider={item.kind === 'service' ? (item.data as StandaloneService).provider : (item.data as AdminResource).type} className="w-5 h-5" />
                           </div>
-                        )}
-                      </div>
-                    </Card>
-                  ))}
-                </CollectionGrid>
-              )
-            ) : (
-              <EmptyState
-                icon={<Layers className="w-7 h-7 text-[var(--text-accent)] opacity-60" />}
-                iconBg="bg-accent-500/10"
-                title="No workspaces yet"
-                description="Create a workspace to organize your environments and services."
-                action={isAdmin && onCreateWorkspace ? (
-                  <Button onClick={onCreateWorkspace}><Plus className="w-3.5 h-3.5" />Create Workspace</Button>
-                ) : undefined}
-              />
-            )}
-          </Section>
-        )}
-
-        {/* Environments section */}
-        {showEnv && (
-          <Section title="Environments" description="Standalone environments with their own services." className="mb-8">
-            {standaloneEnvs.length > 0 ? (
-              layout === 'list' ? (
-                <DataTable columns={envColumns} data={standaloneEnvs} keyFn={env => env.name} onRowClick={env => onSelectEnv?.(env)} />
-              ) : (
-                <CollectionGrid>
-                  {standaloneEnvs.map(env => (
-                    <Card key={env.name} hover padding="lg" onClick={() => onSelectEnv?.(env)} className="cursor-pointer text-left group">
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center mb-3">
-                        <Globe className="w-4 h-4 text-blue-400" />
-                      </div>
-                      <div className="text-base text-[var(--text-primary)]">{env.name}</div>
-                      {env.description && <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{env.description}</div>}
-                      <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                        <Server className="w-3 h-3" />{env.services} service{env.services !== 1 ? 's' : ''}
-                        {isAdmin && (
-                          <IconButton variant="danger" onClick={e => handleDeleteEnv(e, env.name)} title="Delete" className="ml-auto opacity-0 group-hover:opacity-100">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </IconButton>
-                        )}
-                      </div>
-                    </Card>
-                  ))}
-                </CollectionGrid>
-              )
-            ) : (
-              <EmptyState
-                icon={<Globe className="w-7 h-7 text-blue-400 opacity-60" />}
-                iconBg="bg-blue-500/10"
-                title="No environments"
-                description="Create an environment to group services together."
-                action={isAdmin && onCreateEnvironment ? (
-                  <Button onClick={onCreateEnvironment}><Plus className="w-3.5 h-3.5" />Create Environment</Button>
-                ) : undefined}
-              />
-            )}
-          </Section>
-        )}
-
-        {/* Services section */}
-        {showSvc && (
-          <Section title="Services" description="Standalone services with direct connections." className="mb-8">
-            {standaloneServices.length > 0 ? (
-              layout === 'list' ? (
-                <DataTable columns={svcColumns} data={standaloneServices} keyFn={svc => svc.name} onRowClick={svc => onSelectService?.(svc)} />
-              ) : (
-                <CollectionGrid>
-                  {standaloneServices.map(svc => (
-                    <Card key={svc.name} hover padding="lg" onClick={() => onSelectService?.(svc)} className="cursor-pointer text-left group">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-3">
-                        <Server className="w-4 h-4 text-emerald-400" />
-                      </div>
-                      <div className="text-base text-[var(--text-primary)]">{svc.name}</div>
-                      {svc.description && <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{svc.description}</div>}
-                      <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                        <Badge variant={providerVariant(svc.provider)} className="text-[10px]"><ProviderIcon provider={svc.provider} className="w-3 h-3" />{svc.provider}</Badge>
-                        {isAdmin && (
-                          <IconButton variant="danger" onClick={e => handleDeleteSvc(e, svc.name)} title="Delete" className="ml-auto opacity-0 group-hover:opacity-100">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </IconButton>
-                        )}
-                      </div>
-                    </Card>
-                  ))}
-                </CollectionGrid>
-              )
-            ) : (
-              <EmptyState
-                icon={<Server className="w-7 h-7 text-emerald-400 opacity-60" />}
-                iconBg="bg-emerald-500/10"
-                title="No services"
-                description="Add a standalone service to start streaming logs."
-                action={isAdmin && onCreateService ? (
-                  <Button onClick={onCreateService}><Plus className="w-3.5 h-3.5" />Create Service</Button>
-                ) : undefined}
-              />
-            )}
-          </Section>
-        )}
-
-        {/* Resources section */}
-        {resources.length > 0 && (
-          <Section title="Resources" description="Connected clusters — browse namespaces and stream logs." className="mb-8">
-            {layout === 'list' ? (
-              <DataTable columns={resColumns} data={resources} keyFn={res => res.name} onRowClick={res => onSelectResource?.(res.name, res.description || '')} />
-            ) : (
-              <CollectionGrid>
-                {resources.map(res => (
-                  <Card key={res.name} hover padding="lg" onClick={() => onSelectResource?.(res.name, res.description || '')} className="cursor-pointer text-left">
-                    <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center mb-3">
-                      <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-5 h-5" />
+                        : <EntityIcon kind={item.kind} />}
+                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', style.badge)}>
+                        {style.label}
+                      </span>
+                      {ws?.hierarchy?.name === 'service-first' && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">service-first</span>
+                      )}
                     </div>
-                    <div className="text-base text-[var(--text-primary)]">{res.name}</div>
-                    {res.description && <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{res.description}</div>}
-                    <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-500/10 text-accent-400 border border-accent-500/20 font-medium">{res.type}</span>
+                    <div className="text-base text-[var(--text-primary)]">{item.name}</div>
+                    {item.description && <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{item.description}</div>}
+                    <div className="flex items-center gap-3 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
+                      {renderDetails(item)}
+                      {isAdmin && item.kind !== 'resource' && (
+                        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                          <IconButton variant="accent" onClick={e => handleItemEdit(e, item)} title="Edit">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </IconButton>
+                          <IconButton variant="danger" onClick={e => handleItemDelete(e, item)} title="Delete">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </IconButton>
+                        </div>
+                      )}
                     </div>
                   </Card>
-                ))}
-              </CollectionGrid>
-            )}
-          </Section>
+                )
+              })}
+            </CollectionGrid>
+          )
+        ) : (
+          <EmptyState
+            icon={<EntityIconRaw kind="workspace" className="w-7 h-7 text-[var(--text-accent)] opacity-60" />}
+            iconBg="bg-accent-500/10"
+            title="Nothing here yet"
+            description="Create a workspace, environment, or service to get started."
+            action={isAdmin && onCreateWorkspace ? (
+              <Button onClick={onCreateWorkspace}><Plus className="w-3.5 h-3.5" />Create Workspace</Button>
+            ) : undefined}
+          />
         )}
       </div>
     </div>

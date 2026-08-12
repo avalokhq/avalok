@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/avalokhq/avalok/internal/provider"
 	"github.com/avalokhq/avalok/internal/stream"
@@ -53,6 +54,7 @@ func (s *Server) wsReadLimit() int64 {
 
 type wsCommand struct {
 	Action string `json:"action"`
+	Lines  int    `json:"lines,omitempty"`
 }
 
 type wsLogEntry struct {
@@ -116,12 +118,14 @@ func (s *Server) handleWebSocketStream(w http.ResponseWriter, r *http.Request, r
 	streamCtx, streamCancel := context.WithCancel(ctx)
 	defer streamCancel()
 
+	streamOpts := provider.StreamOpts{Follow: true, Tail: s.streamTailLines()}
+	if r.URL.Query().Get("mode") == "live" {
+		streamOpts = provider.StreamOpts{Follow: true, Since: time.Now()}
+	}
+
 	var streams []<-chan provider.LogEntry
 	for _, inst := range instances {
-		s, sErr := p.Stream(streamCtx, inst.ID, provider.StreamOpts{
-			Follow: true,
-			Tail:   s.streamTailLines(),
-		})
+		s, sErr := p.Stream(streamCtx, inst.ID, streamOpts)
 		if sErr != nil {
 			logger.Warn("WS stream error", "instance", inst.ID, "error", sErr)
 			continue

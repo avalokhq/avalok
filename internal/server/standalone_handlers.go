@@ -1,17 +1,18 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/avalokhq/avalok/internal/provider"
 	"github.com/avalokhq/avalok/internal/store"
 	"github.com/avalokhq/avalok/internal/workspace"
-
-	"context"
-	"time"
 )
 
 func (s *Server) handlePublicConfig(w http.ResponseWriter, r *http.Request) {
@@ -472,4 +473,93 @@ func (s *Server) handleDeleteStandaloneService(w http.ResponseWriter, r *http.Re
 
 	logger.Info("standalone service deleted", "user", actor.Username, "service", name)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+// --- YAML Export ---
+
+func (s *Server) handleExportStandaloneServiceYAML(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	svc, err := s.store.GetStandaloneService(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "service not found")
+		return
+	}
+
+	sanitized := svc.Target
+	sanitized.Password = ""
+	sanitized.Passphrase = ""
+	sanitized.BearerToken = ""
+	sanitized.KubeconfigContent = ""
+
+	type svcMeta struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description,omitempty"`
+	}
+	fileFormat := struct {
+		Workspace    svcMeta                   `yaml:"workspace"`
+		Services     []workspace.Service       `yaml:"services"`
+		Environments []workspace.Environment   `yaml:"environments,omitempty"`
+	}{
+		Workspace: svcMeta{Name: svc.Name, Description: svc.Description},
+		Services: []workspace.Service{{
+			Name:     svc.Name,
+			Provider: svc.Provider,
+			Config:   svc.Config,
+		}},
+	}
+	if sanitized.Name != "" {
+		fileFormat.Environments = []workspace.Environment{{
+			Targets: []workspace.Target{sanitized},
+		}}
+	}
+
+	data, err := yaml.Marshal(fileFormat)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to marshal service")
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Write(data)
+}
+
+func (s *Server) handleExportStandaloneEnvYAML(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	env, err := s.store.GetStandaloneEnv(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "environment not found")
+		return
+	}
+
+	sanitizedTargets := make([]workspace.Target, len(env.Targets))
+	copy(sanitizedTargets, env.Targets)
+	for i := range sanitizedTargets {
+		sanitizedTargets[i].Password = ""
+		sanitizedTargets[i].Passphrase = ""
+		sanitizedTargets[i].BearerToken = ""
+		sanitizedTargets[i].KubeconfigContent = ""
+	}
+
+	type envMeta struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description,omitempty"`
+	}
+	fileFormat := struct {
+		Workspace    envMeta                   `yaml:"workspace"`
+		Services     []workspace.Service       `yaml:"services"`
+		Environments []workspace.Environment   `yaml:"environments"`
+	}{
+		Workspace: envMeta{Name: env.Name, Description: env.Description},
+		Services:  env.Services,
+		Environments: []workspace.Environment{{
+			Targets: sanitizedTargets,
+		}},
+	}
+
+	data, err := yaml.Marshal(fileFormat)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to marshal environment")
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Write(data)
 }

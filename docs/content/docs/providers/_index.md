@@ -21,6 +21,8 @@ services:
 
 ## Available Providers
 
+### Infrastructure Providers
+
 | Provider | Description | Use Case |
 |----------|-------------|----------|
 | [Docker](docker) | Container logs via `docker logs` | Docker containers on any host |
@@ -32,6 +34,17 @@ services:
 | [Windows Event Log](windows-eventlog) | Windows Event Log via `wevtutil` | Windows servers |
 | [WinRM](winrm) | Remote logs over WinRM | Remote Windows servers |
 | [IIS](iis) | IIS web server logs | IIS sites on Windows |
+
+### Cloud Storage Providers
+
+| Provider | Description | Use Case |
+|----------|-------------|----------|
+| S3 | AWS S3 or S3-compatible storage (MinIO, Backblaze, etc.) | Log files stored in S3 buckets |
+| Azure Blob | Azure Blob Storage container logs | Log files in Azure Blob containers |
+| Azure File | Azure File Share logs | Log files on Azure File Shares |
+| GCS | Google Cloud Storage bucket logs | Log files in GCS buckets |
+
+Cloud storage providers stream log files from object storage. They can be used in workspace YAML configs or as [Resources]({{< relref "../server/resources" >}}) in server mode. In server mode, cloud storage resources include a built-in storage browser for navigating folders and files visually.
 
 ## Remote Targets
 

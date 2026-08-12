@@ -16,6 +16,10 @@ const variants = {
   iis: 'bg-[#2B2329] text-[#F4A8D1]',
   journalctl: 'bg-[#232A37] text-[#C9D2FF]',
   containerd: 'bg-[#1C2A39] text-[#5FA9FF]',
+  s3: 'bg-[#1A2E1A] text-[#6CAE3E]',
+  'azure-blob': 'bg-[#1A2535] text-[#32D4F5]',
+  'azure-file': 'bg-[#1A2535] text-[#5EA0EF]',
+  gcs: 'bg-[#1A2540] text-[#669DF6]',
 } as const
 
 export type BadgeVariant = keyof typeof variants
@@ -33,7 +37,7 @@ interface Props {
 export default function Badge({ children, variant = 'default', className }: Props) {
   return (
     <span className={cn(
-      'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium',
+      'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium',
       variants[variant],
       className
     )}>

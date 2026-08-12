@@ -17,9 +17,10 @@ export default function StatsGrid({ items }: StatsGridProps) {
   return (
     <div className={cn(
       'grid gap-4 mb-8',
-      items.length === 3 ? 'grid-cols-1 sm:grid-cols-3'
-        : items.length === 2 ? 'grid-cols-1 sm:grid-cols-2'
-          : 'grid-cols-1 max-w-sm',
+      items.length >= 4 ? 'grid-cols-2 sm:grid-cols-4'
+        : items.length === 3 ? 'grid-cols-1 sm:grid-cols-3'
+          : items.length === 2 ? 'grid-cols-1 sm:grid-cols-2'
+            : 'grid-cols-1 max-w-sm',
     )}>
       {items.map(item => (
         <div key={item.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">

@@ -178,11 +178,13 @@ PUT /api/admin/users/{username}
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/admin/resources` | List all Kubernetes resources. |
+| `GET` | `/api/admin/resources` | List all resources (Kubernetes and cloud storage). |
 | `POST` | `/api/admin/resources` | Create a resource. |
 | `GET` | `/api/admin/resources/{name}` | Get resource details. |
 | `PUT` | `/api/admin/resources/{name}` | Update a resource. |
 | `DELETE` | `/api/admin/resources/{name}` | Delete a resource. |
+| `GET` | `/api/admin/resources/{name}/storage/list` | List objects/directories in a cloud storage resource. Supports `?prefix=` query param. |
+| `GET` | `/api/admin/resources/{name}/storage/content/{key}` | Download a single object's content from cloud storage via HTTP. |
 
 ## Admin: Standalone Environments
 

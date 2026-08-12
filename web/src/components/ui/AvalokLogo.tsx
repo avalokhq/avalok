@@ -22,12 +22,12 @@ interface WordmarkProps {
   height?: number
 }
 
-export function AvalokWordmark({ className, height = 20 }: WordmarkProps) {
+export function AvalokWordmark({ className, height = 20, forceInvert }: WordmarkProps & { forceInvert?: boolean }) {
   return (
     <img
       src="/avalok-5.png"
       alt="avalok"
-      className={cn('block dark:invert', className)}
+      className={cn('block', forceInvert ? 'invert' : 'dark:invert', className)}
       style={{ height, width: 'auto' }}
     />
   )

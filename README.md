@@ -87,6 +87,10 @@ Prints 3 access URLs. Share them with whoever needs logs. Close the terminal whe
 For always-on access. Runs as a service so people can log in and view logs on their own, without you being online. PostgreSQL-backed with JWT auth, role-based access control, and managed credentials.
 
 ```bash
+# Quick setup (interactive, handles PostgreSQL + systemd)
+sudo avalok server install
+
+# Or manual setup
 avalok server init --db-url "postgres://..." --jwt-secret "..."
 avalok server start -c config.yaml workspace.yaml
 ```
@@ -106,6 +110,10 @@ Three roles: **admin**, **manager**, **reader**. Developers register, admins app
 | **WinRM** | Remote files or commands over WinRM | Windows servers |
 | **Windows Event Log** | Windows Event Log channels | Windows Application/System/Security logs |
 | **IIS** | IIS web server logs | Windows web servers |
+| **S3** | AWS S3 or S3-compatible storage | Log files in S3 buckets |
+| **Azure Blob** | Azure Blob Storage | Log files in Blob containers |
+| **Azure File** | Azure File Share | Log files on Azure File Shares |
+| **GCS** | Google Cloud Storage | Log files in GCS buckets |
 
 ## Quick Start
 
@@ -171,24 +179,18 @@ For teams that want developers to self-serve log access without an admin being o
 ### Setup
 
 ```bash
-# 1. Initialize database and create admin account
-avalok server init \
-  --db-url "postgres://avalok:password@localhost:5432/avalok?sslmode=disable" \
-  --jwt-secret "your-secret-at-least-32-characters-long"
+# Option 1: Interactive installer (handles PostgreSQL + systemd)
+sudo avalok server install
 
-# 2. Start the server
+# Option 2: Docker Compose (JWT secret auto-generated)
+avalok server deploy
+docker compose up -d
+
+# Option 3: Manual
 avalok server start -c config.yaml workspace.yaml
 ```
 
-### Docker Compose
-
-```bash
-# Generate a docker-compose.yml
-avalok server deploy
-
-# Then bring it up
-docker compose up -d
-```
+On first start, an admin account is created automatically and credentials are printed in the server logs.
 
 ### Environment Variables
 
@@ -275,7 +277,6 @@ environments:
         service_names: [event-logs]
 
 settings:
-  log_buffer_size: 1000            # lines to buffer per service
   ssh_timeout: 10                  # seconds
   hierarchy: default               # default, service-first, product-first, company
 ```
@@ -301,6 +302,7 @@ avalok server migrate               Run database migrations
   --db-url        PostgreSQL connection string
 
 avalok server deploy                Generate Docker Compose deployment files
+avalok server install               Install as a systemd service (interactive)
 
 avalok tail <workspace/env/service>  Stream logs in terminal (no web UI)
   -f, --follow    Follow log output

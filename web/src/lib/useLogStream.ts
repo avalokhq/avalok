@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { LogEntry } from './types'
-import { streamURL } from './api'
+import { streamURL, appendLiveMode } from './api'
+import type { LogViewMode } from './api'
 
 const DEFAULT_MAX_LINES = 10000
 const BLINK_GAP_MS = 2000
 const FLUSH_INTERVAL_MS = 100
 
-export function useLogStream(workspace: string, env: string, service: string, customStreamURL?: string, maxLines = DEFAULT_MAX_LINES) {
+export function useLogStream(workspace: string, env: string, service: string, customStreamURL?: string, maxLines = DEFAULT_MAX_LINES, viewMode: LogViewMode = 'stream') {
   const storeRef = useRef<LogEntry[]>([])
   const [version, setVersion] = useState(0)
   const [connected, setConnected] = useState(false)
@@ -17,15 +18,19 @@ export function useLogStream(workspace: string, env: string, service: string, cu
   const bufferRef = useRef<LogEntry[]>([])
   const rafRef = useRef(0)
   const lastFlushRef = useRef(0)
-  const trimThreshold = Math.ceil(maxLines * 1.5)
+  const trimThreshold = Math.ceil(maxLines * 2.0)
+
+  const disabled = viewMode === 'file'
 
   useEffect(() => {
+    if (disabled) return
     if (!customStreamURL && (!workspace || !env || !service)) return
 
     storeRef.current = []
     setVersion(0)
 
-    const url = customStreamURL || streamURL(workspace, env, service)
+    const baseUrl = customStreamURL || streamURL(workspace, env, service)
+    const url = appendLiveMode(baseUrl, viewMode)
     const ws = new WebSocket(url)
     wsRef.current = ws
     lastReceivedRef.current = Date.now()
@@ -74,7 +79,7 @@ export function useLogStream(workspace: string, env: string, service: string, cu
       bufferRef.current = []
       setConnected(false)
     }
-  }, [workspace, env, service, customStreamURL])
+  }, [workspace, env, service, customStreamURL, viewMode, disabled])
 
   const togglePause = useCallback(() => {
     const next = !pausedRef.current

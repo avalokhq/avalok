@@ -2,6 +2,7 @@
 .codex
 .tokensave
 CLAUDE.md
+sample/
 
 # Build output
 internal/server/frontend/
@@ -35,7 +36,9 @@ web/dist/
 bin/
 bin/*
 avalok
+avalok.exe
 configs/*
+scripts/*
 
 # Hugo build output
 docs/public/

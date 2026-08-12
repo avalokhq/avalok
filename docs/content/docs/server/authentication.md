@@ -12,6 +12,20 @@ Avalok uses different authentication mechanisms depending on the operating mode.
 | **Server** | JWT (HS256) | 24-hour expiry, issued on login |
 | **Serve** | Token | Static token passed at startup |
 
+## First-Start Admin Account
+
+When the server starts for the first time and no user accounts exist, an admin account is automatically created with a random password. The credentials are:
+
+- Printed to stdout in the server logs
+- Saved to `/var/log/avalok/admin-credentials.txt` (auto-deleted after 24 hours)
+
+```bash
+# View the auto-generated credentials
+sudo journalctl -u avalok -n 20
+```
+
+Change the admin password after your first login.
+
 ## Login
 
 Authenticate with username and password to receive a JWT.

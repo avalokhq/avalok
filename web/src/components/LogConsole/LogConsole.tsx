@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { ArrowLeft, Columns3, Eye, EyeOff, ArrowDownToLine, FolderOpen } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { useLogStream } from '../../lib/useLogStream'
+import { useStaticLogFetch } from '../../lib/useStaticLogFetch'
 import { useDebouncedValue } from '../../lib/useDebouncedValue'
 import LogToolbar from './LogToolbar'
 import LogLines from './LogLines'
@@ -9,6 +10,7 @@ import type { LogEntry } from '../../lib/types'
 import { parseLevel } from '../../lib/parseLevel'
 import { filterByTime } from '../../lib/filterByTime'
 import type { TimeFilterValue } from './TimeFilter'
+import type { LogViewMode } from '../../lib/api'
 
 interface Props {
   workspace?: string
@@ -20,6 +22,8 @@ interface Props {
   hasLogDir?: boolean
   onBrowseFiles?: () => void
   maxLines?: number
+  resourceName?: string
+  objectKey?: string
 }
 
 function getStoredFontSize(): number {
@@ -27,9 +31,21 @@ function getStoredFontSize(): number {
   return v ? parseInt(v, 10) : 12
 }
 
-export default function LogConsole({ workspace, environment, service, streamUrl, label, onBack, hasLogDir, onBrowseFiles, maxLines }: Props) {
+export default function LogConsole({ workspace, environment, service, streamUrl, label, onBack, hasLogDir, onBrowseFiles, maxLines, resourceName, objectKey }: Props) {
   const [timeFilter, setTimeFilter] = useState<TimeFilterValue>({ source: 'live' })
-  const { logs, version, connected, paused, togglePause, clear } = useLogStream(workspace ?? '', environment ?? '', service ?? '', streamUrl, maxLines)
+  const [viewMode, setViewMode] = useState<LogViewMode>('stream')
+  const [overrideMsg, setOverrideMsg] = useState('')
+  const isFirstMode = useRef(true)
+
+  const wsData = useLogStream(workspace ?? '', environment ?? '', service ?? '', streamUrl, maxLines, viewMode)
+  const fileData = useStaticLogFetch(resourceName ?? '', objectKey ?? '', viewMode === 'file')
+
+  const isFileMode = viewMode === 'file'
+  const logs = isFileMode ? fileData.logs : wsData.logs
+  const version = isFileMode ? fileData.version : wsData.version
+  const connected = isFileMode ? !fileData.loading : wsData.connected
+  const paused = isFileMode ? false : wsData.paused
+
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search, 300)
   const [follow, setFollow] = useState(true)
@@ -38,7 +54,28 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
   const [levelFilter, setLevelFilter] = useState<Set<string>>(() => new Set(['error', 'warn', 'info', 'debug']))
   const [showColumnMenu, setShowColumnMenu] = useState(false)
   const [fontSize, setFontSize] = useState(getStoredFontSize)
+  const [wrap, setWrap] = useState(true)
   const scrollKickRef = useRef(0)
+
+  const hasFileMode = !!(resourceName && objectKey)
+
+  const handleViewModeChange = useCallback((mode: LogViewMode) => {
+    if (!isFirstMode.current) {
+      const msg =
+        mode === 'file' ? 'Loading file content...' :
+        mode === 'live' ? 'Switching to live mode...' :
+        'Switching to stream mode...'
+      setOverrideMsg(msg)
+    }
+    isFirstMode.current = false
+    setViewMode(mode)
+  }, [])
+
+  useEffect(() => {
+    if (!overrideMsg) return
+    const t = setTimeout(() => setOverrideMsg(''), 3000)
+    return () => clearTimeout(t)
+  }, [overrideMsg])
 
   const handleFontSizeChange = useCallback((size: number) => {
     setFontSize(size)
@@ -73,8 +110,8 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
     if (paused && follow) {
       scrollKickRef.current++
     }
-    togglePause()
-  }, [paused, follow, togglePause])
+    wsData.togglePause()
+  }, [paused, follow, wsData.togglePause])
 
   const toggleFollow = useCallback(() => {
     setFollow(prev => !prev)
@@ -85,6 +122,14 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
     setFollow(true)
   }, [])
 
+  const handleClear = useCallback(() => {
+    if (isFileMode) {
+      fileData.clear()
+    } else {
+      wsData.clear()
+    }
+  }, [isFileMode, fileData.clear, wsData.clear])
+
   const download = useCallback(() => {
     const text = filtered.map(l => {
       const ts = l.timestamp ? `${l.timestamp} ` : ''
@@ -94,10 +139,10 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${service}-${environment}.log`
+    a.download = `${service || objectKey || 'logs'}-${environment || 'export'}.log`
     a.click()
     URL.revokeObjectURL(url)
-  }, [filtered, service, environment])
+  }, [filtered, service, environment, objectKey])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -113,12 +158,14 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         <div className="flex items-center gap-2 min-w-0">
           <span className={cn(
             'w-2 h-2 rounded-full shrink-0',
-            connected ? 'bg-[var(--accent-bright)]' : 'bg-red-400'
+            connected ? 'bg-[var(--accent-bright)]' : isFileMode && fileData.loading ? 'bg-amber-400 animate-pulse' : 'bg-red-400'
           )} />
           <span className="text-base text-[var(--text-primary)] truncate">{label}</span>
-          <span className="text-xs text-[var(--text-muted)] shrink-0">
-            {workspace} / {environment} / {service}
-          </span>
+          {workspace && (
+            <span className="text-xs text-[var(--text-muted)] shrink-0">
+              {workspace} / {environment} / {service}
+            </span>
+          )}
         </div>
 
         <div className="ml-auto flex items-center gap-1">
@@ -180,13 +227,28 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         </div>
       </div>
 
+      {/* Override banner */}
+      {overrideMsg && (
+        <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-400">
+          <span className="inline-block w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+          {overrideMsg}
+        </div>
+      )}
+
+      {/* File loading error */}
+      {isFileMode && fileData.error && (
+        <div className="flex items-center justify-center gap-2 px-3 py-1.5 bg-red-500/10 border-b border-red-500/20 text-xs text-red-400">
+          Failed to load file: {fileData.error}
+        </div>
+      )}
+
       {/* Toolbar */}
       <LogToolbar
         search={search}
         onSearchChange={setSearch}
         paused={paused}
         onTogglePause={handleTogglePause}
-        onClear={clear}
+        onClear={handleClear}
         onScrollToBottom={scrollToBottom}
         lineCount={filtered.length}
         totalCount={logs.length}
@@ -196,8 +258,13 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         onToggleLevel={toggleLevel}
         fontSize={fontSize}
         onFontSizeChange={handleFontSizeChange}
+        wrap={wrap}
+        onToggleWrap={() => setWrap(v => !v)}
         timeFilter={timeFilter}
         onTimeFilterChange={setTimeFilter}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+        hasFileMode={hasFileMode}
       />
 
       {/* Log lines */}
@@ -208,6 +275,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         showSource={showSource}
         search={debouncedSearch}
         fontSize={fontSize}
+        wrap={wrap}
         totalCount={logs.length}
         connected={connected}
       />

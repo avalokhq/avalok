@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { LayoutDashboard, Monitor, Folders, Settings, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { LayoutDashboard, Monitor, Settings, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { entityStyle } from '../ui/EntityIcon'
 import { cn } from '../../lib/cn'
 
 interface NavItem {
@@ -18,12 +19,15 @@ interface Props {
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'workspaces' },
   { id: 'logs', label: 'Log Dashboard', icon: Monitor, page: 'logs' },
-  { id: 'workspaces', label: 'Workspaces', icon: Folders, page: 'workspaces' },
 ]
 
-const ADMIN_ITEM: NavItem = {
-  id: 'admin', label: 'Administration', icon: Settings, page: 'admin',
-}
+const ADMIN_ITEMS: NavItem[] = [
+  { id: 'manage-workspaces', label: 'Workspaces', icon: entityStyle('workspace').Icon, page: 'manage-workspaces' },
+  { id: 'manage-services', label: 'Services', icon: entityStyle('service').Icon, page: 'manage-services' },
+  { id: 'manage-environments', label: 'Environments', icon: entityStyle('environment').Icon, page: 'manage-environments' },
+  { id: 'manage-resources', label: 'Resources', icon: entityStyle('resource').Icon, page: 'manage-resources' },
+  { id: 'admin', label: 'Administration', icon: Settings, page: 'admin' },
+]
 
 function getCollapsed(): boolean {
   return localStorage.getItem('avalok-sidebar-collapsed') === 'true'
@@ -38,11 +42,10 @@ export default function AppSidebar({ currentPage, onNavigate, showAdmin }: Props
     localStorage.setItem('avalok-sidebar-collapsed', String(next))
   }
 
-  const items = showAdmin ? [...NAV_ITEMS, ADMIN_ITEM] : NAV_ITEMS
+  const items = showAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS
 
   function isActive(item: NavItem) {
     if (item.id === 'dashboard') return currentPage === 'workspaces'
-    if (item.id === 'workspaces') return false
     return currentPage === item.page
   }
 
@@ -54,26 +57,31 @@ export default function AppSidebar({ currentPage, onNavigate, showAdmin }: Props
       )}
     >
       <nav className="flex-1 flex flex-col gap-0.5 py-2 px-1.5 overflow-hidden">
-        {items.map(item => {
+        {items.map((item, index) => {
           const Icon = item.icon
           const active = isActive(item)
+          const showSeparator = showAdmin && index === NAV_ITEMS.length
 
           return (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.page)}
-              title={collapsed ? item.label : undefined}
-              className={cn(
-                'flex items-center gap-2.5 rounded-md transition-colors text-[13px] font-medium',
-                collapsed ? 'justify-center px-0 py-2' : 'px-2.5 py-2',
-                active
-                  ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+            <div key={item.id}>
+              {showSeparator && (
+                <div className="h-px bg-[var(--border-subtle)] my-1.5 mx-2" />
               )}
-            >
-              <Icon className={cn('w-4 h-4 shrink-0', active ? 'text-[var(--text-accent)]' : '')} />
-              {!collapsed && <span className="truncate">{item.label}</span>}
-            </button>
+              <button
+                onClick={() => onNavigate(item.page)}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  'flex items-center gap-2.5 rounded-md transition-colors text-[13px] font-medium w-full',
+                  collapsed ? 'justify-center px-0 py-2' : 'px-2.5 py-2',
+                  active
+                    ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
+                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
+                )}
+              >
+                <Icon className={cn('w-4 h-4 shrink-0', active ? 'text-[var(--text-accent)]' : '')} />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </button>
+            </div>
           )
         })}
       </nav>

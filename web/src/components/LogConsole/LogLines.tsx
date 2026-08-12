@@ -12,6 +12,7 @@ interface Props {
   showSource: boolean
   search: string
   fontSize: number
+  wrap: boolean
   totalCount?: number
   connected?: boolean
 }
@@ -47,9 +48,10 @@ function estimateRowHeight(fontSize: number): number {
   return fontSize + 10
 }
 
-export default function LogLines({ logs, follow, showTimestamp, showSource, search, fontSize, totalCount = 0, connected }: Props) {
+export default function LogLines({ logs, follow, showTimestamp, showSource, search, fontSize, wrap, totalCount = 0, connected }: Props) {
   const parentRef = useRef<HTMLDivElement>(null)
   const rowHeight = estimateRowHeight(fontSize)
+  const lineNumWidth = `${Math.max(4, String(logs.length).length) + 1}ch`
 
   const virtualizer = useVirtualizer({
     count: logs.length,
@@ -118,29 +120,29 @@ export default function LogLines({ logs, follow, showTimestamp, showSource, sear
               }}
             >
               {/* Line number */}
-              <span className="shrink-0 w-12 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums">
+              <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums" style={{ width: lineNumWidth }}>
                 {vRow.index + 1}
               </span>
 
               {/* Timestamp */}
               {showTimestamp && entry.timestamp && (
-                <span className="shrink-0 w-24 pr-3 text-[var(--text-muted)] tabular-nums">
+                <span className="shrink-0 pr-3 text-[var(--text-muted)] tabular-nums overflow-hidden" style={{ width: '13ch' }}>
                   {formatTimestamp(entry.timestamp)}
                 </span>
               )}
 
               {/* Source dot + name */}
               {showSource && entry.source && (
-                <span className="shrink-0 w-28 pr-3 flex items-center gap-1.5 truncate">
+                <span className="shrink-0 pr-3 flex items-center gap-1.5 whitespace-nowrap">
                   <SourceDot name={entry.source + (entry.instance || '')} />
-                  <span className="truncate text-[var(--text-secondary)]">
+                  <span className="text-[var(--text-secondary)]">
                     {entry.instance || entry.source}
                   </span>
                 </span>
               )}
 
               {/* Log message */}
-              <span className="flex-1 whitespace-pre-wrap break-all">
+              <span className={cn('flex-1', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')}>
                 {highlightSearch(entry.line, search)}
               </span>
             </div>

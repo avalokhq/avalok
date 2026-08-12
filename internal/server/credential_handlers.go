@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,9 +83,9 @@ func (s *Server) handleCreateCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true}
+	validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true, "s3": true, "azure-storage": true, "gcs": true}
 	if !validTypes[req.TargetType] {
-		writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, or winrm")
+		writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, winrm, s3, azure-storage, or gcs")
 		return
 	}
 
@@ -142,15 +143,24 @@ func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if req.TargetType != nil {
-		validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true}
+		validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true, "s3": true, "azure-storage": true, "gcs": true}
 		if !validTypes[*req.TargetType] {
-			writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, or winrm")
+			writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, winrm, s3, azure-storage, or gcs")
 			return
 		}
 		existing.TargetType = *req.TargetType
 	}
 	if req.Config != nil {
-		existing.Config = req.Config
+		if existing.Config == nil {
+			existing.Config = req.Config
+		} else {
+			for k, v := range req.Config {
+				if s, ok := v.(string); ok && (s == "" || s == "***redacted***") {
+					continue
+				}
+				existing.Config[k] = v
+			}
+		}
 	}
 	if req.Description != nil {
 		existing.Description = *req.Description
@@ -181,6 +191,18 @@ func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) 
 
 	if _, err := s.store.GetCredential(r.Context(), name); err != nil {
 		writeError(w, http.StatusNotFound, "credential not found")
+		return
+	}
+
+	resources, _ := s.store.ListResources(r.Context())
+	var dependents []string
+	for _, res := range resources {
+		if profile, _ := res.Config["credential_profile"].(string); profile == name {
+			dependents = append(dependents, res.Name)
+		}
+	}
+	if len(dependents) > 0 && r.URL.Query().Get("force") != "true" {
+		writeError(w, http.StatusConflict, fmt.Sprintf("credential is used by resources: %s", strings.Join(dependents, ", ")))
 		return
 	}
 
@@ -223,6 +245,25 @@ func (s *Server) handleTestCredential(w http.ResponseWriter, r *http.Request) {
 		testProvider = "winrm"
 	case "kubernetes":
 		testProvider = "kubernetes"
+	case "s3":
+		testProvider = "s3"
+	case "azure-storage":
+		accountName, _ := cred.Config["account_name"].(string)
+		connStr, _ := cred.Config["connection_string"].(string)
+		if accountName == "" && connStr == "" {
+			writeJSON(w, http.StatusOK, map[string]any{
+				"status": "error",
+				"error":  "account_name or connection_string is required",
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "ok",
+			"message": "credential configuration looks valid",
+		})
+		return
+	case "gcs":
+		testProvider = "gcs"
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("cannot test target type: %s", cred.TargetType))
 		return
@@ -288,6 +329,11 @@ func redactSensitiveKeys(config map[string]any) map[string]any {
 		"bearer_token":       true,
 		"ca_cert":            true,
 		"proxy_url":          true,
+		"secret_access_key":  true,
+		"account_key":        true,
+		"connection_string":  true,
+		"sas_token":          true,
+		"credentials_json":   true,
 	}
 	result := make(map[string]any, len(config))
 	for k, v := range config {

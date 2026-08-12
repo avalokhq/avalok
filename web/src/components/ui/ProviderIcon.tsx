@@ -1,24 +1,32 @@
 import {
-  Container,
   FileText,
   KeyRound,
   ScrollText,
   Server,
-  Globe,
-  Monitor,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 
 const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
+const CONTAINERD_LOGO = 'https://containerd.io/img/logos/main-logo.png'
+
+const IMAGE_ICONS: Record<string, { src: string; alt: string }> = {
+  docker: { src: '/icons/docker.svg', alt: 'Docker' },
+  kubernetes: { src: KUBERNETES_LOGO, alt: 'Kubernetes' },
+  containerd: { src: CONTAINERD_LOGO, alt: 'Containerd' },
+  s3: { src: '/icons/s3.svg', alt: 'S3' },
+  'azure-blob': { src: '/icons/azure-blob.svg', alt: 'Azure Blob' },
+  'azure-file': { src: '/icons/azure-file.svg', alt: 'Azure File' },
+  'azure-storage': { src: '/icons/azure-storage.svg', alt: 'Azure Storage' },
+  gcs: { src: '/icons/gcs.svg', alt: 'GCS' },
+  winrm: { src: '/icons/winrm.svg', alt: 'WinRM' },
+  'windows-eventlog': { src: '/icons/windows-eventlog.svg', alt: 'Windows Event Log' },
+  iis: { src: '/icons/iis.svg', alt: 'IIS' },
+}
 
 const providerIcons: Record<string, React.FC<{ className?: string }>> = {
-  docker: Container,
   file: FileText,
   ssh: KeyRound,
   journalctl: ScrollText,
-  containerd: Server,
-  iis: Globe,
-  'windows-eventlog': Monitor,
 }
 
 interface Props {
@@ -27,9 +35,35 @@ interface Props {
 }
 
 export default function ProviderIcon({ provider, className }: Props) {
-  if (provider === 'kubernetes') {
-    return <img src={KUBERNETES_LOGO} alt="Kubernetes" className={cn('w-4 h-4', className)} />
+  const img = IMAGE_ICONS[provider]
+  if (img) {
+    return <img src={img.src} alt={img.alt} className={cn('w-4 h-4', className)} />
   }
   const Icon = providerIcons[provider] || Server
   return <Icon className={cn('w-4 h-4', className)} />
+}
+
+export function resourceIconUrl(type: string): string | undefined {
+  return IMAGE_ICONS[type]?.src
+}
+
+const DISPLAY_NAMES: Record<string, string> = {
+  docker: 'Docker',
+  kubernetes: 'Kubernetes',
+  containerd: 'Containerd',
+  s3: 'S3',
+  'azure-blob': 'Azure Blob',
+  'azure-file': 'Azure File',
+  'azure-storage': 'Azure Storage',
+  gcs: 'GCS',
+  winrm: 'WinRM',
+  'windows-eventlog': 'Windows Event Log',
+  iis: 'IIS',
+  file: 'File',
+  ssh: 'SSH',
+  journalctl: 'Journalctl',
+}
+
+export function providerDisplayName(provider: string): string {
+  return DISPLAY_NAMES[provider] || provider
 }

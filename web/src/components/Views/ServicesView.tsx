@@ -3,7 +3,7 @@ import { Play, RefreshCw, FolderOpen } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { listServices, checkService } from '../../lib/api'
 import type { Workspace, Environment, Service } from '../../lib/types'
-import ProviderIcon from '../ui/ProviderIcon'
+import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
 import SourceDot from '../ui/SourceDot'
 import Badge, { providerVariant } from '../ui/Badge'
 import LayoutToggle from '../ui/LayoutToggle'
@@ -16,16 +16,19 @@ import Card from '../ui/Card'
 import DataTable from '../ui/DataTable'
 import IconButton from '../ui/IconButton'
 
+const CLOUD_STORAGE_PROVIDERS = new Set(['s3', 'azure-blob', 'azure-file', 'gcs'])
+
 interface Props {
   workspace: Workspace
   environment: Environment
   onViewLogs: (service: Service) => void
   onBrowseFiles?: (service: Service) => void
+  onBrowseStorage?: (service: Service) => void
 }
 
 type StatusMap = Record<string, 'up' | 'down' | 'checking'>
 
-export default function ServicesView({ workspace, environment, onViewLogs, onBrowseFiles }: Props) {
+export default function ServicesView({ workspace, environment, onViewLogs, onBrowseFiles, onBrowseStorage }: Props) {
   const [services, setServices] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
   const [statuses, setStatuses] = useState<StatusMap>({})
@@ -103,11 +106,11 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
               {
                 key: 'provider',
                 header: 'Provider',
-                className: 'w-32',
+                align: 'right' as const,
                 render: (svc) => (
                   <Badge variant={providerVariant(svc.provider)}>
                     <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-                    {svc.provider}
+                    {providerDisplayName(svc.provider)}
                   </Badge>
                 ),
               },
@@ -137,7 +140,7 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
             ]}
             data={services}
             keyFn={svc => svc.name}
-            onRowClick={onViewLogs}
+            onRowClick={svc => CLOUD_STORAGE_PROVIDERS.has(svc.provider) && onBrowseStorage ? onBrowseStorage(svc) : onViewLogs(svc)}
           />
         ) : (
           <CollectionGrid>
@@ -145,13 +148,13 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
               const id = `${workspace.name}/${environment.name}/${svc.name}`
               const status = statuses[svc.name]
               return (
-                <Card key={svc.name} hover padding="md" className="group cursor-pointer" onClick={() => onViewLogs(svc)}>
+                <Card key={svc.name} hover padding="md" className="group cursor-pointer" onClick={() => CLOUD_STORAGE_PROVIDERS.has(svc.provider) && onBrowseStorage ? onBrowseStorage(svc) : onViewLogs(svc)}>
                   <div className="flex items-center gap-2.5 mb-3 w-full">
                     <StatusDot status={status} />
                     <SourceDot name={id} size="md" />
                     <Badge variant={providerVariant(svc.provider)} className="text-[10px]">
                       <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-                      {svc.provider}
+                      {providerDisplayName(svc.provider)}
                     </Badge>
                     <div className="ml-auto">
                       <IconButton onClick={(e) => handleCheck(svc.name, e)} title="Check connection">
@@ -178,8 +181,11 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
                         </div>
                       )}
                       <div className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-accent)] opacity-0 group-hover:opacity-100 transition-all">
-                        <Play className="w-3 h-3" />
-                        View Logs
+                        {CLOUD_STORAGE_PROVIDERS.has(svc.provider) ? (
+                          <><FolderOpen className="w-3 h-3" />Browse Storage</>
+                        ) : (
+                          <><Play className="w-3 h-3" />View Logs</>
+                        )}
                       </div>
                     </div>
                   </div>

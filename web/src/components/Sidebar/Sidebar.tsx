@@ -79,7 +79,7 @@ export default function Sidebar({ activeId, onSelect, onNavigateWorkspace, onNav
   return (
     <div className="flex flex-col h-full bg-[var(--bg-surface)] border-r border-[var(--border-default)]">
       {/* Header */}
-      <div className="h-14 shrink-0 flex items-center px-4 border-b border-[var(--border-default)] glass-header">
+      <div className="h-14 shrink-0 flex items-center px-4 border-b border-[var(--border-default)]">
         <button onClick={onLogoClick} className="cursor-pointer hover:opacity-70 transition-opacity" title="Toggle sidebar">
           <AvalokWordmark height={22} />
         </button>

@@ -89,33 +89,22 @@ Generate the `docker-compose.yml`:
 avalok server deploy
 ```
 
-This creates a `docker-compose.yml` in the current directory with two services:
+This creates a `docker-compose.yml` in the current directory with two services and a randomly generated JWT secret:
 
-- **avalok** -- the Avalok server, listening on port 9090
+- **avalok** -- the Avalok server, listening on port 9090 (host networking)
 - **postgres** -- PostgreSQL 17 for persistent storage
 
-Before starting, edit the generated file and set a secure JWT secret:
-
-```yaml
-environment:
-  AVALOK_JWT_SECRET: "your-random-secret-at-least-32-characters"
-```
-
-Then start the stack:
+Start the stack:
 
 ```bash
 docker compose up -d
 ```
 
-Initialize the admin account:
+On first start, an admin account is created automatically. Get the credentials from the logs:
 
 ```bash
-docker compose exec avalok avalok server init
+docker compose logs avalok | grep -A 3 "ADMIN ACCOUNT CREATED"
 ```
-
-{{< alert context="warning" >}}
-The generated `docker-compose.yml` contains placeholder secrets. Always change `AVALOK_JWT_SECRET` and `POSTGRES_PASSWORD` before running in production.
-{{< /alert >}}
 
 ## Next Steps
 

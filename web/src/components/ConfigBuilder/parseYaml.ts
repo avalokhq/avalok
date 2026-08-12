@@ -16,6 +16,7 @@ export function parseWorkspaceYaml(text: string): WorkspaceConfig {
     name: s.name ?? '',
     provider: s.provider ?? 'file',
     friendly_name: s.friendly_name ?? '',
+    resource: s.resource ?? '',
     config: toStringRecord(s.config),
   }))
 
@@ -31,7 +32,6 @@ export function parseWorkspaceYaml(text: string): WorkspaceConfig {
     services,
     environments,
     settings: {
-      log_buffer_size: rawSettings.log_buffer_size ?? 5000,
       ssh_timeout: rawSettings.ssh_timeout ?? 30,
       hierarchy: rawSettings.hierarchy ?? 'default',
     },

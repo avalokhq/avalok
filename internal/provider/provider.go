@@ -22,10 +22,12 @@ type Instance struct {
 }
 
 type StreamOpts struct {
-	Follow bool
-	Tail   int
-	Since  time.Time
-	Until  time.Time
+	Follow      bool
+	Tail        int
+	Head        int
+	SkipInitial bool
+	Since       time.Time
+	Until       time.Time
 }
 
 type FetchOpts struct {

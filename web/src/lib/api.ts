@@ -153,6 +153,30 @@ export async function adminGetWorkspaceYAML(name: string): Promise<string> {
   return res.text()
 }
 
+export async function adminGetStandaloneServiceYAML(name: string): Promise<string> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`/api/admin/services/${name}/yaml`, { headers })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(body.error || res.statusText)
+  }
+  return res.text()
+}
+
+export async function adminGetStandaloneEnvYAML(name: string): Promise<string> {
+  const token = getToken()
+  const headers: Record<string, string> = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const res = await fetch(`/api/admin/environments/${name}/yaml`, { headers })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(body.error || res.statusText)
+  }
+  return res.text()
+}
+
 export async function adminUpdateWorkspace(name: string, yamlContent: string): Promise<void> {
   await fetchAPI(`/admin/workspaces/${name}`, {
     method: 'PUT',
@@ -279,6 +303,83 @@ export function resourceStreamURL(name: string, namespace: string, kind: string,
   const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${window.location.host}/api/admin/resources/${name}/namespaces/${namespace}/workloads/${kind}/${workload}/stream?token=${token}`
+}
+
+// --- Admin: Storage Resources ---
+
+export interface StorageObject {
+  key: string
+  name: string
+  size: number
+  last_modified: string
+}
+
+export interface StorageDirectory {
+  name: string
+  path: string
+}
+
+export interface StorageListResult {
+  path: string
+  directories: StorageDirectory[]
+  objects: StorageObject[]
+}
+
+export interface StorageOverview {
+  name: string
+  type: string
+  object_count: number
+  total_size_bytes: number
+}
+
+export async function adminGetStorageOverview(name: string): Promise<StorageOverview> {
+  return fetchAPI(`/admin/resources/${name}/overview`)
+}
+
+export async function adminListStorageObjects(name: string, prefix?: string): Promise<StorageObject[]> {
+  const params = prefix ? `?prefix=${encodeURIComponent(prefix)}&flat=true` : '?flat=true'
+  return fetchAPI(`/admin/resources/${name}/storage/objects${params}`)
+}
+
+export async function adminListStorageDirectory(name: string, path?: string): Promise<StorageListResult> {
+  const params = path ? `?path=${encodeURIComponent(path)}` : ''
+  return fetchAPI(`/admin/resources/${name}/storage/objects${params}`)
+}
+
+export function storageObjectStreamURL(name: string, key: string): string {
+  const token = getToken()
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/api/admin/resources/${name}/storage/stream/${encodeURIComponent(key)}?token=${token}`
+}
+
+export type LogViewMode = 'stream' | 'file' | 'live'
+
+export function appendLiveMode(url: string, mode: LogViewMode): string {
+  if (mode === 'live') return `${url}&mode=live`
+  return url
+}
+
+export function storageObjectContentURL(name: string, key: string): string {
+  const token = getToken()
+  return `/api/admin/resources/${name}/storage/content/${encodeURIComponent(key)}?token=${token}`
+}
+
+// --- Workspace Service Storage ---
+
+export async function listServiceStorageObjects(workspace: string, service: string, path?: string): Promise<StorageListResult> {
+  const params = path ? `?path=${encodeURIComponent(path)}` : ''
+  return fetchAPI(`/ws/${workspace}/svc/${service}/storage/objects${params}`)
+}
+
+export function serviceStorageStreamURL(workspace: string, service: string, key: string): string {
+  const token = getToken()
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/api/ws/${workspace}/svc/${service}/storage/stream?key=${encodeURIComponent(key)}&token=${token}`
+}
+
+export function serviceStorageContentURL(workspace: string, service: string, key: string): string {
+  const token = getToken()
+  return `/api/ws/${workspace}/svc/${service}/storage/content/${encodeURIComponent(key)}?token=${token}`
 }
 
 // --- Admin: Settings ---

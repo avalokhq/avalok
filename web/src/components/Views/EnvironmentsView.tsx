@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Boxes, ChevronRight, Target } from 'lucide-react'
-import { cn } from '../../lib/cn'
+import { ChevronRight, Target } from 'lucide-react'
 import { listEnvironments } from '../../lib/api'
 import type { Workspace, Environment } from '../../lib/types'
+import EntityIcon, { EntityIconRaw } from '../ui/EntityIcon'
 import LayoutToggle from '../ui/LayoutToggle'
 import CollectionGrid from '../ui/CollectionGrid'
 import { useLayoutToggle } from '../../lib/useLayoutToggle'
@@ -15,12 +15,6 @@ import DataTable from '../ui/DataTable'
 interface Props {
   workspace: Workspace
   onSelect: (env: Environment) => void
-}
-
-function envStyle(name: string) {
-  if (name === 'production') return { bg: 'bg-amber-500/10', text: 'text-amber-400' }
-  if (name === 'staging') return { bg: 'bg-blue-500/10', text: 'text-blue-400' }
-  return { bg: 'bg-emerald-500/10', text: 'text-emerald-400' }
 }
 
 export default function EnvironmentsView({ workspace, onSelect }: Props) {
@@ -48,8 +42,8 @@ export default function EnvironmentsView({ workspace, onSelect }: Props) {
 
         {envs.length === 0 ? (
           <EmptyState
-            icon={<Boxes className="w-7 h-7 text-[var(--text-accent)] opacity-60" />}
-            iconBg="bg-accent-500/10"
+            icon={<EntityIconRaw kind="environment" className="w-7 h-7 text-blue-400 opacity-60" />}
+            iconBg="bg-blue-500/10"
             title="No environments"
             description="No environments configured for this workspace."
           />
@@ -59,17 +53,12 @@ export default function EnvironmentsView({ workspace, onSelect }: Props) {
               {
                 key: 'name',
                 header: 'Environment',
-                render: (env) => {
-                  const style = envStyle(env.name)
-                  return (
+                render: (env) => (
                     <div className="flex items-center gap-3">
-                      <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', style.bg)}>
-                        <Boxes className={cn('w-4 h-4', style.text)} />
-                      </div>
+                      <EntityIcon kind="environment" />
                       <span className="font-medium text-[var(--text-primary)]">{env.name}</span>
                     </div>
-                  )
-                },
+                ),
               },
               {
                 key: 'targets',
@@ -95,13 +84,9 @@ export default function EnvironmentsView({ workspace, onSelect }: Props) {
           />
         ) : (
           <CollectionGrid>
-            {envs.map(env => {
-              const style = envStyle(env.name)
-              return (
+            {envs.map(env => (
                 <Card key={env.name} hover padding="md" className="cursor-pointer" onClick={() => onSelect(env)}>
-                  <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center mb-3', style.bg)}>
-                    <Boxes className={cn('w-5 h-5', style.text)} />
-                  </div>
+                  <EntityIcon kind="environment" className="mb-3" />
                   <div className="text-sm font-medium text-[var(--text-primary)]">{env.name}</div>
                   <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
                     <Target className="w-3 h-3" />
@@ -109,7 +94,7 @@ export default function EnvironmentsView({ workspace, onSelect }: Props) {
                   </div>
                 </Card>
               )
-            })}
+            )}
           </CollectionGrid>
         )}
       </div>

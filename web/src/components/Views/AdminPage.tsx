@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Users, FolderOpen, KeyRound, CheckCircle, XCircle, Clock, Shield, UserCheck, Trash2, Plus, Pencil, KeySquare, Settings, Boxes, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { Users, KeyRound, CheckCircle, XCircle, Clock, Shield, UserCheck, Trash2, Plus, Pencil, KeySquare, Settings } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import PageHeader from '../ui/PageHeader'
 import Tabs from '../ui/Tabs'
@@ -18,42 +18,54 @@ import FormField from '../ui/FormField'
 import IconButton from '../ui/IconButton'
 import Badge from '../ui/Badge'
 
+import ProviderIcon from '../ui/ProviderIcon'
+
 const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import {
   adminListUsers, adminApproveUser, adminDisableUser, adminDeleteUser, adminCreateUser, adminUpdateUser, adminResetPassword,
-  adminListWorkspaces, adminImportWorkspace, adminDeleteWorkspace,
   adminListCredentials, adminCreateCredential, adminDeleteCredential, adminTestCredential,
-  adminListResources, adminGetResource, adminCreateResource, adminUpdateResource, adminDeleteResource, adminTestResource,
-  adminListResourceNamespaces,
+  adminListResources, adminListResourceNamespaces,
   adminGetSettings, adminUpdateSettings,
   listWorkspaces, listEnvironments, listServices,
   listStandaloneEnvs, listStandaloneEnvServices, listStandaloneServices,
 } from '../../lib/api'
 import type { AdminUser, AdminCredential, AdminResource, NamespaceInfo } from '../../lib/api'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from '../../lib/types'
+import {
+  type StorageField, type AzureAuthMethod,
+  AZURE_AUTH_TABS, AZURE_AUTH_FIELDS,
+} from '../../lib/resourceConstants'
 
-type Tab = 'users' | 'workspaces' | 'credentials' | 'resources' | 'settings'
+type Tab = 'users' | 'credentials' | 'settings'
 
 interface Props {
   userRole: string
+  initialTab?: string
+  highlightSetting?: string
+  onSettingsChange?: (settings: Record<string, string>) => void
+  onHighlightConsumed?: () => void
 }
 
-export default function AdminPage({ userRole }: Props) {
-  const [tab, setTab] = useState<Tab>('users')
+export default function AdminPage({ userRole, initialTab, highlightSetting, onSettingsChange, onHighlightConsumed }: Props) {
+  const [tab, setTab] = useState<Tab>((initialTab as Tab) || 'users')
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab as Tab)
+    }
+  }, [initialTab])
 
   const tabs = [
     { id: 'users', label: 'Users', icon: Users },
     ...(userRole === 'admin' ? [
-      { id: 'workspaces', label: 'Workspaces', icon: FolderOpen },
       { id: 'credentials', label: 'Credentials', icon: KeyRound },
-      { id: 'resources', label: 'Resources', icon: Boxes },
       { id: 'settings', label: 'Settings', icon: Settings },
     ] : []),
   ]
 
   return (
-    <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-5xl mx-auto">
+    <div className="flex-1 overflow-auto">
+      <div className="px-8 lg:px-16 py-8">
         <PageHeader title="Administration" />
 
         <div className="mb-6">
@@ -61,10 +73,8 @@ export default function AdminPage({ userRole }: Props) {
         </div>
 
         {tab === 'users' && <UsersPanel userRole={userRole} />}
-        {tab === 'workspaces' && <WorkspacesPanel />}
         {tab === 'credentials' && <CredentialsPanel />}
-        {tab === 'resources' && <ResourcesPanel />}
-        {tab === 'settings' && <SettingsPanel />}
+        {tab === 'settings' && <SettingsPanel onSettingsChange={onSettingsChange} highlightSetting={highlightSetting} onHighlightConsumed={onHighlightConsumed} />}
       </div>
     </div>
   )
@@ -657,105 +667,6 @@ function ResetPasswordModal({ user, onClose, onDone }: { user: AdminUser; onClos
 
 // --- Workspaces Panel ---
 
-function WorkspacesPanel() {
-  const [workspaces, setWorkspaces] = useState<{ name: string; description: string; environments: number; services: number }[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showImport, setShowImport] = useState(false)
-  const [error, setError] = useState('')
-
-  async function load() {
-    setLoading(true)
-    try { setWorkspaces(await adminListWorkspaces() || []) } catch { setError('Failed to load workspaces') }
-    finally { setLoading(false) }
-  }
-
-  useEffect(() => { load() }, [])
-
-  async function handleDelete(name: string) {
-    if (!confirm(`Delete workspace "${name}"?`)) return
-    try { await adminDeleteWorkspace(name); load() } catch { setError('Failed to delete workspace') }
-  }
-
-  if (loading) return <Spinner label="Loading workspaces..." />
-
-  return (
-    <div>
-      {error && <Alert variant="error" className="mb-4">{error}</Alert>}
-
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-medium text-[var(--text-secondary)]">{workspaces.length} workspaces</h2>
-        <Button variant="link" onClick={() => setShowImport(!showImport)} className="text-sm">
-          <Plus className="w-4 h-4" /> Import YAML
-        </Button>
-      </div>
-
-      {showImport && <ImportWorkspaceForm onDone={() => { setShowImport(false); load() }} />}
-
-      <div className="grid gap-4">
-        {workspaces.map(ws => (
-          <Card key={ws.name} className="flex items-center justify-between">
-            <div>
-              <div className="text-base text-[var(--text-primary)]">{ws.name}</div>
-              <div className="text-xs text-[var(--text-muted)] mt-0.5">{ws.description || 'No description'}</div>
-              <div className="text-xs text-[var(--text-secondary)] mt-1">{ws.environments} environments, {ws.services} services</div>
-            </div>
-            <IconButton variant="danger" onClick={() => handleDelete(ws.name)} title="Delete">
-              <Trash2 className="w-4 h-4" />
-            </IconButton>
-          </Card>
-        ))}
-        {workspaces.length === 0 && (
-          <EmptyState
-            icon={<FolderOpen className="w-6 h-6 text-[var(--text-muted)]" />}
-            title="No workspaces yet"
-            description="Import a YAML file to get started."
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ImportWorkspaceForm({ onDone }: { onDone: () => void }) {
-  const [yaml, setYaml] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
-    try {
-      await adminImportWorkspace(yaml)
-      onDone()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to import')
-    } finally { setLoading(false) }
-  }
-
-  return (
-    <Card className="mb-4">
-      {error && <Alert variant="error" className="mb-3">{error}</Alert>}
-      <form onSubmit={handleSubmit}>
-        <FormField label="Workspace YAML" required>
-          <Textarea
-            value={yaml}
-            onChange={e => setYaml(e.target.value)}
-            className="h-48 font-mono"
-            placeholder="Paste workspace YAML here..."
-            required
-          />
-        </FormField>
-        <div className="flex justify-end gap-2 mt-3">
-          <Button variant="ghost" type="button" onClick={onDone}>Cancel</Button>
-          <Button type="submit" loading={loading}>
-            {loading ? 'Importing...' : 'Import'}
-          </Button>
-        </div>
-      </form>
-    </Card>
-  )
-}
-
 // --- Credentials Panel ---
 
 function CredentialsPanel() {
@@ -818,7 +729,11 @@ function CredentialsPanel() {
         {creds.map(c => (
           <Card key={c.name}>
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <ProviderIcon provider={c.target_type} className="w-5 h-5" />
+                </div>
+                <div>
                 <div className="text-base text-[var(--text-primary)]">{c.name}</div>
                 <div className="text-xs text-[var(--text-muted)] mt-0.5">
                   {c.target_type}{c.description ? ` — ${c.description}` : ''}
@@ -828,6 +743,7 @@ function CredentialsPanel() {
                     {testResults[c.name].status === 'ok' ? 'Connection OK' : testResults[c.name].status === 'testing' ? 'Testing...' : testResults[c.name].error}
                   </div>
                 )}
+                </div>
               </div>
               <div className="flex items-center gap-1">
                 <Button variant="secondary" size="sm" onClick={() => handleTestClick(c)}>Test</Button>
@@ -867,6 +783,44 @@ function CredentialsPanel() {
   )
 }
 
+const CREDENTIAL_TYPE_OPTIONS = [
+  { value: 'ssh', label: 'SSH' },
+  { value: 'kubernetes', label: 'Kubernetes' },
+  { value: 'winrm', label: 'WinRM' },
+  { value: 's3', label: 'S3 / S3-Compatible' },
+  { value: 'azure-storage', label: 'Azure Storage Account' },
+  { value: 'gcs', label: 'Google Cloud Storage' },
+]
+
+const CRED_AUTH_FIELDS: Record<string, StorageField[]> = {
+  s3: [
+    { key: 'region', label: 'Region', placeholder: 'us-east-1', hint: 'AWS region' },
+    { key: 'access_key_id', label: 'Access Key ID', placeholder: '', hint: 'Leave empty for default credential chain' },
+    { key: 'secret_access_key', label: 'Secret Access Key', placeholder: '', type: 'password', hint: 'Leave empty for default credential chain' },
+    { key: 'endpoint', label: 'Endpoint', placeholder: 'https://minio.example.com', hint: 'Custom endpoint for S3-compatible stores' },
+  ],
+  gcs: [
+    { key: 'credentials_json', label: 'Credentials JSON', placeholder: '', type: 'password', hint: 'Service account JSON content' },
+    { key: 'credentials_file', label: 'Credentials File', placeholder: '/path/to/sa.json', hint: 'Path to service account JSON' },
+  ],
+  winrm: [
+    { key: 'user', label: 'Username', placeholder: 'Administrator', required: true },
+    { key: 'password', label: 'Password', placeholder: '', type: 'password', required: true },
+    { key: 'port', label: 'Port', placeholder: '5986', hint: '5985 for HTTP, 5986 for HTTPS' },
+    { key: 'use_https', label: 'Use HTTPS', placeholder: '', type: 'toggle' },
+    { key: 'insecure', label: 'Skip TLS Verification', placeholder: '', hint: 'For self-signed certificates', type: 'toggle' },
+    { key: 'host', label: 'Host', placeholder: '10.0.2.100', hint: 'Optional — set only if this credential is for a single server' },
+  ],
+  kubernetes: [
+    { key: 'kubeconfig_content', label: 'Kubeconfig Content', placeholder: 'Paste kubeconfig YAML', hint: 'Full kubeconfig file content' },
+    { key: 'context', label: 'Context', placeholder: 'my-cluster-context', hint: 'Kubeconfig context to use' },
+    { key: 'namespace', label: 'Namespace', placeholder: 'default', hint: 'Default namespace' },
+    { key: 'api_server_url', label: 'API Server URL', placeholder: 'https://k8s.example.com:6443', hint: 'Direct API server URL (alternative to kubeconfig)' },
+    { key: 'bearer_token', label: 'Bearer Token', placeholder: '', type: 'password', hint: 'Service account token' },
+    { key: 'ca_cert', label: 'CA Certificate', placeholder: '/path/to/ca.crt', hint: 'CA cert for TLS verification' },
+  ],
+}
+
 function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState('')
   const [targetType, setTargetType] = useState('ssh')
@@ -874,6 +828,7 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   const [configJson, setConfigJson] = useState('{}')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [azureAuthMethod, setCredAzureAuth] = useState<AzureAuthMethod>('account-key')
 
   const [sshHost, setSshHost] = useState('')
   const [sshUser, setSshUser] = useState('')
@@ -881,6 +836,14 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   const [sshPrivateKey, setSshPrivateKey] = useState('')
   const [sshPassword, setSshPassword] = useState('')
   const [sshPassphrase, setSshPassphrase] = useState('')
+  const [cloudFields, setCloudFields] = useState<Record<string, string>>({})
+
+  const hasStructuredFields = targetType in CRED_AUTH_FIELDS || targetType === 'azure-storage'
+  const isAzureCredType = targetType === 'azure-storage'
+
+  function updateCloudField(key: string, value: string) {
+    setCloudFields(prev => ({ ...prev, [key]: value }))
+  }
 
   function buildConfig(): Record<string, unknown> {
     if (targetType === 'ssh') {
@@ -892,6 +855,22 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
       if (sshPassword) config.password = sshPassword
       if (sshPassphrase) config.passphrase = sshPassphrase
       return config
+    }
+    if (hasStructuredFields) {
+      const cfg: Record<string, unknown> = {}
+      const fields = isAzureCredType
+        ? (AZURE_AUTH_FIELDS[azureAuthMethod] || [])
+        : (CRED_AUTH_FIELDS[targetType] || [])
+      for (const f of fields) {
+        const v = cloudFields[f.key]
+        if (v === undefined || v === '') continue
+        if (f.type === 'toggle') {
+          cfg[f.key] = v === 'true'
+        } else {
+          cfg[f.key] = v
+        }
+      }
+      return cfg
     }
     return JSON.parse(configJson)
   }
@@ -917,16 +896,29 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="Profile name" required />
           </FormField>
           <FormField label="Target Type">
-            <Select value={targetType} onChange={e => setTargetType(e.target.value)}>
-              <option value="ssh">SSH</option>
-              <option value="kubernetes">Kubernetes</option>
-              <option value="winrm">WinRM</option>
-            </Select>
+            <div className="relative">
+              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                <ProviderIcon provider={targetType} className="w-4 h-4" />
+              </div>
+              <Select value={targetType} onChange={e => { setTargetType(e.target.value); setCloudFields({}) }} className="pl-8">
+                {CREDENTIAL_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </div>
           </FormField>
         </div>
         <FormField label="Description" hint="optional">
           <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" />
         </FormField>
+
+        {isAzureCredType && (
+          <FormField label="Authentication Method">
+            <Tabs
+              tabs={AZURE_AUTH_TABS}
+              active={azureAuthMethod}
+              onChange={(id) => setCredAzureAuth(id as AzureAuthMethod)}
+            />
+          </FormField>
+        )}
 
         {targetType === 'ssh' ? (
           <>
@@ -962,6 +954,36 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
               <Input type="password" value={sshPassword} onChange={e => setSshPassword(e.target.value)} placeholder="Password" />
             </FormField>
           </>
+        ) : hasStructuredFields ? (
+          <div className="flex flex-col gap-3">
+            {(isAzureCredType ? (AZURE_AUTH_FIELDS[azureAuthMethod] || []) : (CRED_AUTH_FIELDS[targetType] || [])).map(field => (
+              <FormField key={field.key} label={field.label} required={field.required} hint={field.hint}>
+                {field.type === 'toggle' ? (
+                  <Select value={cloudFields[field.key] || ''} onChange={e => updateCloudField(field.key, e.target.value)}>
+                    <option value="">Default</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </Select>
+                ) : field.key === 'kubeconfig_content' ? (
+                  <Textarea
+                    value={cloudFields[field.key] || ''}
+                    onChange={e => updateCloudField(field.key, e.target.value)}
+                    className="h-36 font-mono"
+                    placeholder={field.placeholder}
+                    spellCheck={false}
+                  />
+                ) : (
+                  <Input
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    value={cloudFields[field.key] || ''}
+                    onChange={e => updateCloudField(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                    required={field.required}
+                  />
+                )}
+              </FormField>
+            ))}
+          </div>
         ) : (
           <FormField label="Configuration" required>
             <Textarea
@@ -984,521 +1006,14 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
   )
 }
 
-// --- Resources Panel ---
-
-function ResourcesPanel() {
-  const [resources, setResources] = useState<AdminResource[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showCreate, setShowCreate] = useState(false)
-  const [editingResource, setEditingResource] = useState<AdminResource | null>(null)
-  const [testResults, setTestResults] = useState<Record<string, { status: string; error?: string; message?: string }>>({})
-  const [error, setError] = useState('')
-
-  async function load() {
-    setLoading(true)
-    try { setResources(await adminListResources() || []) } catch { setError('Failed to load resources') }
-    finally { setLoading(false) }
-  }
-
-  useEffect(() => { load() }, [])
-
-  async function handleDelete(name: string) {
-    if (!confirm(`Delete resource "${name}"? This will not affect the cluster itself.`)) return
-    try { await adminDeleteResource(name); load() } catch { setError('Failed to delete resource') }
-  }
-
-  async function handleTest(name: string) {
-    setTestResults(prev => ({ ...prev, [name]: { status: 'testing' } }))
-    try {
-      const result = await adminTestResource(name)
-      setTestResults(prev => ({ ...prev, [name]: result }))
-    } catch {
-      setTestResults(prev => ({ ...prev, [name]: { status: 'error', error: 'Test failed' } }))
-    }
-  }
-
-  async function handleEdit(name: string) {
-    try {
-      const res = await adminGetResource(name)
-      setEditingResource(res)
-      setShowCreate(false)
-    } catch { setError('Failed to load resource details') }
-  }
-
-  if (loading) return <Spinner label="Loading resources..." />
-
-  return (
-    <div>
-      {error && <Alert variant="error" className="mb-4">{error}</Alert>}
-
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-medium text-[var(--text-secondary)]">{resources.length} resources</h2>
-        <Button variant="link" onClick={() => { setShowCreate(!showCreate); setEditingResource(null) }} className="text-sm">
-          <Plus className="w-4 h-4" /> Add resource
-        </Button>
-      </div>
-
-      {showCreate && <AddResourceForm onDone={() => { setShowCreate(false); load() }} />}
-      {editingResource && <AddResourceForm editing={editingResource} onDone={() => { setEditingResource(null); load() }} />}
-
-      <div className="grid gap-4">
-        {resources.map(res => (
-          <Card key={res.name} className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-base text-[var(--text-primary)]">{res.name}</div>
-                <div className="text-xs text-[var(--text-muted)] mt-0.5">
-                  {res.type}{res.description ? ` — ${res.description}` : ''}
-                </div>
-                {testResults[res.name] && (
-                  <div className={cn('text-xs mt-1',
-                    testResults[res.name].status === 'ok' ? 'text-emerald-400' :
-                    testResults[res.name].status === 'testing' ? 'text-[var(--text-muted)]' : 'text-red-400'
-                  )}>
-                    {testResults[res.name].status === 'ok'
-                      ? (testResults[res.name].message || 'Connection OK')
-                      : testResults[res.name].status === 'testing'
-                        ? 'Testing...'
-                        : testResults[res.name].error}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button variant="secondary" size="sm" onClick={() => handleTest(res.name)}>Test</Button>
-              <IconButton variant="accent" onClick={() => handleEdit(res.name)} title="Edit">
-                <Pencil className="w-4 h-4" />
-              </IconButton>
-              <IconButton variant="danger" onClick={() => handleDelete(res.name)} title="Delete">
-                <Trash2 className="w-4 h-4" />
-              </IconButton>
-            </div>
-          </Card>
-        ))}
-        {resources.length === 0 && (
-          <EmptyState
-            icon={<Boxes className="w-6 h-6 text-[var(--text-muted)]" />}
-            title="No resources yet"
-            description="Add a Kubernetes cluster to get started."
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-const SA_SETUP_COMMANDS = [
-  {
-    title: '1. Create namespace',
-    command: 'kubectl create namespace avalok-system',
-  },
-  {
-    title: '2. Create ServiceAccount',
-    command: 'kubectl create serviceaccount avalok-reader -n avalok-system',
-  },
-  {
-    title: '3. Create ClusterRole (read-only log access)',
-    command: `cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: avalok-reader
-rules:
-- apiGroups: [""]
-  resources: ["pods", "pods/log", "namespaces"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["apps"]
-  resources: ["deployments", "statefulsets", "daemonsets"]
-  verbs: ["get", "list"]
-EOF`,
-  },
-  {
-    title: '4. Bind ClusterRole to ServiceAccount',
-    command: `kubectl create clusterrolebinding avalok-reader \\
-  --clusterrole=avalok-reader \\
-  --serviceaccount=avalok-system:avalok-reader`,
-  },
-  {
-    title: '5. Create long-lived token',
-    command: `cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: avalok-reader-token
-  namespace: avalok-system
-  annotations:
-    kubernetes.io/service-account.name: avalok-reader
-type: kubernetes.io/service-account-token
-EOF`,
-  },
-  {
-    title: '6. Get the bearer token',
-    command: `kubectl get secret avalok-reader-token -n avalok-system \\
-  -o jsonpath='{.data.token}' | base64 -d`,
-  },
-  {
-    title: '7. Get the API server URL',
-    command: `kubectl cluster-info | grep 'control plane'`,
-  },
-  {
-    title: '8. Get CA certificate (optional, for private clusters)',
-    command: `kubectl get secret avalok-reader-token -n avalok-system \\
-  -o jsonpath='{.data.ca\\.crt}'`,
-  },
-]
-
-const KUBECONFIG_SETUP_COMMANDS = [
-  {
-    title: '1. Create a dedicated ServiceAccount (recommended)',
-    command: `kubectl create namespace avalok-system
-kubectl create serviceaccount avalok-reader -n avalok-system`,
-  },
-  {
-    title: '2. Create ClusterRole (read-only log access)',
-    command: `cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: avalok-reader
-rules:
-- apiGroups: [""]
-  resources: ["pods", "pods/log", "namespaces"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: ["apps"]
-  resources: ["deployments", "statefulsets", "daemonsets"]
-  verbs: ["get", "list"]
-EOF`,
-  },
-  {
-    title: '3. Bind ClusterRole to ServiceAccount',
-    command: `kubectl create clusterrolebinding avalok-reader \\
-  --clusterrole=avalok-reader \\
-  --serviceaccount=avalok-system:avalok-reader`,
-  },
-  {
-    title: '4. Generate a kubeconfig for the ServiceAccount',
-    command: `SECRET=$(kubectl get sa avalok-reader -n avalok-system \\
-  -o jsonpath='{.secrets[0].name}' 2>/dev/null)
-
-# For Kubernetes >= 1.24 (token not auto-mounted):
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Secret
-metadata:
-  name: avalok-reader-token
-  namespace: avalok-system
-  annotations:
-    kubernetes.io/service-account.name: avalok-reader
-type: kubernetes.io/service-account-token
-EOF
-SECRET=avalok-reader-token
-
-TOKEN=$(kubectl get secret $SECRET -n avalok-system \\
-  -o jsonpath='{.data.token}' | base64 -d)
-CA=$(kubectl get secret $SECRET -n avalok-system \\
-  -o jsonpath='{.data.ca\\.crt}')
-SERVER=$(kubectl config view --minify \\
-  -o jsonpath='{.clusters[0].cluster.server}')
-
-cat <<EOF
-apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    certificate-authority-data: $CA
-    server: $SERVER
-  name: avalok-cluster
-contexts:
-- context:
-    cluster: avalok-cluster
-    user: avalok-reader
-  name: avalok-context
-current-context: avalok-context
-users:
-- name: avalok-reader
-  user:
-    token: $TOKEN
-EOF`,
-  },
-  {
-    title: '5. Or use an existing kubeconfig',
-    command: `cat ~/.kube/config`,
-  },
-]
-
-type AuthMethod = 'service-account' | 'kubeconfig'
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-
-  function handleCopy() {
-    navigator.clipboard.writeText(text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-      title="Copy"
-    >
-      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-    </button>
-  )
-}
-
-function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone: () => void }) {
-  const isEdit = !!editing
-
-  function detectAuthMethod(config?: Record<string, unknown>): AuthMethod {
-    if (!config) return 'service-account'
-    if (config.kubeconfig_content) return 'kubeconfig'
-    return 'service-account'
-  }
-
-  const [name, setName] = useState(editing?.name || '')
-  const [authMethod, setAuthMethod] = useState<AuthMethod>(detectAuthMethod(editing?.config))
-  const [apiServerUrl, setApiServerUrl] = useState(
-    (editing?.config?.api_server_url as string) || ''
-  )
-  const [bearerToken, setBearerToken] = useState('')
-  const [caCert, setCaCert] = useState('')
-  const [insecureSkipTls, setInsecureSkipTls] = useState(
-    !!(editing?.config?.insecure_skip_tls)
-  )
-  const [kubeconfigContent, setKubeconfigContent] = useState('')
-  const [kubeconfigContext, setKubeconfigContext] = useState(
-    (editing?.config?.context as string) || ''
-  )
-  const [description, setDescription] = useState(editing?.description || '')
-  const [showInstructions, setShowInstructions] = useState(!isEdit)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [testResult, setTestResult] = useState<{ status: string; error?: string; message?: string } | null>(null)
-
-  function buildConfig(): Record<string, unknown> {
-    if (authMethod === 'kubeconfig') {
-      const cfg: Record<string, unknown> = {}
-      if (kubeconfigContent) cfg.kubeconfig_content = kubeconfigContent
-      if (kubeconfigContext) cfg.context = kubeconfigContext
-      return cfg
-    }
-    const cfg: Record<string, unknown> = {}
-    if (apiServerUrl) cfg.api_server_url = apiServerUrl
-    if (bearerToken) cfg.bearer_token = bearerToken
-    if (caCert) cfg.ca_cert = caCert
-    if (insecureSkipTls) cfg.insecure_skip_tls = true
-    return cfg
-  }
-
-  function validateForm(): string | null {
-    if (!name) return 'Name is required'
-    if (!isEdit) {
-      if (authMethod === 'kubeconfig') {
-        if (!kubeconfigContent) return 'Kubeconfig content is required'
-      } else {
-        if (!apiServerUrl) return 'API Server URL is required'
-        if (!bearerToken) return 'Bearer Token is required'
-      }
-    }
-    return null
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const validationError = validateForm()
-    if (validationError) { setError(validationError); return }
-    setLoading(true)
-    setError('')
-    setTestResult(null)
-    try {
-      const config = buildConfig()
-      if (isEdit) {
-        await adminUpdateResource(name, { config: Object.keys(config).length > 0 ? config : undefined, description })
-      } else {
-        await adminCreateResource({ name, type: 'kubernetes', config, description })
-      }
-      onDone()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : `Failed to ${isEdit ? 'update' : 'create'} resource`)
-    } finally { setLoading(false) }
-  }
-
-  async function handleTestAndSave(e: React.FormEvent) {
-    e.preventDefault()
-    const validationError = validateForm()
-    if (validationError) { setError(validationError); return }
-    setLoading(true)
-    setError('')
-    setTestResult(null)
-    try {
-      const config = buildConfig()
-      if (isEdit) {
-        await adminUpdateResource(name, { config: Object.keys(config).length > 0 ? config : undefined, description })
-      } else {
-        await adminCreateResource({ name, type: 'kubernetes', config, description })
-      }
-      const result = await adminTestResource(name)
-      setTestResult(result)
-      if (result.status === 'ok') {
-        setTimeout(() => onDone(), 1500)
-      }
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : `Failed to ${isEdit ? 'update' : 'create'} resource`)
-    } finally { setLoading(false) }
-  }
-
-  const activeCommands = authMethod === 'kubeconfig' ? KUBECONFIG_SETUP_COMMANDS : SA_SETUP_COMMANDS
-
-  return (
-    <Card padding="none" className="mb-4">
-      {/* Auth Method Selector */}
-      <div className="px-4 pt-4 pb-2">
-        <FormField label="Authentication Method">
-          <Tabs
-            tabs={[
-              { id: 'service-account', label: 'Service Account Token' },
-              { id: 'kubeconfig', label: 'Kubeconfig' },
-            ]}
-            active={authMethod}
-            onChange={(id) => setAuthMethod(id as AuthMethod)}
-          />
-        </FormField>
-      </div>
-
-      {/* Instructions Section */}
-      <div className="border-b border-[var(--border-subtle)]">
-        <button
-          onClick={() => setShowInstructions(!showInstructions)}
-          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--bg-hover)] transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-4 h-4" />
-            <span className="text-base text-[var(--text-primary)]">Setup Instructions</span>
-            <span className="text-xs text-[var(--text-muted)]">
-              {authMethod === 'kubeconfig' ? 'Generate or use an existing kubeconfig' : 'Create a read-only ServiceAccount'}
-            </span>
-          </div>
-          {showInstructions ? <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" /> : <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />}
-        </button>
-
-        {showInstructions && (
-          <div className="px-4 pb-4 space-y-3">
-            <p className="text-xs text-[var(--text-secondary)]">
-              {authMethod === 'kubeconfig'
-                ? 'Generate a kubeconfig with a dedicated ServiceAccount for best security, or use an existing kubeconfig. Avalok needs read-only access to pods, logs, namespaces, and workloads.'
-                : 'These commands create a read-only ServiceAccount on your cluster. Avalok uses this to list namespaces, discover workloads, and stream pod logs. No write access is granted.'}
-            </p>
-            {activeCommands.map((cmd, i) => (
-              <div key={i}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium text-[var(--text-secondary)]">{cmd.title}</span>
-                  <CopyButton text={cmd.command} />
-                </div>
-                <pre className="text-xs font-mono bg-[var(--bg-app)] border border-[var(--border-subtle)] rounded-md px-3 py-2 text-[var(--text-primary)] overflow-x-auto whitespace-pre">
-                  {cmd.command}
-                </pre>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Form Section */}
-      <div className="p-4">
-        {error && <Alert variant="error" className="mb-3">{error}</Alert>}
-        {testResult && (
-          <Alert variant={testResult.status === 'ok' ? 'success' : 'error'} className="mb-3">
-            {testResult.status === 'ok' ? (testResult.message || 'Connection successful') : testResult.error}
-          </Alert>
-        )}
-
-        <form onSubmit={handleTestAndSave} className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Name" required>
-              <Input value={name} onChange={e => setName(e.target.value)} className={cn(isEdit && 'opacity-60 cursor-not-allowed')} placeholder="production-cluster" required disabled={isEdit} />
-            </FormField>
-            <FormField label="Description">
-              <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Production GKE cluster" />
-            </FormField>
-          </div>
-
-          {authMethod === 'kubeconfig' ? (
-            <>
-              <FormField label="Kubeconfig" required>
-                <Textarea
-                  value={kubeconfigContent}
-                  onChange={e => setKubeconfigContent(e.target.value)}
-                  className="h-40 font-mono"
-                  placeholder={isEdit ? 'Leave empty to keep existing kubeconfig...' : 'Paste the full kubeconfig YAML here...'}
-                  required={!isEdit}
-                />
-              </FormField>
-              <FormField label="Context" hint="optional, defaults to current-context">
-                <Input value={kubeconfigContext} onChange={e => setKubeconfigContext(e.target.value)} placeholder="avalok-context" />
-              </FormField>
-            </>
-          ) : (
-            <>
-              <FormField label="API Server URL" required>
-                <Input value={apiServerUrl} onChange={e => setApiServerUrl(e.target.value)} placeholder="https://your-cluster-api:6443" required={!isEdit} />
-              </FormField>
-
-              <FormField label="Bearer Token" required>
-                <Textarea
-                  value={bearerToken}
-                  onChange={e => setBearerToken(e.target.value)}
-                  className="h-20 font-mono"
-                  placeholder={isEdit ? 'Leave empty to keep existing token...' : 'Paste the token from step 6...'}
-                  required={!isEdit}
-                />
-              </FormField>
-
-              <FormField label="CA Certificate" hint="optional, for private clusters">
-                <Textarea
-                  value={caCert}
-                  onChange={e => setCaCert(e.target.value)}
-                  className="h-20 font-mono"
-                  placeholder={isEdit ? 'Leave empty to keep existing cert...' : 'Paste base64-encoded CA cert from step 8...'}
-                />
-              </FormField>
-
-              <div className="flex items-center justify-between py-1">
-                <div>
-                  <span className="text-xs font-medium text-[var(--text-secondary)]">Skip TLS Verification</span>
-                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Enable for clusters with self-signed certificates</p>
-                </div>
-                <Toggle checked={insecureSkipTls} onChange={setInsecureSkipTls} />
-              </div>
-            </>
-          )}
-
-          <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
-            <Button variant="ghost" type="button" onClick={onDone}>Cancel</Button>
-            <Button variant="secondary" type="button" onClick={handleSubmit} loading={loading}>
-              {loading ? 'Saving...' : isEdit ? 'Update' : 'Save'}
-            </Button>
-            <Button type="submit" loading={loading}>
-              {loading ? 'Testing...' : isEdit ? 'Test & Update' : 'Test & Save'}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </Card>
-  )
-}
-
 // --- Settings Panel ---
 
-function SettingsPanel() {
+function SettingsPanel({ onSettingsChange, highlightSetting, onHighlightConsumed }: { onSettingsChange?: (settings: Record<string, string>) => void; highlightSetting?: string; onHighlightConsumed?: () => void }) {
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [blinkKey, setBlinkKey] = useState<string | undefined>(highlightSetting)
 
   useEffect(() => {
     adminGetSettings()
@@ -1506,6 +1021,20 @@ function SettingsPanel() {
       .catch(() => setError('Failed to load settings'))
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!highlightSetting || loading) return
+    setBlinkKey(highlightSetting)
+    const el = document.querySelector(`[data-setting-id="${highlightSetting}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    const timer = setTimeout(() => {
+      setBlinkKey(undefined)
+      onHighlightConsumed?.()
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [highlightSetting, loading, onHighlightConsumed])
 
   const toggle = useCallback(async (key: string, current: string) => {
     const next = current === 'true' ? 'false' : 'true'
@@ -1529,12 +1058,13 @@ function SettingsPanel() {
     try {
       const updated = await adminUpdateSettings({ [key]: String(n) })
       setSettings(updated)
+      onSettingsChange?.(updated)
     } catch {
       setError('Failed to save setting')
     } finally {
       setSaving(false)
     }
-  }, [])
+  }, [onSettingsChange])
 
   if (loading) return <Spinner label="Loading settings..." />
 
@@ -1555,13 +1085,13 @@ function SettingsPanel() {
       <Section title="Entity Visibility" className="mb-8">
         <Card padding="none">
           <div className="px-4">
-            <SettingsRow label="Enable Workspaces" description="Show the Workspaces section on the homepage.">
+            <SettingsRow label="Enable Workspaces" description="Show the Workspaces section on the homepage." settingId="enable_workspaces" highlight={blinkKey === 'enable_workspaces'}>
               <Toggle checked={enableWorkspaces === 'true'} onChange={() => toggle('enable_workspaces', enableWorkspaces)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="Enable Environments" description="Show standalone Environments section on the homepage.">
+            <SettingsRow label="Enable Environments" description="Show standalone Environments section on the homepage." settingId="enable_environments" highlight={blinkKey === 'enable_environments'}>
               <Toggle checked={enableEnvironments === 'true'} onChange={() => toggle('enable_environments', enableEnvironments)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="Enable Services" description="Show standalone Services section on the homepage.">
+            <SettingsRow label="Enable Services" description="Show standalone Services section on the homepage." settingId="enable_services" highlight={blinkKey === 'enable_services'}>
               <Toggle checked={enableServices === 'true'} onChange={() => toggle('enable_services', enableServices)} disabled={saving} />
             </SettingsRow>
           </div>
@@ -1571,10 +1101,10 @@ function SettingsPanel() {
       <Section title="Server Settings" className="mb-8">
         <Card padding="none">
           <div className="px-4">
-            <SettingsRow label="Redact credentials in UI" description="Hide passwords and passphrases in YAML preview by default. Admins can still toggle visibility per-session.">
+            <SettingsRow label="Redact credentials in UI" description="Hide passwords and passphrases in YAML preview by default. Admins can still toggle visibility per-session." settingId="redact_credentials" highlight={blinkKey === 'redact_credentials'}>
               <Toggle checked={redactCreds === 'true'} onChange={() => toggle('redact_credentials', redactCreds)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="File browser page size" description="Number of lines per page when viewing log files. Large values use more memory.">
+            <SettingsRow label="File browser page size" description="Number of lines per page when viewing log files. Large values use more memory." settingId="file_browser_page_size" highlight={blinkKey === 'file_browser_page_size'}>
               <Input
                 type="number"
                 min={1000}
@@ -1584,10 +1114,10 @@ function SettingsPanel() {
                 onChange={e => setSettings(prev => ({ ...prev, file_browser_page_size: e.target.value }))}
                 onBlur={e => saveNumeric('file_browser_page_size', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
-            <SettingsRow label="Initial log tail lines" description="Number of historical log lines to load when opening a stream. 0 = all logs from the beginning.">
+            <SettingsRow label="Initial log tail lines" description="Number of historical log lines to load when opening a stream. 0 = all logs from the beginning." settingId="stream_tail_lines" highlight={blinkKey === 'stream_tail_lines'}>
               <Input
                 type="number"
                 min={0}
@@ -1597,20 +1127,20 @@ function SettingsPanel() {
                 onChange={e => setSettings(prev => ({ ...prev, stream_tail_lines: e.target.value }))}
                 onBlur={e => saveNumeric('stream_tail_lines', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
-            <SettingsRow label="Log buffer size" description="Maximum number of log lines kept in the browser per stream. Older lines are dropped when this limit is reached.">
+            <SettingsRow label="Log buffer size" description="Maximum number of log lines kept in the browser per stream. Older lines are dropped when this limit is reached. Trimming occurs at 2x this value." settingId="log_buffer_lines" highlight={blinkKey === 'log_buffer_lines'}>
               <Input
                 type="number"
                 min={1000}
-                max={100000}
+                max={10000000}
                 step={1000}
                 value={logBufferLines}
                 onChange={e => setSettings(prev => ({ ...prev, log_buffer_lines: e.target.value }))}
                 onBlur={e => saveNumeric('log_buffer_lines', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
           </div>
@@ -1643,7 +1173,7 @@ function SettingsPanel() {
       >
         <Card padding="none">
           <div className="px-4">
-            <SettingsRow label="Max concurrent connections" description="Maximum number of simultaneous WebSocket connections for log streaming. Default: 100.">
+            <SettingsRow label="Max concurrent connections" description="Maximum number of simultaneous WebSocket connections for log streaming. Default: 100." settingId="ws_max_connections" highlight={blinkKey === 'ws_max_connections'}>
               <Input
                 type="number"
                 min={10}
@@ -1653,10 +1183,10 @@ function SettingsPanel() {
                 onChange={e => setSettings(prev => ({ ...prev, ws_max_connections: e.target.value }))}
                 onBlur={e => saveNumeric('ws_max_connections', e.target.value)}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
-            <SettingsRow label="Max message size (KB)" description="Maximum size of a single WebSocket message from clients. Default: 4 KB.">
+            <SettingsRow label="Max message size (KB)" description="Maximum size of a single WebSocket message from clients. Default: 4 KB." settingId="ws_max_message_kb" highlight={blinkKey === 'ws_max_message_kb'}>
               <Input
                 type="number"
                 min={1}
@@ -1669,7 +1199,7 @@ function SettingsPanel() {
                   if (!isNaN(n) && n > 0 && n <= 64) saveNumeric('ws_max_message_kb', e.target.value)
                 }}
                 disabled={saving}
-                className="w-24 text-right"
+                className="w-32 text-right"
               />
             </SettingsRow>
           </div>
