@@ -147,7 +147,7 @@ PUT /api/admin/users/{username}
 
 ```json
 {
-  "role": "manager",
+  "role": "reader",
   "scope": "production",
   "status": "active"
 }

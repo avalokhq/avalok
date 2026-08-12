@@ -292,16 +292,14 @@ Key points:
 
 ### Create Users
 
-Log in as admin and navigate to the Admin panel to create user accounts. Avalok supports four roles:
+Log in as admin and navigate to the Admin panel to create user accounts. Avalok supports two roles:
 
 | Role | Permissions |
 |---|---|
 | `admin` | Full access: manage users, workspaces, credentials, settings |
-| `manager` | Manage users (except admins), view all workspaces |
-| `viewer` | View logs in assigned workspaces only |
-| `pending` | Registered but not yet approved |
+| `reader` | View logs in assigned workspaces only |
 
-Users can self-register (status: `pending`) and an admin or manager approves them, or an admin can create accounts directly with an active status.
+Users can self-register (status: `pending`) and an admin approves them, or an admin can create accounts directly with an active status.
 
 ### Set Up Credential Profiles
 
@@ -330,7 +328,7 @@ avalok server start --config server.yaml workspace1.yaml workspace2.yaml
 
 ### Scope User Access
 
-When creating or editing a user, set their **scope** to limit access to specific workspaces, environments, or services. An empty scope grants access to everything (for admin and manager roles).
+When creating or editing a user, set their **scope** to limit access to specific workspaces, environments, or services. An empty scope grants access to everything (for admin users).
 
 Scope paths use the same format as serve mode:
 

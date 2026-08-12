@@ -95,7 +95,7 @@ avalok server init --db-url "postgres://..." --jwt-secret "..."
 avalok server start -c config.yaml workspace.yaml
 ```
 
-Three roles: **admin**, **manager**, **reader**. Developers register, admins approve, scoped access is granted.
+Two roles: **admin** and **reader**. Developers register, admins approve, scoped access is granted.
 
 ## Supported Log Sources
 
@@ -206,7 +206,6 @@ On first start, an admin account is created automatically and credentials are pr
 | Role | Capabilities |
 |------|-------------|
 | **Admin** | Full access: manage users, credentials, workspaces, resources, settings |
-| **Manager** | Approve/manage user access requests |
 | **Reader** | View logs within granted scope |
 
 Scopes follow a path format: `workspace/environment/service`. A reader with scope `my-app/production/api` can only view API logs in production.
