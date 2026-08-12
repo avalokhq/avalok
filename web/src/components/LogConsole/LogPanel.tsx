@@ -84,7 +84,9 @@ export default function LogPanel({ workspace, environment, service, label, panel
 
   const filtered = useMemo(() => {
     void version
-    let result = filterByTime(logs as LogEntry[], timeFilter)
+    const all = logs as LogEntry[]
+    for (let i = 0; i < all.length; i++) all[i]._lineNum = i + 1
+    let result = filterByTime(all, timeFilter)
     if (levelFilter.size < 4) {
       result = result.filter(l => levelFilter.has(parseLevel(l.line)))
     }

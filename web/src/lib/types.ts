@@ -35,6 +35,7 @@ export interface LogEntry {
   line: string
   error?: string
   _blinkAt?: number
+  _lineNum?: number
 }
 
 export interface ServiceStatus {
