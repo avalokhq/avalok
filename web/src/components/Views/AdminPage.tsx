@@ -509,7 +509,6 @@ function CreateUserForm({ onDone }: { onDone: () => void }) {
           <FormField label="Role">
             <Select value={role} onChange={e => setRole(e.target.value)}>
               <option value="reader">Reader</option>
-              <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </Select>
           </FormField>
@@ -569,7 +568,6 @@ function EditUserModal({ user, userRole, onClose, onSaved }: { user: AdminUser; 
           <FormField label="Role">
             <Select value={role} onChange={e => setRole(e.target.value)}>
               <option value="reader">Reader</option>
-              <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </Select>
           </FormField>
@@ -1241,7 +1239,6 @@ function formatScope(s: string) {
 function roleColor(role: string) {
   switch (role) {
     case 'admin': return 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-    case 'manager': return 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
     default: return 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-subtle)]'
   }
 }

@@ -63,10 +63,16 @@ func (s *Server) handleListStandaloneEnvs(w http.ResponseWriter, r *http.Request
 			continue
 		}
 		resolved := env.ResolveAll()
+		svcCount := 0
+		for _, rs := range resolved {
+			if user.HasStandaloneEnvServiceAccess(env.Name, rs.Service.Name) {
+				svcCount++
+			}
+		}
 		result = append(result, envSummary{
 			Name:        env.Name,
 			Description: env.Description,
-			Services:    len(resolved),
+			Services:    svcCount,
 		})
 	}
 	writeJSON(w, http.StatusOK, result)

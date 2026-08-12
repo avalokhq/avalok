@@ -69,6 +69,35 @@ func (u *User) HasEnvAccess(workspace, env string) bool {
 	return false
 }
 
+func (u *User) HasWorkspaceServiceAccess(ws, service string) bool {
+	if len(u.Scope) == 0 {
+		return true
+	}
+	wsPrefix := ws + "/"
+	for _, s := range u.Scope {
+		if s == ws {
+			return true
+		}
+		if len(s) > len(wsPrefix) && s[:len(wsPrefix)] == wsPrefix {
+			rest := s[len(wsPrefix):]
+			slashIdx := -1
+			for i := 0; i < len(rest); i++ {
+				if rest[i] == '/' {
+					slashIdx = i
+					break
+				}
+			}
+			if slashIdx == -1 {
+				return true
+			}
+			if rest[slashIdx+1:] == service {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (u *User) HasStandaloneEnvAccess(envName string) bool {
 	if len(u.Scope) == 0 {
 		return true

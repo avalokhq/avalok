@@ -12,7 +12,6 @@ Avalok Server enforces role-based access control (RBAC) with a flexible scope sy
 | Role | Description | Capabilities |
 |------|-------------|--------------|
 | **admin** | Full access | All operations: user management, credential management, workspace/resource CRUD, settings, approvals |
-| **manager** | User management | Approve/disable users, manage users within their scope, view all resources within scope |
 | **reader** | Read-only (server mode) | View workspaces, environments, services, and stream logs within their assigned scope |
 | **viewer** | Read-only (serve mode) | View resources exposed by `avalok serve`, read-only access |
 

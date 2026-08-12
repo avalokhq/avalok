@@ -75,7 +75,7 @@ func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := res.Config
-	if r.URL.Query().Get("full") != "true" {
+	if r.URL.Query().Get("full") != "true" || user.Role != "admin" {
 		cfg = redactSensitiveKeys(cfg)
 	}
 
