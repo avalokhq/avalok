@@ -1,0 +1,42 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+
+categories:
+  - title: 'New Features'
+    labels:
+      - 'feature'
+  - title: 'Improvements'
+    labels:
+      - 'enhancement'
+  - title: 'Bug Fixes'
+    labels:
+      - 'bug'
+
+autolabeler:
+  - label: 'feature'
+    branch:
+      - '/^feature\/.+/'
+  - label: 'enhancement'
+    branch:
+      - '/^enhance\/.+/'
+  - label: 'bug'
+    branch:
+      - '/^bug\/.+/'
+      - '/^fix\/.+/'
+
+version-resolver:
+  minor:
+    labels:
+      - 'feature'
+  patch:
+    labels:
+      - 'enhancement'
+      - 'bug'
+  default: patch
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
