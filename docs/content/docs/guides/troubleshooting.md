@@ -109,7 +109,29 @@ docker compose logs postgres
 
 ## SSH Connections
 
-### Permission Denied
+### Permission Denied on Log Files with Sudo Enabled
+
+If you enabled the **Use Sudo** toggle on the SSH target but still get `Permission denied` on the log file, make sure:
+
+1. The remote user has passwordless sudo. Add this in `visudo` on the remote server:
+   ```
+   youruser ALL=(ALL) NOPASSWD: ALL
+   ```
+   Or restrict to just the commands Avalok uses:
+   ```
+   youruser ALL=(ALL) NOPASSWD: /usr/bin/tail, /usr/bin/cat
+   ```
+
+2. The `requiretty` setting is not blocking non-interactive sudo. Check with:
+   ```bash
+   sudo grep -i requiretty /etc/sudoers /etc/sudoers.d/*
+   ```
+   If present, override it for your user in `visudo`:
+   ```
+   Defaults:youruser !requiretty
+   ```
+
+### Permission Denied (Connection)
 
 - Verify the SSH key or password is correct
 - Check that the user has access to the log files on the remote host

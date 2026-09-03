@@ -44,20 +44,25 @@ func buildRemoteCommand(providerType string, config map[string]any, follow bool,
 	case "file":
 		qpath := shellutil.Quote(cfgStr(config, "path"))
 		readAll := cfgBool(config, "read_all")
-		emptyCheck := fmt.Sprintf("[ -s %s ] || echo '[info] log file is empty, waiting for new logs'; ", qpath)
+		sudoPrefix := ""
+		if sudo {
+			sudoPrefix = "sudo "
+		}
+		emptyCheck := fmt.Sprintf("%s[ -s %s ] || echo '[info] log file is empty, waiting for new logs'; ", sudoPrefix, qpath)
 		if follow {
 			if tail > 0 {
-				cmd = emptyCheck + fmt.Sprintf("tail -n %d -f %s", tail, qpath)
+				cmd = emptyCheck + fmt.Sprintf("%stail -n %d -f %s", sudoPrefix, tail, qpath)
 			} else {
-				cmd = emptyCheck + fmt.Sprintf("tail -n +1 -f %s", qpath)
+				cmd = emptyCheck + fmt.Sprintf("%stail -n +1 -f %s", sudoPrefix, qpath)
 			}
 		} else if readAll {
-			cmd = emptyCheck + fmt.Sprintf("cat %s", qpath)
+			cmd = emptyCheck + fmt.Sprintf("%scat %s", sudoPrefix, qpath)
 		} else if tail > 0 {
-			cmd = fmt.Sprintf("tail -n %d %s", tail, qpath)
+			cmd = fmt.Sprintf("%stail -n %d %s", sudoPrefix, tail, qpath)
 		} else {
-			cmd = emptyCheck + fmt.Sprintf("cat %s", qpath)
+			cmd = emptyCheck + fmt.Sprintf("%scat %s", sudoPrefix, qpath)
 		}
+		sudo = false
 
 	case "containerd":
 		container := shellutil.Quote(cfgStr(config, "container_name"))
