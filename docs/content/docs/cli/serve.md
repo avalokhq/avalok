@@ -7,17 +7,21 @@ icon: "play_arrow"
 
 # avalok serve
 
-Start avalok in local (operator) mode. Loads one or more workspace YAML files, discovers credentials from your local environment (kubeconfig, SSH config, etc.), generates access tokens, and starts an HTTP server with the embedded web UI.
+Start avalok in local (operator) mode. When run without arguments, auto-discovers Kubernetes clusters from your kubeconfig. When given workspace YAML files, loads those instead. Generates access tokens and starts an HTTP server with the embedded web UI.
 
 All state is kept in memory -- nothing is persisted to disk or a database. When avalok stops, all tokens and session data are gone.
 
 ## Usage
 
 ```bash
+# Auto-discover Kubernetes clusters
+avalok serve [flags]
+
+# Load explicit workspace YAML files
 avalok serve [workspace.yaml...] [flags]
 ```
 
-At least one workspace YAML file is required.
+When no YAML files are provided, avalok reads your kubeconfig (`~/.kube/config` or `$KUBECONFIG`), connects to each cluster context, and discovers all namespaces and workloads (deployments, statefulsets, daemonsets). Works with any Kubernetes cluster -- AKS, EKS, GKE, or self-managed.
 
 ## Flags
 
@@ -28,8 +32,14 @@ At least one workspace YAML file is required.
 | `--tokens` | int | `1` | Number of access tokens to generate |
 | `--scope` | bool | `false` | Interactively select which environments and services to share |
 | `--allow` | string | | Comma-separated scope paths (e.g. `workspace/env/service`) |
+| `--kubeconfig` | string | `~/.kube/config` | Path to kubeconfig file (auto-discovery only) |
+| `--context` | string | all | Comma-separated Kubernetes contexts to discover (auto-discovery only) |
+| `-n`, `--namespace` | string | all non-system | Comma-separated namespaces to include (auto-discovery only) |
+| `--all-namespaces` | bool | `false` | Include system namespaces like kube-system (auto-discovery only) |
 
 ## How It Works
+
+### With YAML files
 
 1. **Loads workspace configs** -- Parses each YAML file and registers all environments, targets, and services.
 2. **Discovers credentials** -- Uses the operator's local environment to find credentials. For Kubernetes targets, it reads your kubeconfig. For SSH targets, it uses your SSH config and keys.
@@ -37,9 +47,64 @@ At least one workspace YAML file is required.
 4. **Generates access tokens** -- Creates the requested number of viewer tokens. Each token grants read-only access to the web UI.
 5. **Starts HTTP server** -- Serves the web UI and log streaming API on the configured address and port.
 
+### Without arguments (auto-discovery)
+
+1. **Reads kubeconfig** -- Loads all contexts from your kubeconfig file.
+2. **Discovers clusters** -- Connects to each Kubernetes context (with a 10s timeout) and skips unreachable ones.
+3. **Discovers workloads** -- For each reachable cluster, lists non-system namespaces and finds all deployments, statefulsets, and daemonsets.
+4. **Generates workspaces** -- Creates one workspace per cluster context, with namespaces as environments and workloads as services.
+5. **Checks connectivity and starts** -- Same as YAML mode from step 3 onward.
+
 ## Examples
 
-### Basic usage with a single workspace
+### Auto-discover all clusters
+
+```bash
+avalok serve
+```
+
+Output:
+
+```
+Avalok -- secure log access broker
+
+Discovering Kubernetes clusters...
+
+  Discovering cluster: aks-prod-westus ...
+    found 3 namespaces, 12 workloads
+  Discovering cluster: eks-staging ...
+    found 2 namespaces, 5 workloads
+  Discovering cluster: minikube ...
+    ! skipping: cluster unreachable: ...
+
+  Loaded workspace: aks-prod-westus (AKS cluster (auto-discovered))
+    default: 1 target, 4 services
+      * api [kubernetes on kubernetes target]
+      * web [kubernetes on kubernetes target]
+    monitoring: 1 target, 3 services
+      * prometheus [kubernetes on kubernetes target]
+
+Access tokens:
+  http://192.168.1.50:9090?token=a1b2c3d4e5f6...
+```
+
+### Filter to specific contexts or namespaces
+
+```bash
+# Only discover a specific cluster
+avalok serve --context aks-prod-westus
+
+# Only include specific namespaces
+avalok serve --namespace default,staging
+
+# Include system namespaces too
+avalok serve --all-namespaces
+
+# Use a custom kubeconfig
+avalok serve --kubeconfig /path/to/kubeconfig
+```
+
+### Basic usage with a workspace YAML
 
 ```bash
 avalok serve workspace.yaml

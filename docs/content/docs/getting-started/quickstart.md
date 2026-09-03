@@ -9,7 +9,35 @@ icon: "bolt"
 
 This guide walks you through streaming logs with Avalok in the fastest way possible. By the end, you'll have a running instance showing live logs in your browser.
 
-## Step 1: Create a Workspace Config
+## Fastest Path: Kubernetes Auto-Discovery
+
+If you already have `kubectl` configured and can reach your clusters, just run:
+
+```bash
+avalok serve
+```
+
+Avalok reads your kubeconfig, discovers all reachable clusters, namespaces, and workloads, and starts streaming. No YAML file needed. Works with AKS, EKS, GKE, or any Kubernetes cluster.
+
+Filter to specific clusters or namespaces:
+
+```bash
+# Only one cluster context
+avalok serve --context my-aks-cluster
+
+# Only specific namespaces
+avalok serve --namespace default,staging
+```
+
+Open the URL printed in the terminal to see your logs. That's it.
+
+---
+
+## Custom Sources: Workspace YAML
+
+For non-Kubernetes sources (Docker, SSH, files, journalctl) or fine-tuned control, create a workspace YAML file.
+
+### Step 1: Create a Workspace Config
 
 A workspace YAML file tells Avalok what log sources exist and how to connect to them. Create a file called `workspace.yaml`:
 

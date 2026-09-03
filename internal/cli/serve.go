@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/avalokhq/avalok/internal/credential/operator"
+	"github.com/avalokhq/avalok/internal/discovery"
 	"github.com/avalokhq/avalok/internal/logbuffer"
 	_ "github.com/avalokhq/avalok/internal/provider/azureblob"
 	_ "github.com/avalokhq/avalok/internal/provider/azurefile"
@@ -45,14 +46,21 @@ func serveCmd() *cobra.Command {
 	var tokens int
 	var scope bool
 	var scopeFilter string
+	var kubeconfig string
+	var contexts string
+	var namespaces string
+	var allNamespaces bool
 
 	cmd := &cobra.Command{
 		Use:   "serve [workspace.yaml...]",
 		Short: "Start avalok in local mode",
-		Long:  "Load workspace YAML files and serve logs using the operator's local credentials.",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Load workspace YAML files and serve logs using the operator's local credentials.
+
+When run without arguments, auto-discovers Kubernetes clusters from your kubeconfig
+and streams logs from all workloads (deployments, statefulsets, daemonsets).
+Works with any Kubernetes cluster — AKS, EKS, GKE, or self-managed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServe(cmd.Context(), args, host, port, tokens, scope, scopeFilter)
+			return runServe(cmd.Context(), args, host, port, tokens, scope, scopeFilter, kubeconfig, contexts, namespaces, allNamespaces)
 		},
 	}
 
@@ -61,11 +69,15 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().IntVar(&tokens, "tokens", 1, "Number of access tokens to generate")
 	cmd.Flags().BoolVar(&scope, "scope", false, "Interactively select which environments and services to share")
 	cmd.Flags().StringVar(&scopeFilter, "allow", "", "Comma-separated scope paths (e.g. workspace/env/service)")
+	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config or $KUBECONFIG)")
+	cmd.Flags().StringVar(&contexts, "context", "", "Comma-separated Kubernetes contexts to discover (default: all)")
+	cmd.Flags().StringVarP(&namespaces, "namespace", "n", "", "Comma-separated namespaces to include (default: all non-system)")
+	cmd.Flags().BoolVar(&allNamespaces, "all-namespaces", false, "Include system namespaces (kube-system, kube-public, kube-node-lease)")
 
 	return cmd
 }
 
-func runServe(ctx context.Context, yamlPaths []string, host string, port int, tokenCount int, interactiveScope bool, scopeFilter string) error {
+func runServe(ctx context.Context, yamlPaths []string, host string, port int, tokenCount int, interactiveScope bool, scopeFilter string, kubeconfig string, contexts string, namespaces string, allNamespaces bool) error {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -82,36 +94,63 @@ func runServe(ctx context.Context, yamlPaths []string, host string, port int, to
 
 	var allWorkspaces []*workspace.Workspace
 
-	for _, path := range yamlPaths {
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return fmt.Errorf("resolving path %q: %w", path, err)
+	if len(yamlPaths) == 0 {
+		fmt.Println("Discovering Kubernetes clusters...")
+		fmt.Println()
+
+		opts := discovery.Options{
+			Kubeconfig:    kubeconfig,
+			AllNamespaces: allNamespaces,
 		}
-
-		w, err := workspace.Load(absPath)
-		if err != nil {
-			return fmt.Errorf("loading workspace %q: %w", path, err)
-		}
-
-		if err := memStore.SaveWorkspace(ctx, w); err != nil {
-			return fmt.Errorf("saving workspace %q: %w", w.Name, err)
-		}
-
-		allWorkspaces = append(allWorkspaces, w)
-
-		fmt.Printf("  Loaded workspace: %s (%s)\n", w.Name, w.Description)
-		for _, env := range w.Environments {
-			resolved, _ := w.Resolve(env.Name)
-			fmt.Printf("    %s: %d targets, %d services\n", env.Name, len(env.Targets), len(resolved))
-			for _, rs := range resolved {
-				targetType := rs.Target.Type
-				providerType := rs.Service.Provider
-				label := rs.Service.FriendlyName
-				if label == "" {
-					label = rs.Service.Name
+		if contexts != "" {
+			for _, c := range strings.Split(contexts, ",") {
+				if c = strings.TrimSpace(c); c != "" {
+					opts.Contexts = append(opts.Contexts, c)
 				}
-				fmt.Printf("      • %s [%s on %s target]\n", label, providerType, targetType)
 			}
+		}
+		if namespaces != "" {
+			for _, n := range strings.Split(namespaces, ",") {
+				if n = strings.TrimSpace(n); n != "" {
+					opts.Namespaces = append(opts.Namespaces, n)
+				}
+			}
+		}
+
+		discovered, err := discovery.DiscoverKubernetes(ctx, opts)
+		if err != nil {
+			return fmt.Errorf("auto-discovery failed: %w\n\nHint: provide a workspace YAML file instead: avalok serve workspace.yaml", err)
+		}
+
+		fmt.Println()
+
+		for _, w := range discovered {
+			if err := memStore.SaveWorkspace(ctx, w); err != nil {
+				return fmt.Errorf("saving workspace %q: %w", w.Name, err)
+			}
+			allWorkspaces = append(allWorkspaces, w)
+
+			printWorkspaceSummary(w)
+		}
+	} else {
+		for _, path := range yamlPaths {
+			absPath, err := filepath.Abs(path)
+			if err != nil {
+				return fmt.Errorf("resolving path %q: %w", path, err)
+			}
+
+			w, err := workspace.Load(absPath)
+			if err != nil {
+				return fmt.Errorf("loading workspace %q: %w", path, err)
+			}
+
+			if err := memStore.SaveWorkspace(ctx, w); err != nil {
+				return fmt.Errorf("saving workspace %q: %w", w.Name, err)
+			}
+
+			allWorkspaces = append(allWorkspaces, w)
+
+			printWorkspaceSummary(w)
 		}
 	}
 
@@ -195,6 +234,23 @@ func runServe(ctx context.Context, yamlPaths []string, host string, port int, to
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+func printWorkspaceSummary(w *workspace.Workspace) {
+	fmt.Printf("  Loaded workspace: %s (%s)\n", w.Name, w.Description)
+	for _, env := range w.Environments {
+		resolved, _ := w.Resolve(env.Name)
+		fmt.Printf("    %s: %d targets, %d services\n", env.Name, len(env.Targets), len(resolved))
+		for _, rs := range resolved {
+			targetType := rs.Target.Type
+			providerType := rs.Service.Provider
+			label := rs.Service.FriendlyName
+			if label == "" {
+				label = rs.Service.Name
+			}
+			fmt.Printf("      • %s [%s on %s target]\n", label, providerType, targetType)
+		}
+	}
 }
 
 func runInteractiveScope(workspaces []*workspace.Workspace) ([]string, error) {

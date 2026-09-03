@@ -77,10 +77,14 @@ Avalok is not a replacement for a full observability platform. If you need log s
 For quick, on-demand access. Run it when someone needs logs, close it when they're done. Uses your local credentials (kubeconfig, SSH keys). Nothing is persisted.
 
 ```bash
+# Auto-discover all Kubernetes clusters from your kubeconfig
+avalok serve
+
+# Or provide explicit workspace YAML files
 avalok serve workspace.yaml --tokens 3
 ```
 
-Prints 3 access URLs. Share them with whoever needs logs. Close the terminal when done.
+When run without arguments, Avalok reads your kubeconfig and auto-discovers all reachable clusters, namespaces, and workloads (deployments, statefulsets, daemonsets). Works with any Kubernetes cluster &mdash; AKS, EKS, GKE, or self-managed. Share access URLs when done.
 
 ### `avalok server` &mdash; Persistent
 
@@ -156,10 +160,13 @@ environments:
 ### 2. Run
 
 ```bash
-# Ephemeral mode — uses your local credentials
+# Auto-discover Kubernetes clusters from kubeconfig
+avalok serve
+
+# Or provide a workspace YAML for mixed/non-k8s sources
 avalok serve workspace.yaml
 
-# Or with scoped access tokens
+# With scoped access tokens
 avalok serve workspace.yaml --tokens 3 --allow "my-app/production/api"
 ```
 
