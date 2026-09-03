@@ -32,13 +32,20 @@ Either `path` or `command` must be provided. If both are set, `command` takes pr
 
 ## Prerequisites
 
-WinRM must be enabled on the target Windows server. Enable it with:
+WinRM must be enabled and configured for Basic authentication on the target Windows server. Run in an elevated PowerShell:
 
 ```powershell
-winrm quickconfig
+winrm quickconfig -force
+winrm set winrm/config/service/auth '@{Basic="true"}'
+winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+Restart-Service WinRM
 ```
 
+Verify with `winrm get winrm/config/service/auth` — confirm `Basic = true`.
+
 For HTTPS, a valid SSL certificate must be configured on the WinRM listener, or use `insecure: true` for self-signed certificates.
+
+If you run into connection or authentication errors, see the [Troubleshooting]({{< relref "../guides/troubleshooting#winrm-connections" >}}) guide.
 
 ## Examples
 
