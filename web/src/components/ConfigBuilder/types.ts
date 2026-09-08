@@ -42,7 +42,9 @@ export interface SettingsDef {
 }
 
 export function createId(): string {
-  return crypto.randomUUID().slice(0, 8)
+  const bytes = new Uint8Array(4)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 export function emptyConfig(): WorkspaceConfig {
