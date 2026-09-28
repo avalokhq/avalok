@@ -9,6 +9,7 @@ import SourceDot from '../ui/SourceDot'
 import type { LogEntry } from '../../lib/types'
 import { parseLevel } from '../../lib/parseLevel'
 import { filterByTime } from '../../lib/filterByTime'
+import { assignLineNumbers } from '../../lib/assignLineNumbers'
 import type { TimeFilterValue } from './TimeFilter'
 
 interface Session {
@@ -82,6 +83,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
   const [wrap, setWrap] = useState(true)
   const [timeFilter, setTimeFilter] = useState<TimeFilterValue>({ source: 'live' })
   const [connected, setConnected] = useState(false)
+  const [relativeLineNumbers, setRelativeLineNumbers] = useState(() => localStorage.getItem('avalok-relative-linenums') === 'true')
   const wsRefs = useRef<Map<string, WebSocket>>(new Map())
   const pausedRef = useRef(false)
   const parentRef = useRef<HTMLDivElement>(null)
@@ -89,6 +91,8 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
   const bufferRef = useRef<TaggedEntry[]>([])
   const rafRef = useRef(0)
   const lastFlushRef = useRef(0)
+  const historyEndIndexRef = useRef<number>(-1)
+  const historyDoneSessionsRef = useRef<Set<string>>(new Set())
   const trimThreshold = Math.ceil(maxLines * 2.0)
 
   const handleFontSizeChange = useCallback((size: number) => {
@@ -119,6 +123,21 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
 
       ws.onmessage = (event) => {
         const entry: LogEntry = JSON.parse(event.data)
+
+        if (entry.type === 'history_end') {
+          historyDoneSessionsRef.current.add(session.id)
+          if (historyDoneSessionsRef.current.size >= sessions.length && historyEndIndexRef.current === -1) {
+            const store = storeRef.current
+            const batch = bufferRef.current
+            bufferRef.current = []
+            for (let i = 0; i < batch.length; i++) store.push(batch[i])
+            historyEndIndexRef.current = store.length
+            lastFlushRef.current = performance.now()
+            setVersion(v => v + 1)
+          }
+          return
+        }
+
         const tagged: TaggedEntry = {
           ...entry,
           sessionId: session.id,
@@ -147,7 +166,11 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
         const store = storeRef.current
         for (let i = 0; i < batch.length; i++) store.push(batch[i])
         if (store.length > trimThreshold) {
-          store.splice(0, store.length - maxLines)
+          const trimCount = store.length - maxLines
+          store.splice(0, trimCount)
+          if (historyEndIndexRef.current > 0) {
+            historyEndIndexRef.current = Math.max(0, historyEndIndexRef.current - trimCount)
+          }
         }
         lastFlushRef.current = now
         setVersion(v => v + 1)
@@ -161,6 +184,8 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
       existing.clear()
       cancelAnimationFrame(rafRef.current)
       bufferRef.current = []
+      historyEndIndexRef.current = -1
+      historyDoneSessionsRef.current.clear()
     }
   }, [sessions.map(s => s.id).join(',')])
 
@@ -184,7 +209,16 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
 
   const clear = useCallback(() => {
     storeRef.current.length = 0
+    historyEndIndexRef.current = -1
     setVersion(v => v + 1)
+  }, [])
+
+  const toggleRelativeLineNumbers = useCallback(() => {
+    setRelativeLineNumbers(prev => {
+      const next = !prev
+      localStorage.setItem('avalok-relative-linenums', String(next))
+      return next
+    })
   }, [])
 
   const toggleLevel = useCallback((level: string) => {
@@ -207,7 +241,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
 
   const filtered = useMemo(() => {
     void version
-    for (let i = 0; i < logs.length; i++) logs[i]._lineNum = i + 1
+    assignLineNumbers(logs, relativeLineNumbers, historyEndIndexRef.current)
     let result = filterByTime(logs, timeFilter)
     if (levelFilter.size < 4) {
       result = result.filter(l => levelFilter.has(parseLevel(l.line)))
@@ -217,7 +251,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
       result = result.filter(l => (l.line?.toLowerCase().includes(q)) || l.sessionLabel.toLowerCase().includes(q))
     }
     return result
-  }, [version, debouncedSearch, levelFilter, timeFilter])
+  }, [version, debouncedSearch, levelFilter, timeFilter, relativeLineNumbers])
 
   const download = useCallback(() => {
     const text = filtered.map(l => {
@@ -234,7 +268,11 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
   }, [filtered, sessions])
 
   const rowHeight = estimateRowHeight(fontSize)
-  const lineNumWidth = `${Math.max(4, String(logs.length).length) + 1}ch`
+  const hIdx = historyEndIndexRef.current
+  const maxAbsNum = relativeLineNumbers && hIdx > 0
+    ? Math.max(hIdx, logs.length - hIdx)
+    : logs.length
+  const lineNumWidth = `${Math.max(4, String(maxAbsNum).length + (relativeLineNumbers ? 1 : 0)) + 1}ch`
   const shouldFollow = follow && !paused
 
   const virtualizer = useVirtualizer({
@@ -308,6 +346,9 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
         onToggleWrap={() => setWrap(v => !v)}
         timeFilter={timeFilter}
         onTimeFilterChange={setTimeFilter}
+        viewMode="stream"
+        relativeLineNumbers={relativeLineNumbers}
+        onToggleRelativeLineNumbers={toggleRelativeLineNumbers}
       />
 
       {/* Log lines */}
@@ -326,6 +367,8 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
               const entry = filtered[vRow.index] as TaggedEntry
               const level = parseLevel(entry.line)
               const shouldBlink = entry._blinkAt != null && now - entry._blinkAt < BLINK_DURATION
+              const lineNum = entry._lineNum ?? vRow.index + 1
+              const isBoundaryLine = relativeLineNumbers && lineNum === 0
 
               return (
                 <div
@@ -340,6 +383,7 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
                     level === 'info' && 'log-level-info',
                     vRow.index % 2 === 1 && 'log-row-alt',
                     shouldBlink && 'log-new-line',
+                    isBoundaryLine && 'border-b border-dashed border-cyan-500/30',
                   )}
                   style={{
                     transform: `translateY(${vRow.start}px)`,
@@ -347,8 +391,16 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
                     lineHeight: `${rowHeight}px`,
                   }}
                 >
-                  <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums" style={{ width: lineNumWidth }}>
-                    {entry._lineNum ?? vRow.index + 1}
+                  <span
+                    className={cn(
+                      'shrink-0 pr-3 text-right select-none tabular-nums',
+                      relativeLineNumbers && lineNum <= 0
+                        ? 'text-cyan-700 dark:text-cyan-600'
+                        : 'text-[var(--text-muted)]'
+                    )}
+                    style={{ width: lineNumWidth }}
+                  >
+                    {lineNum}
                   </span>
 
                   {entry.timestamp && (

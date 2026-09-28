@@ -15,6 +15,8 @@ interface Props {
   wrap: boolean
   totalCount?: number
   connected?: boolean
+  relativeLineNumbers?: boolean
+  historyEndIndex?: number
 }
 
 const BLINK_DURATION = 2000
@@ -48,10 +50,14 @@ function estimateRowHeight(fontSize: number): number {
   return fontSize + 10
 }
 
-export default function LogLines({ logs, follow, showTimestamp, showSource, search, fontSize, wrap, totalCount = 0, connected }: Props) {
+export default function LogLines({ logs, follow, showTimestamp, showSource, search, fontSize, wrap, totalCount = 0, connected, relativeLineNumbers, historyEndIndex = -1 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null)
   const rowHeight = estimateRowHeight(fontSize)
-  const lineNumWidth = `${Math.max(4, String(totalCount || logs.length).length) + 1}ch`
+
+  const maxAbsNum = relativeLineNumbers && historyEndIndex > 0
+    ? Math.max(historyEndIndex, (totalCount || logs.length) - historyEndIndex)
+    : (totalCount || logs.length)
+  const lineNumWidth = `${Math.max(4, String(maxAbsNum).length + (relativeLineNumbers ? 1 : 0)) + 1}ch`
 
   const virtualizer = useVirtualizer({
     count: logs.length,
@@ -99,6 +105,9 @@ export default function LogLines({ logs, follow, showTimestamp, showSource, sear
           const level = parseLevel(entry.line)
           const shouldBlink = entry._blinkAt != null && now - entry._blinkAt < BLINK_DURATION
 
+          const lineNum = entry._lineNum ?? vRow.index + 1
+          const isBoundaryLine = relativeLineNumbers && lineNum === 0
+
           return (
             <div
               key={vRow.index}
@@ -112,6 +121,7 @@ export default function LogLines({ logs, follow, showTimestamp, showSource, sear
                 level === 'info' && 'log-level-info',
                 vRow.index % 2 === 1 && 'log-row-alt',
                 shouldBlink && 'log-new-line',
+                isBoundaryLine && 'border-b border-dashed border-cyan-500/30',
               )}
               style={{
                 transform: `translateY(${vRow.start}px)`,
@@ -120,8 +130,16 @@ export default function LogLines({ logs, follow, showTimestamp, showSource, sear
               }}
             >
               {/* Line number */}
-              <span className="shrink-0 pr-3 text-right text-[var(--text-muted)] select-none tabular-nums" style={{ width: lineNumWidth }}>
-                {entry._lineNum ?? vRow.index + 1}
+              <span
+                className={cn(
+                  'shrink-0 pr-3 text-right select-none tabular-nums',
+                  relativeLineNumbers && lineNum <= 0
+                    ? 'text-cyan-700 dark:text-cyan-600'
+                    : 'text-[var(--text-muted)]'
+                )}
+                style={{ width: lineNumWidth }}
+              >
+                {lineNum}
               </span>
 
               {/* Timestamp */}

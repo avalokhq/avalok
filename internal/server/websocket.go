@@ -118,8 +118,35 @@ func (s *Server) handleWebSocketStream(w http.ResponseWriter, r *http.Request, r
 	streamCtx, streamCancel := context.WithCancel(ctx)
 	defer streamCancel()
 
-	streamOpts := provider.StreamOpts{Follow: true, Tail: s.streamTailLines()}
-	if r.URL.Query().Get("mode") == "live" {
+	isLive := r.URL.Query().Get("mode") == "live"
+	tailCount := s.streamTailLines()
+	fetchStart := time.Now()
+
+	if tailCount > 0 && !isLive {
+		for _, inst := range instances {
+			entries, fErr := p.Fetch(streamCtx, inst.ID, provider.FetchOpts{Lines: tailCount})
+			if fErr != nil {
+				logger.Warn("WS fetch historical error", "instance", inst.ID, "error", fErr)
+				continue
+			}
+			for _, entry := range entries {
+				if err := wsjson.Write(ctx, conn, wsLogEntry{
+					Type:      "log",
+					Timestamp: entry.Timestamp.Format("2006-01-02T15:04:05.000Z07:00"),
+					Source:    entry.Source,
+					Instance:  entry.Instance,
+					Line:      entry.Line,
+				}); err != nil {
+					return
+				}
+			}
+		}
+	}
+
+	wsjson.Write(ctx, conn, wsLogEntry{Type: "history_end"})
+
+	streamOpts := provider.StreamOpts{Follow: true, Since: fetchStart}
+	if isLive {
 		streamOpts = provider.StreamOpts{Follow: true, Since: time.Now()}
 	}
 
