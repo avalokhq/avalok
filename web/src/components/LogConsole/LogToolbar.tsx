@@ -9,6 +9,7 @@ import {
   Plus,
   ChevronsDown,
   WrapText,
+  Hash,
 } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import TimeFilter, { type TimeFilterValue } from './TimeFilter'
@@ -36,6 +37,8 @@ interface Props {
   viewMode?: LogViewMode
   onViewModeChange?: (mode: LogViewMode) => void
   hasFileMode?: boolean
+  relativeLineNumbers?: boolean
+  onToggleRelativeLineNumbers?: () => void
 }
 
 const LEVELS = [
@@ -52,6 +55,7 @@ export default function LogToolbar({
   lineCount, totalCount, follow, onToggleFollow, levelFilter, onToggleLevel,
   fontSize, onFontSizeChange, wrap, onToggleWrap, timeFilter, onTimeFilterChange,
   viewMode, onViewModeChange, hasFileMode,
+  relativeLineNumbers, onToggleRelativeLineNumbers,
 }: Props) {
   const sizeIdx = FONT_SIZES.indexOf(fontSize)
   const canDecrease = sizeIdx > 0
@@ -188,6 +192,22 @@ export default function LogToolbar({
       >
         <WrapText className="w-3.5 h-3.5" />
       </button>
+
+      {/* Relative line numbers toggle */}
+      {onToggleRelativeLineNumbers && viewMode === 'stream' && (
+        <button
+          onClick={onToggleRelativeLineNumbers}
+          className={cn(
+            'p-1 rounded-md transition-colors',
+            relativeLineNumbers
+              ? 'text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20'
+              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+          )}
+          title={relativeLineNumbers ? 'Relative line numbers (click for sequential)' : 'Sequential line numbers (click for relative)'}
+        >
+          <Hash className="w-3.5 h-3.5" />
+        </button>
+      )}
 
       {/* Line count */}
       <span className="text-xs text-[var(--text-muted)] tabular-nums">

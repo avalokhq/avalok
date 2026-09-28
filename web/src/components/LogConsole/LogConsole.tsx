@@ -9,6 +9,7 @@ import LogLines from './LogLines'
 import type { LogEntry } from '../../lib/types'
 import { parseLevel } from '../../lib/parseLevel'
 import { filterByTime } from '../../lib/filterByTime'
+import { assignLineNumbers } from '../../lib/assignLineNumbers'
 import type { TimeFilterValue } from './TimeFilter'
 import type { LogViewMode } from '../../lib/api'
 
@@ -55,6 +56,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
   const [showColumnMenu, setShowColumnMenu] = useState(false)
   const [fontSize, setFontSize] = useState(getStoredFontSize)
   const [wrap, setWrap] = useState(true)
+  const [relativeLineNumbers, setRelativeLineNumbers] = useState(() => localStorage.getItem('avalok-relative-linenums') === 'true')
   const scrollKickRef = useRef(0)
 
   const hasFileMode = !!(resourceName && objectKey)
@@ -85,7 +87,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
   const filtered = useMemo(() => {
     void version
     const all = logs as LogEntry[]
-    for (let i = 0; i < all.length; i++) all[i]._lineNum = i + 1
+    assignLineNumbers(all, relativeLineNumbers, wsData.historyEndIndex)
     let result = filterByTime(all, timeFilter)
 
     if (levelFilter.size < 4) {
@@ -98,7 +100,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
     }
 
     return result
-  }, [version, debouncedSearch, levelFilter, timeFilter])
+  }, [version, debouncedSearch, levelFilter, timeFilter, relativeLineNumbers, wsData.historyEndIndex])
 
   const toggleLevel = useCallback((level: string) => {
     setLevelFilter(prev => {
@@ -122,6 +124,14 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
   const scrollToBottom = useCallback(() => {
     scrollKickRef.current++
     setFollow(true)
+  }, [])
+
+  const toggleRelativeLineNumbers = useCallback(() => {
+    setRelativeLineNumbers(prev => {
+      const next = !prev
+      localStorage.setItem('avalok-relative-linenums', String(next))
+      return next
+    })
   }, [])
 
   const handleClear = useCallback(() => {
@@ -267,6 +277,8 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         viewMode={viewMode}
         onViewModeChange={handleViewModeChange}
         hasFileMode={hasFileMode}
+        relativeLineNumbers={relativeLineNumbers}
+        onToggleRelativeLineNumbers={toggleRelativeLineNumbers}
       />
 
       {/* Log lines */}
@@ -280,6 +292,8 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
         wrap={wrap}
         totalCount={logs.length}
         connected={connected}
+        relativeLineNumbers={relativeLineNumbers}
+        historyEndIndex={wsData.historyEndIndex}
       />
     </div>
   )

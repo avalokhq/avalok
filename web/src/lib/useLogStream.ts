@@ -18,6 +18,8 @@ export function useLogStream(workspace: string, env: string, service: string, cu
   const bufferRef = useRef<LogEntry[]>([])
   const rafRef = useRef(0)
   const lastFlushRef = useRef(0)
+  const historyEndIndexRef = useRef<number>(-1)
+  const historyReceivedRef = useRef(false)
   const trimThreshold = Math.ceil(maxLines * 2.0)
 
   const disabled = viewMode === 'file'
@@ -27,6 +29,8 @@ export function useLogStream(workspace: string, env: string, service: string, cu
     if (!customStreamURL && (!workspace || !env || !service)) return
 
     storeRef.current = []
+    historyEndIndexRef.current = -1
+    historyReceivedRef.current = false
     setVersion(0)
 
     const baseUrl = customStreamURL || streamURL(workspace, env, service)
@@ -41,6 +45,19 @@ export function useLogStream(workspace: string, env: string, service: string, cu
 
     ws.onmessage = (event) => {
       const entry: LogEntry = JSON.parse(event.data)
+
+      if (entry.type === 'history_end') {
+        const store = storeRef.current
+        const batch = bufferRef.current
+        bufferRef.current = []
+        for (let i = 0; i < batch.length; i++) store.push(batch[i])
+        historyEndIndexRef.current = store.length
+        historyReceivedRef.current = true
+        lastFlushRef.current = performance.now()
+        setVersion(v => v + 1)
+        return
+      }
+
       if (entry.type === 'error') {
         bufferRef.current.push({ ...entry, line: `ERROR: ${entry.error}` })
         return
@@ -63,7 +80,11 @@ export function useLogStream(workspace: string, env: string, service: string, cu
         const store = storeRef.current
         for (let i = 0; i < batch.length; i++) store.push(batch[i])
         if (store.length > trimThreshold) {
-          store.splice(0, store.length - maxLines)
+          const trimCount = store.length - maxLines
+          store.splice(0, trimCount)
+          if (historyEndIndexRef.current > 0) {
+            historyEndIndexRef.current = Math.max(0, historyEndIndexRef.current - trimCount)
+          }
         }
         lastFlushRef.current = now
         setVersion(v => v + 1)
@@ -92,8 +113,9 @@ export function useLogStream(workspace: string, env: string, service: string, cu
 
   const clear = useCallback(() => {
     storeRef.current.length = 0
+    historyEndIndexRef.current = -1
     setVersion(v => v + 1)
   }, [])
 
-  return { logs: storeRef.current, version, connected, paused, togglePause, clear }
+  return { logs: storeRef.current, version, connected, paused, togglePause, clear, historyEndIndex: historyEndIndexRef.current }
 }
