@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Users, KeyRound, CheckCircle, XCircle, Clock, Shield, UserCheck, Trash2, Plus, Pencil, KeySquare, Settings } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import PageHeader from '../ui/PageHeader'
@@ -23,7 +23,7 @@ import ProviderIcon from '../ui/ProviderIcon'
 const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import {
   adminListUsers, adminApproveUser, adminDisableUser, adminDeleteUser, adminCreateUser, adminUpdateUser, adminResetPassword,
-  adminListCredentials, adminCreateCredential, adminDeleteCredential, adminTestCredential,
+  adminListCredentials, adminGetCredential, adminCreateCredential, adminUpdateCredential, adminDeleteCredential, adminTestCredential,
   adminListResources, adminListResourceNamespaces,
   adminGetSettings, adminUpdateSettings,
   listWorkspaces, listEnvironments, listServices,
@@ -33,7 +33,7 @@ import type { AdminUser, AdminCredential, AdminResource, NamespaceInfo } from '.
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from '../../lib/types'
 import {
   type StorageField, type AzureAuthMethod,
-  AZURE_AUTH_TABS, AZURE_AUTH_FIELDS,
+  AZURE_AUTH_TABS, AZURE_AUTH_FIELDS, detectAzureAuth,
 } from '../../lib/resourceConstants'
 
 type Tab = 'users' | 'credentials' | 'settings'
@@ -671,15 +671,22 @@ function CredentialsPanel() {
   const [creds, setCreds] = useState<AdminCredential[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
-  const [testResults, setTestResults] = useState<Record<string, { status: string; error?: string }>>({})
+  const [editing, setEditing] = useState<AdminCredential | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, { status: string; error?: string; host?: string }>>({})
   const [testHostInputs, setTestHostInputs] = useState<Record<string, string>>({})
   const [testingName, setTestingName] = useState<string | null>(null)
   const [error, setError] = useState('')
 
-  async function load() {
+  async function load(): Promise<AdminCredential[]> {
     setLoading(true)
-    try { setCreds(await adminListCredentials() || []) } catch { setError('Failed to load credentials') }
-    finally { setLoading(false) }
+    try {
+      const list = await adminListCredentials() || []
+      setCreds(list)
+      return list
+    } catch {
+      setError('Failed to load credentials')
+      return []
+    } finally { setLoading(false) }
   }
 
   useEffect(() => { load() }, [])
@@ -689,26 +696,66 @@ function CredentialsPanel() {
     try { await adminDeleteCredential(name); load() } catch { setError('Failed to delete credential') }
   }
 
+  async function handleEdit(name: string) {
+    setError('')
+    try {
+      const full = await adminGetCredential(name)
+      setShowCreate(false)
+      setEditing(full)
+    } catch {
+      setError(`Credential "${name}" no longer exists`)
+      load()
+    }
+  }
+
+  function needsHost(cred: AdminCredential) {
+    return cred.target_type === 'ssh' || cred.target_type === 'winrm'
+  }
+
+  // Credentials tied to one server (saved host) test straight away; others prompt for a host.
   function handleTestClick(cred: AdminCredential) {
-    if (cred.target_type === 'ssh' || cred.target_type === 'winrm') {
+    if (needsHost(cred) && !cred.host) {
       setTestingName(prev => prev === cred.name ? null : cred.name)
       setTestResults(prev => { const n = { ...prev }; delete n[cred.name]; return n })
     } else {
-      runTest(cred.name)
+      setTestingName(null)
+      runTest(cred.name, undefined, cred.host)
     }
   }
 
-  async function runTest(name: string, host?: string) {
-    setTestResults(prev => ({ ...prev, [name]: { status: 'testing' } }))
+  function openHostPrompt(name: string) {
+    setTestingName(prev => prev === name ? null : name)
+    setTestResults(prev => { const n = { ...prev }; delete n[name]; return n })
+  }
+
+  function submitHostPrompt(name: string) {
+    const host = testHostInputs[name]?.trim()
+    if (!host) return
+    runTest(name, host, host)
+    setTestingName(null)
+    setTestHostInputs(prev => { const n = { ...prev }; delete n[name]; return n })
+  }
+
+  async function runTest(name: string, hostOverride?: string, displayHost?: string) {
+    setTestResults(prev => ({ ...prev, [name]: { status: 'testing', host: displayHost } }))
     try {
-      const result = await adminTestCredential(name, host)
-      setTestResults(prev => ({ ...prev, [name]: result }))
-    } catch {
-      setTestResults(prev => ({ ...prev, [name]: { status: 'error', error: 'Test failed' } }))
+      const result = await adminTestCredential(name, hostOverride)
+      setTestResults(prev => ({ ...prev, [name]: { ...result, host: displayHost } }))
+    } catch (err: unknown) {
+      setTestResults(prev => ({ ...prev, [name]: { status: 'error', error: err instanceof Error ? err.message : 'Test failed', host: displayHost } }))
     }
   }
 
-  if (loading) return <Spinner label="Loading credentials..." />
+  async function handleSaved(name: string, test: boolean) {
+    setEditing(null)
+    const list = await load()
+    if (!test) return
+    const cred = list.find(c => c.name === name)
+    if (!cred) return
+    handleTestClick(cred)
+  }
+
+  if (loading && creds.length === 0) return <Spinner label="Loading credentials..." />
 
   return (
     <div>
@@ -716,60 +763,78 @@ function CredentialsPanel() {
 
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-medium text-[var(--text-secondary)]">{creds.length} credential profiles</h2>
-        <Button variant="link" onClick={() => setShowCreate(!showCreate)} className="text-sm">
+        <Button variant="link" onClick={() => { setEditing(null); setShowCreate(!showCreate) }} className="text-sm">
           <Plus className="w-4 h-4" /> Add credential
         </Button>
       </div>
 
-      {showCreate && <CreateCredentialForm onDone={() => { setShowCreate(false); load() }} />}
+      {showCreate && <CredentialForm onCancel={() => setShowCreate(false)} onSaved={(name, test) => { setShowCreate(false); handleSaved(name, test) }} />}
+      {editing && <CredentialForm key={editing.name} editing={editing} onCancel={() => setEditing(null)} onSaved={handleSaved} />}
 
       <div className="grid gap-4">
-        {creds.map(c => (
-          <Card key={c.name}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <ProviderIcon provider={c.target_type} className="w-5 h-5" />
-                </div>
-                <div>
-                <div className="text-base text-[var(--text-primary)]">{c.name}</div>
-                <div className="text-xs text-[var(--text-muted)] mt-0.5">
-                  {c.target_type}{c.description ? ` — ${c.description}` : ''}
-                </div>
-                {testResults[c.name] && (
-                  <div className={cn('text-xs mt-1', testResults[c.name].status === 'ok' ? 'text-emerald-400' : testResults[c.name].status === 'testing' ? 'text-[var(--text-muted)]' : 'text-red-400')}>
-                    {testResults[c.name].status === 'ok' ? 'Connection OK' : testResults[c.name].status === 'testing' ? 'Testing...' : testResults[c.name].error}
+        {creds.map(c => {
+          const result = testResults[c.name]
+          return (
+            <Card key={c.name}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                    <ProviderIcon provider={c.target_type} className="w-5 h-5" />
                   </div>
-                )}
+                  <div>
+                  <div className="text-base text-[var(--text-primary)]">{c.name}</div>
+                  <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                    {c.target_type}{c.description ? ` — ${c.description}` : ''}
+                    {c.host && <span className="font-mono"> · {c.host}</span>}
+                    {c.host && needsHost(c) && (
+                      <Button variant="link" onClick={() => openHostPrompt(c.name)} className="text-xs ml-2">
+                        test another host
+                      </Button>
+                    )}
+                  </div>
+                  {result && (
+                    <div className={cn('text-xs mt-1', result.status === 'ok' ? 'text-emerald-400' : result.status === 'testing' ? 'text-[var(--text-muted)]' : 'text-red-400')}>
+                      {result.status === 'ok'
+                        ? `Connection OK${result.host ? ` — ${result.host}` : ''}`
+                        : result.status === 'testing'
+                          ? `Testing${result.host ? ` ${result.host}` : ''}...`
+                          : `${result.error}${result.host ? ` — ${result.host}` : ''}`}
+                    </div>
+                  )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="secondary" size="sm" onClick={() => handleTestClick(c)} disabled={result?.status === 'testing'}>Test</Button>
+                  <IconButton variant="accent" onClick={() => handleEdit(c.name)} title="Edit credential">
+                    <Pencil className="w-4 h-4" />
+                  </IconButton>
+                  <IconButton variant="danger" onClick={() => handleDelete(c.name)} title="Delete">
+                    <Trash2 className="w-4 h-4" />
+                  </IconButton>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                <Button variant="secondary" size="sm" onClick={() => handleTestClick(c)}>Test</Button>
-                <IconButton variant="danger" onClick={() => handleDelete(c.name)} title="Delete">
-                  <Trash2 className="w-4 h-4" />
-                </IconButton>
-              </div>
-            </div>
-            {testingName === c.name && (
-              <div className="mt-3 flex items-center gap-2">
-                <Input
-                  value={testHostInputs[c.name] || ''}
-                  onChange={e => setTestHostInputs(prev => ({ ...prev, [c.name]: e.target.value }))}
-                  placeholder="Host or IP to test against"
-                  onKeyDown={e => { if (e.key === 'Enter' && testHostInputs[c.name]) { runTest(c.name, testHostInputs[c.name]); setTestingName(null) } }}
-                />
-                <Button
-                  size="sm"
-                  onClick={() => { if (testHostInputs[c.name]) { runTest(c.name, testHostInputs[c.name]); setTestingName(null) } }}
-                  disabled={!testHostInputs[c.name]}
-                  className="shrink-0"
-                >
-                  Connect
-                </Button>
-              </div>
-            )}
-          </Card>
-        ))}
+              {testingName === c.name && (
+                <div className="mt-3 flex items-center gap-2">
+                  <Input
+                    value={testHostInputs[c.name] || ''}
+                    onChange={e => setTestHostInputs(prev => ({ ...prev, [c.name]: e.target.value }))}
+                    placeholder={c.host ? 'Another host or IP (not saved)' : 'Host or IP to test against'}
+                    onKeyDown={e => { if (e.key === 'Enter') submitHostPrompt(c.name) }}
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => submitHostPrompt(c.name)}
+                    disabled={!testHostInputs[c.name]?.trim()}
+                    className="shrink-0"
+                  >
+                    Connect
+                  </Button>
+                </div>
+              )}
+            </Card>
+          )
+        })}
         {creds.length === 0 && (
           <EmptyState
             icon={<KeyRound className="w-6 h-6 text-[var(--text-muted)]" />}
@@ -819,91 +884,203 @@ const CRED_AUTH_FIELDS: Record<string, StorageField[]> = {
   ],
 }
 
-function CreateCredentialForm({ onDone }: { onDone: () => void }) {
-  const [name, setName] = useState('')
-  const [targetType, setTargetType] = useState('ssh')
-  const [description, setDescription] = useState('')
+// Mirrors redactSensitiveKeys in internal/server/credential_handlers.go.
+const SENSITIVE_CRED_KEYS = new Set([
+  'password', 'passphrase', 'private_key', 'key_data', 'key_path', 'token', 'secret',
+  'kubeconfig_content', 'bearer_token', 'ca_cert', 'proxy_url', 'secret_access_key',
+  'account_key', 'connection_string', 'sas_token', 'credentials_json',
+])
+const REDACTED = '***redacted***'
+
+const SSH_FIELD_KEYS = ['host', 'user', 'port', 'private_key', 'passphrase', 'password']
+
+// Non-secret stored values become form strings; secrets always start empty.
+function initialFields(config?: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(config || {})) {
+    if (SENSITIVE_CRED_KEYS.has(k) || v === REDACTED || v === null || v === undefined) continue
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = String(v)
+  }
+  return out
+}
+
+function CredentialForm({ editing, onCancel, onSaved }: {
+  editing?: AdminCredential
+  onCancel: () => void
+  onSaved: (name: string, test: boolean) => void
+}) {
+  const isEdit = !!editing
+  const original = editing?.config || {}
+  const [name, setName] = useState(editing?.name || '')
+  const [targetType, setTargetType] = useState(editing?.target_type || 'ssh')
+  const [description, setDescription] = useState(editing?.description || '')
   const [configJson, setConfigJson] = useState('{}')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [azureAuthMethod, setCredAzureAuth] = useState<AzureAuthMethod>('account-key')
+  const [loading, setLoading] = useState<false | 'save' | 'test'>(false)
+  const [azureAuthMethod, setCredAzureAuth] = useState<AzureAuthMethod>(
+    editing?.target_type === 'azure-storage' ? detectAzureAuth(original) : 'account-key'
+  )
+  const [fields, setFields] = useState<Record<string, string>>(() => initialFields(editing?.config))
+  const [removed, setRemoved] = useState<Set<string>>(new Set())
+  const formRef = useRef<HTMLFormElement>(null)
 
-  const [sshHost, setSshHost] = useState('')
-  const [sshUser, setSshUser] = useState('')
-  const [sshPort, setSshPort] = useState('')
-  const [sshPrivateKey, setSshPrivateKey] = useState('')
-  const [sshPassword, setSshPassword] = useState('')
-  const [sshPassphrase, setSshPassphrase] = useState('')
-  const [cloudFields, setCloudFields] = useState<Record<string, string>>({})
-
-  const hasStructuredFields = targetType in CRED_AUTH_FIELDS || targetType === 'azure-storage'
+  const hasStructuredFields = targetType === 'ssh' || targetType in CRED_AUTH_FIELDS || targetType === 'azure-storage'
   const isAzureCredType = targetType === 'azure-storage'
 
-  function updateCloudField(key: string, value: string) {
-    setCloudFields(prev => ({ ...prev, [key]: value }))
+  function setField(key: string, value: string) {
+    setFields(prev => ({ ...prev, [key]: value }))
   }
 
-  function buildConfig(): Record<string, unknown> {
-    if (targetType === 'ssh') {
-      const config: Record<string, unknown> = {}
-      if (sshHost) config.host = sshHost
-      if (sshUser) config.user = sshUser
-      if (sshPort) config.port = sshPort
-      if (sshPrivateKey) config.private_key = sshPrivateKey
-      if (sshPassword) config.password = sshPassword
-      if (sshPassphrase) config.passphrase = sshPassphrase
-      return config
+  function isStored(key: string) {
+    return isEdit && original[key] === REDACTED && !removed.has(key)
+  }
+
+  function toggleRemoved(key: string) {
+    setRemoved(prev => {
+      const n = new Set(prev)
+      if (n.has(key)) n.delete(key); else n.add(key)
+      return n
+    })
+    setField(key, '')
+  }
+
+  function activeFields(): StorageField[] {
+    if (isAzureCredType) return AZURE_AUTH_FIELDS[azureAuthMethod] || []
+    return CRED_AUTH_FIELDS[targetType] || []
+  }
+
+  function activeKeys(): string[] {
+    return targetType === 'ssh' ? SSH_FIELD_KEYS : activeFields().map(f => f.key)
+  }
+
+  function isToggle(key: string) {
+    return activeFields().some(f => f.key === key && f.type === 'toggle')
+  }
+
+  function toValue(key: string, v: string): unknown {
+    return isToggle(key) ? v === 'true' : v
+  }
+
+  function buildCreateConfig(): Record<string, unknown> {
+    if (!hasStructuredFields) return JSON.parse(configJson)
+    const cfg: Record<string, unknown> = {}
+    for (const k of activeKeys()) {
+      const v = fields[k]
+      if (v === undefined || v === '') continue
+      cfg[k] = toValue(k, v)
     }
-    if (hasStructuredFields) {
-      const cfg: Record<string, unknown> = {}
-      const fields = isAzureCredType
-        ? (AZURE_AUTH_FIELDS[azureAuthMethod] || [])
-        : (CRED_AUTH_FIELDS[targetType] || [])
-      for (const f of fields) {
-        const v = cloudFields[f.key]
-        if (v === undefined || v === '') continue
-        if (f.type === 'toggle') {
-          cfg[f.key] = v === 'true'
-        } else {
-          cfg[f.key] = v
+    return cfg
+  }
+
+  // Edit patch: omitted keeps the stored value, null removes it.
+  function buildEditPatch(): Record<string, unknown> {
+    if (!hasStructuredFields) return JSON.parse(configJson)
+    const patch: Record<string, unknown> = {}
+    const keys = activeKeys()
+    for (const k of keys) {
+      const v = fields[k] ?? ''
+      const had = original[k] !== undefined && original[k] !== null && original[k] !== ''
+      if (removed.has(k)) { patch[k] = null; continue }
+      if (SENSITIVE_CRED_KEYS.has(k)) {
+        if (v !== '') patch[k] = v
+        continue
+      }
+      if (v === '') {
+        if (had) patch[k] = null
+        continue
+      }
+      if (had && String(original[k]) === v) continue
+      patch[k] = toValue(k, v)
+    }
+    // Switching Azure auth method: drop keys that belong only to other methods.
+    if (isAzureCredType) {
+      for (const method of Object.keys(AZURE_AUTH_FIELDS) as AzureAuthMethod[]) {
+        for (const f of AZURE_AUTH_FIELDS[method]) {
+          if (!keys.includes(f.key) && original[f.key] !== undefined) patch[f.key] = null
         }
       }
-      return cfg
+      if (original.auth_method !== undefined && original.auth_method !== azureAuthMethod) patch.auth_method = azureAuthMethod
     }
-    return JSON.parse(configJson)
+    return patch
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true)
+  function validate(): string | null {
+    const port = fields.port?.trim()
+    if (port && !(/^\d+$/.test(port) && +port >= 1 && +port <= 65535)) return 'Port must be a number between 1 and 65535'
+    return null
+  }
+
+  async function submit(test: boolean) {
+    setError('')
+    const invalid = validate()
+    if (invalid) { setError(invalid); return }
+    setLoading(test ? 'test' : 'save')
     try {
-      const config = buildConfig()
-      await adminCreateCredential({ name, target_type: targetType, config, description })
-      onDone()
+      if (isEdit) {
+        await adminUpdateCredential(editing!.name, { config: buildEditPatch(), description })
+      } else {
+        await adminCreateCredential({ name, target_type: targetType, config: buildCreateConfig(), description })
+      }
+      onSaved(isEdit ? editing!.name : name, test)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create credential')
+      const msg = err instanceof Error ? err.message : ''
+      if (isEdit && msg.includes('not found')) setError('This credential no longer exists — it may have been deleted by another admin.')
+      else setError(msg || (isEdit ? 'Failed to update credential' : 'Failed to create credential'))
     } finally { setLoading(false) }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    submit(false)
+  }
+
+  function secretPlaceholder(key: string, fallback: string) {
+    if (removed.has(key)) return 'Will be removed on save'
+    if (isStored(key)) return 'Stored — leave empty to keep'
+    return fallback
+  }
+
+  function secretStatus(field: string) {
+    if (!isEdit || original[field] !== REDACTED) return null
+    return (
+      <div className="flex items-center gap-2 mt-1 text-xs text-[var(--text-muted)]">
+        {removed.has(field) ? <span className="text-red-400">Will be removed</span> : <span>Value stored</span>}
+        <Button variant="link" type="button" onClick={() => toggleRemoved(field)} className="text-xs">
+          {removed.has(field) ? 'Undo' : 'Remove'}
+        </Button>
+      </div>
+    )
+  }
+
+  function fieldRequired(f: StorageField) {
+    if (!f.required) return false
+    return !isStored(f.key)
   }
 
   return (
     <Card className="mb-4">
       {error && <Alert variant="error" className="mb-3">{error}</Alert>}
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col gap-3">
         <div className="grid grid-cols-2 gap-3">
-          <FormField label="Profile Name" required>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Profile name" required />
+          <FormField label="Profile Name" required={!isEdit}>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Profile name" required disabled={isEdit} />
           </FormField>
           <FormField label="Target Type">
             <div className="relative">
               <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
                 <ProviderIcon provider={targetType} className="w-4 h-4" />
               </div>
-              <Select value={targetType} onChange={e => { setTargetType(e.target.value); setCloudFields({}) }} className="pl-8">
+              <Select value={targetType} onChange={e => { setTargetType(e.target.value); setFields({}) }} className="pl-8" disabled={isEdit}>
                 {CREDENTIAL_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </Select>
             </div>
           </FormField>
         </div>
+        {isEdit && (
+          <p className="text-xs text-[var(--text-muted)]">
+            Name and type can't be changed. Secret fields left empty keep their stored value. Changes apply to everything using this profile.
+          </p>
+        )}
         <FormField label="Description" hint="optional">
           <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" />
         </FormField>
@@ -921,27 +1098,30 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
         {targetType === 'ssh' ? (
           <>
             <FormField label="Host" hint="optional">
-              <Input value={sshHost} onChange={e => setSshHost(e.target.value)} placeholder="Host (set here if credential is tied to one server)" />
+              <Input value={fields.host || ''} onChange={e => setField('host', e.target.value)} placeholder="Host (set here if credential is tied to one server)" />
             </FormField>
             <div className="grid grid-cols-2 gap-3">
               <FormField label="User">
-                <Input value={sshUser} onChange={e => setSshUser(e.target.value)} placeholder="e.g. root" />
+                <Input value={fields.user || ''} onChange={e => setField('user', e.target.value)} placeholder="e.g. root" />
               </FormField>
               <FormField label="Port" hint="default: 22">
-                <Input value={sshPort} onChange={e => setSshPort(e.target.value)} placeholder="22" />
+                <Input value={fields.port || ''} onChange={e => setField('port', e.target.value)} placeholder="22" />
               </FormField>
             </div>
             <FormField label="Private Key (PEM)">
               <Textarea
-                value={sshPrivateKey}
-                onChange={e => setSshPrivateKey(e.target.value)}
+                value={fields.private_key || ''}
+                onChange={e => setField('private_key', e.target.value)}
                 className="h-36 font-mono"
-                placeholder={"-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"}
+                placeholder={secretPlaceholder('private_key', "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----")}
+                disabled={removed.has('private_key')}
                 spellCheck={false}
               />
+              {secretStatus('private_key')}
             </FormField>
             <FormField label="Key Passphrase" hint="if encrypted">
-              <Input type="password" value={sshPassphrase} onChange={e => setSshPassphrase(e.target.value)} placeholder="Key passphrase" />
+              <Input type="password" value={fields.passphrase || ''} onChange={e => setField('passphrase', e.target.value)} placeholder={secretPlaceholder('passphrase', 'Key passphrase')} disabled={removed.has('passphrase')} />
+              {secretStatus('passphrase')}
             </FormField>
             <div className="flex items-center gap-2">
               <div className="h-px flex-1 bg-[var(--border-default)]" />
@@ -949,38 +1129,45 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
               <div className="h-px flex-1 bg-[var(--border-default)]" />
             </div>
             <FormField label="Password">
-              <Input type="password" value={sshPassword} onChange={e => setSshPassword(e.target.value)} placeholder="Password" />
+              <Input type="password" value={fields.password || ''} onChange={e => setField('password', e.target.value)} placeholder={secretPlaceholder('password', 'Password')} disabled={removed.has('password')} />
+              {secretStatus('password')}
             </FormField>
           </>
         ) : hasStructuredFields ? (
           <div className="flex flex-col gap-3">
-            {(isAzureCredType ? (AZURE_AUTH_FIELDS[azureAuthMethod] || []) : (CRED_AUTH_FIELDS[targetType] || [])).map(field => (
-              <FormField key={field.key} label={field.label} required={field.required} hint={field.hint}>
-                {field.type === 'toggle' ? (
-                  <Select value={cloudFields[field.key] || ''} onChange={e => updateCloudField(field.key, e.target.value)}>
-                    <option value="">Default</option>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
-                  </Select>
-                ) : field.key === 'kubeconfig_content' ? (
-                  <Textarea
-                    value={cloudFields[field.key] || ''}
-                    onChange={e => updateCloudField(field.key, e.target.value)}
-                    className="h-36 font-mono"
-                    placeholder={field.placeholder}
-                    spellCheck={false}
-                  />
-                ) : (
-                  <Input
-                    type={field.type === 'password' ? 'password' : 'text'}
-                    value={cloudFields[field.key] || ''}
-                    onChange={e => updateCloudField(field.key, e.target.value)}
-                    placeholder={field.placeholder}
-                    required={field.required}
-                  />
-                )}
-              </FormField>
-            ))}
+            {activeFields().map(field => {
+              const secret = SENSITIVE_CRED_KEYS.has(field.key)
+              return (
+                <FormField key={field.key} label={field.label} required={fieldRequired(field)} hint={field.hint}>
+                  {field.type === 'toggle' ? (
+                    <Select value={fields[field.key] || ''} onChange={e => setField(field.key, e.target.value)}>
+                      <option value="">Default</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </Select>
+                  ) : field.key === 'kubeconfig_content' ? (
+                    <Textarea
+                      value={fields[field.key] || ''}
+                      onChange={e => setField(field.key, e.target.value)}
+                      className="h-36 font-mono"
+                      placeholder={secretPlaceholder(field.key, field.placeholder)}
+                      disabled={removed.has(field.key)}
+                      spellCheck={false}
+                    />
+                  ) : (
+                    <Input
+                      type={field.type === 'password' ? 'password' : 'text'}
+                      value={fields[field.key] || ''}
+                      onChange={e => setField(field.key, e.target.value)}
+                      placeholder={secret ? secretPlaceholder(field.key, field.placeholder) : field.placeholder}
+                      required={fieldRequired(field)}
+                      disabled={removed.has(field.key)}
+                    />
+                  )}
+                  {secret && !field.required && secretStatus(field.key)}
+                </FormField>
+              )
+            })}
           </div>
         ) : (
           <FormField label="Configuration" required>
@@ -994,9 +1181,15 @@ function CreateCredentialForm({ onDone }: { onDone: () => void }) {
         )}
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" type="button" onClick={onDone}>Cancel</Button>
-          <Button type="submit" loading={loading}>
-            {loading ? 'Creating...' : 'Create'}
+          <Button variant="ghost" type="button" onClick={onCancel}>Cancel</Button>
+          <Button variant="secondary" type="button" loading={loading === 'test'} disabled={!!loading} onClick={() => {
+            if (formRef.current && !formRef.current.reportValidity()) return
+            submit(true)
+          }}>
+            {isEdit ? 'Save & Test' : 'Create & Test'}
+          </Button>
+          <Button type="submit" loading={loading === 'save'} disabled={!!loading}>
+            {loading === 'save' ? (isEdit ? 'Saving...' : 'Creating...') : (isEdit ? 'Save' : 'Create')}
           </Button>
         </div>
       </form>

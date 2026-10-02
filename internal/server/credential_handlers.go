@@ -3,8 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,17 +30,20 @@ func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		TargetType  string `json:"target_type"`
 		Description string `json:"description"`
+		Host        string `json:"host,omitempty"`
 		CreatedAt   any    `json:"created_at"`
 		UpdatedAt   any    `json:"updated_at"`
 	}
 
 	result := make([]credResponse, 0, len(creds))
 	for _, c := range creds {
+		host, _ := c.Config["host"].(string)
 		result = append(result, credResponse{
 			ID:          c.ID,
 			Name:        c.Name,
 			TargetType:  c.TargetType,
 			Description: c.Description,
+			Host:        host,
 			CreatedAt:   nullTimeJSON(c.CreatedAt),
 			UpdatedAt:   nullTimeJSON(c.UpdatedAt),
 		})
@@ -142,46 +149,76 @@ func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.TargetType != nil {
-		validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true, "s3": true, "azure-storage": true, "gcs": true}
-		if !validTypes[*req.TargetType] {
-			writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, winrm, s3, azure-storage, or gcs")
-			return
-		}
-		existing.TargetType = *req.TargetType
-	}
-	if req.Config != nil {
-		if existing.Config == nil {
-			existing.Config = req.Config
-		} else {
-			for k, v := range req.Config {
-				if s, ok := v.(string); ok && (s == "" || s == "***redacted***") {
-					continue
-				}
-				existing.Config[k] = v
-			}
-		}
-	}
-	if req.Description != nil {
-		existing.Description = *req.Description
+	// Type is immutable: dependents resolve the profile by type and would break.
+	if req.TargetType != nil && *req.TargetType != existing.TargetType {
+		writeError(w, http.StatusBadRequest, "credential type cannot be changed")
+		return
 	}
 
-	if err := s.store.SaveCredential(r.Context(), existing); err != nil {
+	// Merge into a copy so a failed save never mutates the stored credential.
+	// "" or "***redacted***" keeps the existing value; null removes the key.
+	merged := make(map[string]any, len(existing.Config))
+	for k, v := range existing.Config {
+		merged[k] = v
+	}
+	var changed, cleared []string
+	for k, v := range req.Config {
+		if v == nil {
+			if _, ok := merged[k]; ok {
+				delete(merged, k)
+				cleared = append(cleared, k)
+			}
+			continue
+		}
+		if s, ok := v.(string); ok && (s == "" || s == "***redacted***") {
+			continue
+		}
+		merged[k] = v
+		changed = append(changed, k)
+	}
+
+	if p, ok := merged["port"]; ok && !validPort(p) {
+		writeError(w, http.StatusBadRequest, "port must be a number between 1 and 65535")
+		return
+	}
+
+	updated := *existing
+	updated.Config = merged
+	if req.Description != nil {
+		updated.Description = *req.Description
+	}
+
+	if err := s.store.SaveCredential(r.Context(), &updated); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update credential")
 		return
 	}
 
+	details := map[string]string{}
+	if len(changed) > 0 {
+		sort.Strings(changed)
+		details["changed"] = strings.Join(changed, ",")
+	}
+	if len(cleared) > 0 {
+		sort.Strings(cleared)
+		details["cleared"] = strings.Join(cleared, ",")
+	}
+	if req.Description != nil && *req.Description != existing.Description {
+		details["description"] = "updated"
+	}
 	s.store.RecordAudit(r.Context(), &store.AuditEntry{
 		UserID:   actor.ID,
 		Action:   "update_credential",
 		Resource: "credential/" + name,
+		Details:  details,
 	})
 
+	host, _ := updated.Config["host"].(string)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":          existing.ID,
-		"name":        existing.Name,
-		"target_type": existing.TargetType,
-		"description": existing.Description,
+		"id":          updated.ID,
+		"name":        updated.Name,
+		"target_type": updated.TargetType,
+		"description": updated.Description,
+		"host":        host,
 	})
 }
 
@@ -300,20 +337,91 @@ func (s *Server) handleTestCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	audit := &store.AuditEntry{
+		UserID:   userFromContext(r).ID,
+		Action:   "test_credential",
+		Resource: "credential/" + cred.Name,
+		Details:  map[string]string{},
+	}
+	if host != "" {
+		audit.Details["host"] = host
+	}
+	if body.Host != "" {
+		audit.Details["host_override"] = "true"
+	}
+
 	if err := p.Connect(ctx, testConfig); err != nil {
-		logger.Error("credential test connection failed", "credential", cred.Name, "error", err)
+		logger.Error("credential test connection failed", "credential", cred.Name, "host", host, "error", err)
+		reason := classifyConnectError(ctx, err)
+		audit.Details["result"] = reason
+		s.store.RecordAudit(r.Context(), audit)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status": "error",
-			"error":  "connection failed",
+			"error":  reason,
 		})
 		return
 	}
 	defer p.Close()
 
+	audit.Details["result"] = "ok"
+	s.store.RecordAudit(r.Context(), audit)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
 		"message": "connection successful",
 	})
+}
+
+// classifyConnectError maps a provider connect error to a short, non-sensitive
+// category. The raw error is only written to the server log.
+func classifyConnectError(ctx context.Context, err error) string {
+	var netErr net.Error
+	if errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded ||
+		(errors.As(err, &netErr) && netErr.Timeout()) {
+		return "timeout"
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "unable to authenticate"),
+		strings.Contains(msg, "authentication failed"),
+		strings.Contains(msg, "permission denied"),
+		strings.Contains(msg, "unauthorized"),
+		strings.Contains(msg, "401"),
+		strings.Contains(msg, "403"),
+		strings.Contains(msg, "invalid credentials"),
+		strings.Contains(msg, "access denied"):
+		return "authentication failed"
+	case strings.Contains(msg, "connection refused"):
+		return "connection refused"
+	case strings.Contains(msg, "no such host"),
+		strings.Contains(msg, "no route to host"),
+		strings.Contains(msg, "network is unreachable"),
+		strings.Contains(msg, "host is down"):
+		return "host unreachable"
+	case strings.Contains(msg, "timeout"), strings.Contains(msg, "timed out"):
+		return "timeout"
+	}
+	return "connection failed"
+}
+
+func validPort(v any) bool {
+	var n int
+	switch p := v.(type) {
+	case float64:
+		if p != float64(int(p)) {
+			return false
+		}
+		n = int(p)
+	case int:
+		n = p
+	case string:
+		var err error
+		if n, err = strconv.Atoi(strings.TrimSpace(p)); err != nil {
+			return false
+		}
+	default:
+		return false
+	}
+	return n >= 1 && n <= 65535
 }
 
 func redactSensitiveKeys(config map[string]any) map[string]any {

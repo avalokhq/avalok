@@ -191,7 +191,31 @@ Content-Type: application/json
 Authorization: Bearer <token>
 ```
 
-Send the full updated credential object. Fields not included are cleared.
+Updates are a key-level merge into the stored `config`. Send only what changes:
+
+| Value sent for a config key | Result |
+|-----------------------------|--------|
+| omitted, `""`, or `"***redacted***"` | Existing value is kept (secrets never need to be re-entered) |
+| `null` | Key is removed (e.g. drop a saved `host`, or a password when switching to key auth) |
+| any other value | Key is set to the new value |
+
+```json
+{
+  "description": "App servers (rotated key)",
+  "config": {
+    "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
+    "password": null
+  }
+}
+```
+
+- `name` cannot be changed — resources and targets reference credentials by name.
+- `target_type` cannot be changed; sending a different type returns `400`.
+- `port`, if present, must be a number between 1 and 65535.
+- The audit log records which keys were changed or cleared, never their values.
+- Changes apply to every resource and target using the profile on their next connection.
+
+The `GET /api/admin/credentials` list response includes a non-secret `host` field for credentials that have one saved. The admin UI uses this to test those credentials without prompting for a host.
 
 ## Deleting Credentials
 
@@ -249,12 +273,20 @@ POST /api/admin/credentials/{name}/test
 Authorization: Bearer <token>
 ```
 
+For SSH and WinRM the test uses the credential's saved `host`. To test against a different host without saving it, send a one-off override:
+
+```json
+{ "host": "10.0.1.51" }
+```
+
+If there is neither a saved host nor an override, the test returns `host is required to test this credential`. The test times out after 5 seconds.
+
 **Response (200):**
 
 ```json
 {
   "status": "ok",
-  "message": "Connection successful"
+  "message": "connection successful"
 }
 ```
 
@@ -263,9 +295,11 @@ Authorization: Bearer <token>
 ```json
 {
   "status": "error",
-  "message": "dial tcp 10.0.1.50:22: connection refused"
+  "error": "authentication failed"
 }
 ```
+
+The `error` value is one of `timeout`, `host unreachable`, `connection refused`, `authentication failed`, or `connection failed`. The raw error is written only to the server log. Every test is recorded in the audit log (`test_credential`) with the host tested and the result.
 
 ## Operator Resolver (Serve Mode)
 

@@ -196,16 +196,27 @@ export interface AdminCredential {
   name: string
   target_type: string
   description: string
+  host?: string
   config?: Record<string, unknown>
   created_at?: string
+  updated_at?: string
 }
 
 export async function adminListCredentials(): Promise<AdminCredential[]> {
   return fetchAPI('/admin/credentials')
 }
 
+export async function adminGetCredential(name: string): Promise<AdminCredential> {
+  return fetchAPI(`/admin/credentials/${name}`)
+}
+
 export async function adminCreateCredential(data: { name: string; target_type: string; config: Record<string, unknown>; description?: string }): Promise<AdminCredential> {
   return fetchAPI('/admin/credentials', { method: 'POST', body: JSON.stringify(data) })
+}
+
+// Config values: '' keeps the stored value, null removes the key.
+export async function adminUpdateCredential(name: string, data: { config?: Record<string, unknown>; description?: string }): Promise<AdminCredential> {
+  return fetchAPI(`/admin/credentials/${name}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
 export async function adminDeleteCredential(name: string): Promise<void> {
