@@ -21,6 +21,14 @@ import type { AdminCredential, AdminResource } from '../../lib/api'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import Card from '../ui/Card'
+import Badge from '../ui/Badge'
+import IconButton from '../ui/IconButton'
+import EmptyState from '../ui/EmptyState'
+import Alert from '../ui/Alert'
+import FormField from '../ui/FormField'
+import SegmentedControl from '../ui/SegmentedControl'
+import Input, { Select, Textarea } from '../ui/Input'
+import { useToast } from '../ui/Feedback'
 import IconSelect from './IconSelect'
 import CredentialSelector from './CredentialSelector'
 import { ConfigField, TextField } from './fields'
@@ -48,25 +56,28 @@ function Section({ title, icon: Icon, children, count, defaultOpen = true, actio
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="border border-[var(--border-default)] rounded-lg overflow-hidden">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2.5 px-4 py-3 bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] transition-colors"
-      >
-        {open
-          ? <ChevronDown className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
-          : <ChevronRight className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
-        }
-        <Icon className="w-4 h-4 text-[var(--text-accent)] shrink-0" />
-        <span className="text-base text-[var(--text-primary)]">{title}</span>
-        {count !== undefined && (
-          <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-app)] px-1.5 py-0.5 rounded-full">{count}</span>
-        )}
-        <div className="flex-1" />
-        {actions && <div onClick={e => e.stopPropagation()}>{actions}</div>}
-      </button>
+    <div className="rounded-card border border-line bg-surface shadow-sm">
+      <div className={cn('flex items-center gap-2 px-4 py-3', open && 'border-b border-line')}>
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+        >
+          {open
+            ? <ChevronDown className="size-4 shrink-0 text-fg-muted" />
+            : <ChevronRight className="size-4 shrink-0 text-fg-muted" />
+          }
+          <Icon className="size-4 shrink-0 text-accent" />
+          <span className="truncate text-sm font-semibold text-fg">{title}</span>
+          {count !== undefined && (
+            <Badge tone="neutral" size="sm" className="tabular-nums">{count}</Badge>
+          )}
+        </button>
+        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      </div>
       {open && (
-        <div className="px-4 py-4 space-y-4 bg-[var(--bg-surface)]">
+        <div className="space-y-4 p-4">
           {children}
         </div>
       )}
@@ -125,40 +136,25 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose, resource
   const serviceFields = fields.filter(f => SERVICE_ONLY_KEYS.has(f.key))
 
   return (
-    <div className="border border-[var(--text-accent)]/40 rounded-lg overflow-hidden bg-[var(--bg-app)]">
-      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-elevated)] border-b border-[var(--border-subtle)]">
-        <Icon className="w-3.5 h-3.5 text-[var(--text-accent)] shrink-0" />
-        <span className="text-xs font-medium text-[var(--text-primary)] flex-1 truncate">
+    <div className="overflow-hidden rounded-card border border-accent-line bg-surface shadow-sm">
+      <div className="flex items-center gap-2 border-b border-line bg-surface-sunken py-1.5 pl-3 pr-1.5">
+        <Icon className="size-3.5 shrink-0 text-accent" />
+        <span className="flex-1 truncate text-xs font-medium text-fg">
           {svc.friendly_name || svc.name || 'New Service'}
         </span>
-        <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-app)] px-1.5 py-0.5 rounded">{svc.provider}</span>
-        <span
-          role="button"
-          onClick={onClone}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-accent)] hover:bg-[var(--bg-active)] transition-colors"
-          title="Clone service"
-        >
-          <Copy className="w-3 h-3" />
-        </span>
-        <span
-          role="button"
-          onClick={onRemove}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-          title="Remove service"
-        >
-          <Trash2 className="w-3 h-3" />
-        </span>
-        <span
-          role="button"
-          onClick={onClose}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-active)] transition-colors"
-          title="Close"
-        >
-          <X className="w-3 h-3" />
-        </span>
+        <Badge tone="neutral" size="sm">{svc.provider}</Badge>
+        <IconButton size="xs" variant="accent" label="Clone service" onClick={onClone}>
+          <Copy className="size-3.5" />
+        </IconButton>
+        <IconButton size="xs" variant="danger" label="Remove service" onClick={onRemove}>
+          <Trash2 className="size-3.5" />
+        </IconButton>
+        <IconButton size="xs" label="Close" onClick={onClose}>
+          <X className="size-3.5" />
+        </IconButton>
       </div>
-      <div className="p-3 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-4 p-4">
+        <div className="grid grid-cols-2 gap-4">
           <TextField
             label="Name"
             value={svc.name}
@@ -182,61 +178,48 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose, resource
         />
 
         {fields.length > 0 && (
-          <div className="pt-1 border-t border-[var(--border-subtle)] space-y-3">
-            <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Provider Config</span>
+          <div className="space-y-4 border-t border-line pt-4">
+            <span className="block font-mono text-2xs font-medium uppercase tracking-wider text-fg-muted">Provider Config</span>
 
             {matchingResources.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Connection</label>
-                <div className="grid grid-cols-2 gap-1.5 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => handleResourceSelect('')}
-                    className={cn(
-                      'px-2 py-1.5 rounded-md text-xs transition-all border',
-                      !selectedResource
-                        ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                        : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                    )}
-                  >
-                    Manual
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { if (!selectedResource && matchingResources[0]) handleResourceSelect(matchingResources[0].name) }}
-                    className={cn(
-                      'px-2 py-1.5 rounded-md text-xs transition-all border',
-                      selectedResource
-                        ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                        : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-                    )}
-                  >
-                    From Resource
-                  </button>
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-fg-secondary">Connection</label>
+                  <SegmentedControl
+                    label="Connection"
+                    size="sm"
+                    className="flex w-full [&>button]:flex-1"
+                    value={selectedResource ? 'resource' : 'manual'}
+                    onChange={mode => {
+                      if (mode === 'manual') handleResourceSelect('')
+                      else if (!selectedResource && matchingResources[0]) handleResourceSelect(matchingResources[0].name)
+                    }}
+                    options={[
+                      { value: 'manual', label: 'Manual' },
+                      { value: 'resource', label: 'From Resource' },
+                    ]}
+                  />
                 </div>
 
                 {selectedResource && (
-                  <div className="mb-3">
-                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Resource</label>
-                    <select
+                  <FormField label="Resource" help="Connection details from Admin > Resources">
+                    <Select
                       value={selectedResource}
                       onChange={e => handleResourceSelect(e.target.value)}
                       disabled={loadingResource}
-                      className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
                     >
                       {matchingResources.map(r => (
                         <option key={r.name} value={r.name}>{r.name}{r.description ? ` — ${r.description}` : ''}</option>
                       ))}
-                    </select>
-                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Connection details from Admin &gt; Resources</p>
-                  </div>
+                    </Select>
+                  </FormField>
                 )}
               </div>
             )}
 
             {selectedResource ? (
               serviceFields.length > 0 && (
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   {serviceFields.map(field => (
                     <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
                       <ConfigField
@@ -249,7 +232,7 @@ function ServiceDetailForm({ svc, onChange, onRemove, onClone, onClose, resource
                 </div>
               )
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 {fields.map(field => (
                   <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
                     <ConfigField
@@ -286,45 +269,42 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
 
   return (
     <div className={cn(
-      'border rounded-lg bg-[var(--bg-app)] overflow-hidden transition-colors',
-      expanded ? 'border-[var(--text-accent)]/40' : 'border-[var(--border-subtle)]'
+      'overflow-hidden rounded-card border bg-surface shadow-sm transition-colors',
+      expanded ? 'border-accent-line' : 'border-line'
     )}>
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-[var(--bg-elevated)] border-b border-[var(--border-subtle)] hover:bg-[var(--bg-hover)] transition-colors"
-      >
-        {expanded
-          ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-          : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-        }
-        <Server className="w-3.5 h-3.5 text-[var(--text-secondary)] shrink-0" />
-        <span className="text-xs font-medium text-[var(--text-primary)] flex-1 truncate text-left">
-          {target.name || 'New Target'}
-        </span>
-        <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-app)] px-1.5 py-0.5 rounded">{target.type}</span>
-        {target.service_names.length > 0 && (
-          <span className="text-[10px] text-[var(--text-muted)]">{target.service_names.length} svc</span>
-        )}
-        <span
-          role="button"
-          onClick={e => { e.stopPropagation(); onClone() }}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-accent)] hover:bg-[var(--bg-active)] transition-colors"
-          title="Clone target"
+      <div className={cn(
+        'flex items-center gap-2 bg-surface-sunken py-1.5 pl-3 pr-1.5 transition-colors hover:bg-hover',
+        expanded && 'border-b border-line'
+      )}>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
         >
-          <Copy className="w-3 h-3" />
-        </span>
-        <span
-          role="button"
-          onClick={e => { e.stopPropagation(); onRemove() }}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-          title="Remove target"
-        >
-          <Trash2 className="w-3 h-3" />
-        </span>
-      </button>
+          {expanded
+            ? <ChevronDown className="size-3.5 shrink-0 text-fg-muted" />
+            : <ChevronRight className="size-3.5 shrink-0 text-fg-muted" />
+          }
+          <Server className="size-3.5 shrink-0 text-fg-secondary" />
+          <span className="flex-1 truncate text-xs font-medium text-fg">
+            {target.name || 'New Target'}
+          </span>
+          <Badge tone="neutral" size="sm">{target.type}</Badge>
+          {target.service_names.length > 0 && (
+            <span className="text-2xs text-fg-muted tabular-nums">{target.service_names.length} svc</span>
+          )}
+        </button>
+        <IconButton size="xs" variant="accent" label="Clone target" onClick={onClone}>
+          <Copy className="size-3.5" />
+        </IconButton>
+        <IconButton size="xs" variant="danger" label="Remove target" onClick={onRemove}>
+          <Trash2 className="size-3.5" />
+        </IconButton>
+      </div>
       {expanded && (
-        <div className="p-3 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-4 p-4">
+          <div className="grid grid-cols-2 gap-4">
             <TextField
               label="Target Name"
               value={target.name}
@@ -353,7 +333,7 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
               onConnectionChange={(key, v) => onChange({ ...target, connection: { ...target.connection, [key]: v } })}
             />
           ) : fields.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
               {fields.map(field => (
                 <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
                   <ConfigField
@@ -367,23 +347,25 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
           ) : null}
 
           {onConnectFromResource && target.type === 'kubernetes' && (
-            <button
+            <Button
+              variant="subtle"
+              size="sm"
               onClick={onConnectFromResource}
-              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-md border border-dashed border-blue-500/30 text-xs text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/50 transition-colors"
+              leftIcon={<Server />}
+              className="w-full border-dashed"
             >
-              <Server className="w-3 h-3" />
               Connect from Resource
-            </button>
+            </Button>
           )}
 
           <div>
-            <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
+            <label className="mb-1.5 block text-xs font-medium text-fg-secondary">
               Services on this target
             </label>
             {(() => {
               const targetServices = services.filter(s => !CLOUD_STORAGE_TYPES.has(s.provider))
               return targetServices.length === 0 ? (
-              <p className="text-xs text-[var(--text-muted)] italic">Define global services first</p>
+              <p className="text-xs text-fg-muted italic">Define global services first</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {targetServices.map(svc => {
@@ -400,14 +382,15 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
                         onChange({ ...target, service_names: names })
                       }}
                       className={cn(
-                        'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-all border',
+                        'flex h-7 cursor-pointer items-center gap-1.5 rounded-control border px-2.5 text-xs transition-colors',
                         !svc.name && 'opacity-40 cursor-not-allowed',
                         active
-                          ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                          : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)]'
+                          ? 'border-accent-line bg-accent-soft font-medium text-accent'
+                          : 'border-line bg-surface-sunken text-fg-secondary hover:border-line-strong hover:text-fg'
                       )}
+                      aria-pressed={active}
                     >
-                      <SvcIcon className="w-3 h-3 shrink-0" />
+                      <SvcIcon className="size-3 shrink-0" />
                       {svc.friendly_name || svc.name || '(unnamed)'}
                     </button>
                   )
@@ -418,13 +401,16 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
           </div>
 
           {target.service_names.length > 0 && (
-            <div className="pt-1 border-t border-[var(--border-subtle)]">
-              <button
+            <div className="border-t border-line pt-3">
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowOverrides(v => !v)}
-                className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                leftIcon={showOverrides ? <ChevronDown /> : <ChevronRight />}
+                className="-ml-2.5"
               >
-                {showOverrides ? '▾ Hide' : '▸ Show'} service config overrides
-              </button>
+                {showOverrides ? 'Hide' : 'Show'} service config overrides
+              </Button>
               {showOverrides && (
                 <div className="mt-2 space-y-2">
                   {target.service_names.map(svcName => {
@@ -435,15 +421,15 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
                     if (providerFields.length === 0) return null
 
                     return (
-                      <div key={svcName} className="p-2 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <span className="text-[10px] font-medium text-[var(--text-secondary)]">{svcName}</span>
-                          <span className="text-[10px] text-[var(--text-muted)]">override</span>
+                      <div key={svcName} className="space-y-2 rounded-card border border-line bg-surface-sunken p-3">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-fg-secondary">{svcName}</span>
+                          <span className="text-2xs text-fg-muted">override</span>
                         </div>
                         {providerFields.map(field => (
-                          <div key={field.key} className="mb-1.5">
-                            <label className="block text-[10px] text-[var(--text-muted)] mb-0.5">{field.label}</label>
-                            <input
+                          <div key={field.key}>
+                            <label className="mb-1 block text-2xs text-fg-muted">{field.label}</label>
+                            <Input
                               type="text"
                               value={override?.config[field.key] ?? ''}
                               onChange={e => {
@@ -456,7 +442,7 @@ function TargetCard({ target, services, expanded, onToggle, onChange, onRemove, 
                                 onChange({ ...target, service_overrides: existing })
                               }}
                               placeholder={`Override ${field.label.toLowerCase()}...`}
-                              className="w-full px-2 py-1 rounded bg-[var(--bg-app)] border border-[var(--border-subtle)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--text-accent)]"
+                              className="h-7 bg-surface text-xs"
                             />
                           </div>
                         ))}
@@ -528,39 +514,24 @@ function EnvironmentDetailForm({ env, services, expandedTargetId, onToggleTarget
   }
 
   return (
-    <div className="border border-[var(--text-accent)]/40 rounded-lg overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--bg-elevated)] border-b border-[var(--border-default)]">
-        <FolderTree className="w-3.5 h-3.5 text-[var(--text-accent)] shrink-0" />
-        <span className="text-sm font-medium text-[var(--text-primary)] flex-1 text-left truncate">
+    <div className="overflow-hidden rounded-card border border-accent-line bg-surface shadow-sm">
+      <div className="flex items-center gap-2 border-b border-line bg-surface-sunken py-1.5 pl-3 pr-1.5">
+        <FolderTree className="size-3.5 shrink-0 text-accent" />
+        <span className="flex-1 truncate text-left text-sm font-medium text-fg">
           {env.name || 'New Environment'}
         </span>
-        <span className="text-[10px] text-[var(--text-muted)]">{env.targets.length} target{env.targets.length !== 1 ? 's' : ''}</span>
-        <span
-          role="button"
-          onClick={onClone}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-accent)] hover:bg-[var(--bg-active)] transition-colors"
-          title="Clone environment"
-        >
-          <Copy className="w-3 h-3" />
-        </span>
-        <span
-          role="button"
-          onClick={onRemove}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-          title="Remove environment"
-        >
-          <Trash2 className="w-3 h-3" />
-        </span>
-        <span
-          role="button"
-          onClick={onClose}
-          className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-active)] transition-colors"
-          title="Close"
-        >
-          <X className="w-3 h-3" />
-        </span>
+        <span className="text-2xs text-fg-muted tabular-nums">{env.targets.length} target{env.targets.length !== 1 ? 's' : ''}</span>
+        <IconButton size="xs" variant="accent" label="Clone environment" onClick={onClone}>
+          <Copy className="size-3.5" />
+        </IconButton>
+        <IconButton size="xs" variant="danger" label="Remove environment" onClick={onRemove}>
+          <Trash2 className="size-3.5" />
+        </IconButton>
+        <IconButton size="xs" label="Close" onClick={onClose}>
+          <X className="size-3.5" />
+        </IconButton>
       </div>
-      <div className="p-3 space-y-3">
+      <div className="space-y-4 p-4">
         <TextField
           label="Environment Name"
           value={env.name}
@@ -582,13 +553,15 @@ function EnvironmentDetailForm({ env, services, expandedTargetId, onToggleTarget
             credentials={credentials}
           />
         ))}
-        <button
+        <Button
+          variant="subtle"
+          size="sm"
           onClick={addTarget}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-md border border-dashed border-[var(--border-default)] text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:border-[var(--text-secondary)] transition-colors"
+          leftIcon={<Plus />}
+          className="w-full border-dashed"
         >
-          <Plus className="w-3 h-3" />
           Add Target
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -607,6 +580,7 @@ function YamlPreview({ yaml, redactedYaml, filename, onImportToServer, importing
   defaultRedact?: boolean
   onCollapse?: () => void
 }) {
+  const toast = useToast()
   const [copied, setCopied] = useState(false)
   const [showSecrets, setShowSecrets] = useState(!defaultRedact)
   const hasSensitive = redactedYaml != null && redactedYaml !== yaml
@@ -638,88 +612,67 @@ function YamlPreview({ yaml, redactedYaml, filename, onImportToServer, importing
       })
       if (res.ok) {
         const data = await res.json()
-        alert(`Saved to ${data.path}`)
+        toast.success('Saved', data.path)
       }
     } catch {
       download()
     }
-  }, [yaml, filename, download])
+  }, [yaml, filename, download, toast])
 
   const lines = displayYaml.split('\n')
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border-default)] bg-[var(--bg-elevated)]">
-        <FileText className="w-3.5 h-3.5 text-[var(--text-accent)]" />
-        <span className="text-xs font-medium text-[var(--text-primary)] flex-1">YAML Preview</span>
+    <div className="flex h-full flex-col">
+      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-line px-4">
+        <FileText className="size-3.5 shrink-0 text-accent" />
+        <span className="ml-1 flex-1 truncate text-sm font-semibold text-fg">YAML Preview</span>
         {hasSensitive && (
-          <button
+          <IconButton
             onClick={() => setShowSecrets(v => !v)}
-            className={cn(
-              'flex items-center gap-1 px-2 py-1 rounded-md text-[10px] transition-colors',
-              showSecrets
-                ? 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-            )}
-            title={showSecrets ? 'Hide credentials' : 'Show credentials'}
+            variant={showSecrets ? 'warning' : 'default'}
+            label={showSecrets ? 'Secrets visible: hide credentials' : 'Secrets hidden: show credentials'}
+            tooltipSide="bottom"
           >
-            {showSecrets ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-            {showSecrets ? 'Secrets visible' : 'Secrets hidden'}
-          </button>
+            {showSecrets ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+          </IconButton>
         )}
-        <button
-          onClick={copyToClipboard}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
-          title="Copy to clipboard"
-        >
-          {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-        <button
-          onClick={save}
-          className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
-          title="Save to disk"
-        >
-          <Save className="w-3 h-3" />
-          Save
-        </button>
+        <IconButton onClick={copyToClipboard} label={copied ? 'Copied' : 'Copy to clipboard'} tooltipSide="bottom">
+          {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+        </IconButton>
+        <IconButton onClick={save} label="Save to disk" tooltipSide="bottom">
+          <Save className="size-3.5" />
+        </IconButton>
         {onImportToServer ? (
-          <Button size="sm" onClick={() => onImportToServer(yaml)} loading={importing} className="text-[10px] px-2.5 py-1">
-            <ArrowDownToLine className="w-3 h-3" />
+          <Button size="sm" onClick={() => onImportToServer(yaml)} loading={importing} leftIcon={<ArrowDownToLine />} className="ml-1">
             {importing ? 'Saving...' : (saveLabel || 'Import to Server')}
           </Button>
         ) : (
-          <Button size="sm" onClick={download} className="text-[10px] px-2.5 py-1">
-            <ArrowDownToLine className="w-3 h-3" />
+          <Button size="sm" onClick={download} leftIcon={<ArrowDownToLine />} className="ml-1">
             Download
           </Button>
         )}
         {onCollapse && (
-          <button
-            onClick={onCollapse}
-            className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
-            title="Collapse panel"
-          >
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
+          <IconButton onClick={onCollapse} label="Collapse panel" tooltipSide="bottom" className="-mr-1.5">
+            <ChevronRight className="size-3.5" />
+          </IconButton>
         )}
       </div>
       {importError && (
-        <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/20 text-xs text-red-400">
+        <Alert tone="danger" className="m-3 shrink-0">
           {importError}
-        </div>
+        </Alert>
       )}
-      <div className="flex-1 overflow-auto font-mono text-[12px] leading-[20px]" style={{ background: 'var(--log-bg)' }}>
+      <div className="flex-1 overflow-auto py-2 font-mono text-xs leading-5" style={{ background: 'var(--log-bg)' }}>
         {lines.map((line, i) => {
-          let cls = 'text-[var(--text-primary)]'
-          if (line.match(/^\s*#/)) cls = 'text-[var(--text-muted)]'
-          else if (line.match(/^\S.*:$/)) cls = 'text-[var(--text-accent)] font-semibold'
-          else if (line.match(/^\s{2}\S.*:$/)) cls = 'text-cyan-400 font-medium'
-          else if (line.match(/^\s+-\s+name:/)) cls = 'text-amber-400'
+          let cls = 'text-fg'
+          if (line.match(/^\s*#/)) cls = 'text-fg-muted'
+          else if (line.match(/^\S.*:$/)) cls = 'text-info font-semibold'
+          else if (line.match(/^\s{2}\S.*:$/)) cls = 'text-info font-medium'
+          else if (line.match(/^\s+-\s+name:/)) cls = 'text-warning'
 
           return (
-            <div key={i} className="flex hover:bg-[var(--log-line-hover)] transition-colors">
-              <span className="shrink-0 w-8 pr-2 text-right text-[var(--text-muted)] select-none opacity-40">{i + 1}</span>
+            <div key={i} className="flex transition-colors hover:bg-hover">
+              <span className="w-10 shrink-0 select-none pr-3 text-right text-fg-faint tabular-nums">{i + 1}</span>
               <span className={cn(cls, 'whitespace-pre')}>{line || ' '}</span>
             </div>
           )
@@ -736,6 +689,8 @@ const themeOptions: { value: Theme; icon: React.FC<{ className?: string }> }[] =
   { value: 'light', icon: Sun },
   { value: 'auto', icon: MonitorIcon },
 ]
+
+const THEME_LABELS: Record<Theme, string> = { dark: 'Dark', light: 'Light', auto: 'System' }
 
 // ── Import Modal ──
 
@@ -775,43 +730,45 @@ function ImportModal({ onImport, onClose }: {
   }
 
   return (
-    <Modal title="Import Config" onClose={onClose} maxWidth="max-w-xl">
+    <Modal
+      title="Import Config"
+      onClose={onClose}
+      size="lg"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={handleParse} disabled={!yamlText.trim()}>Import</Button>
+        </>
+      }
+    >
       <div className="space-y-4">
         <div>
           <button
+            type="button"
             onClick={() => fileRef.current?.click()}
-            className="w-full flex flex-col items-center gap-2 py-6 rounded-lg border-2 border-dashed border-[var(--border-default)] hover:border-[var(--text-accent)] hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
+            className="flex w-full cursor-pointer flex-col items-center gap-2 rounded-card border-2 border-dashed border-line py-6 transition-colors hover:border-accent-line hover:bg-hover"
           >
-            <Upload className="w-6 h-6 text-[var(--text-muted)]" />
-            <span className="text-xs text-[var(--text-secondary)]">Click to upload a <span className="font-medium text-[var(--text-primary)]">.yaml</span> file</span>
+            <Upload className="size-6 text-fg-muted" />
+            <span className="text-xs text-fg-secondary">Click to upload a <span className="font-medium text-fg">.yaml</span> file</span>
           </button>
           <input ref={fileRef} type="file" accept=".yaml,.yml" onChange={handleFile} className="hidden" />
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-[var(--border-default)]" />
-          <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">or paste YAML</span>
-          <div className="flex-1 h-px bg-[var(--border-default)]" />
+          <div className="h-px flex-1 bg-line" />
+          <span className="text-2xs uppercase tracking-wider text-fg-muted">or paste YAML</span>
+          <div className="h-px flex-1 bg-line" />
         </div>
 
-        <textarea
+        <Textarea
           value={yamlText}
           onChange={e => { setYamlText(e.target.value); setError('') }}
           placeholder={'workspace:\n  name: my-workspace\n  description: ...\n\nservices:\n  - name: api\n    provider: docker\n    ...'}
           rows={10}
-          className="w-full px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-default)] text-xs text-[var(--text-primary)] font-mono placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--text-accent)] transition-colors resize-none"
+          className="resize-none font-mono text-xs"
         />
 
-        {error && (
-          <div className="px-3 py-2 rounded-md bg-red-500/10 border border-red-500/30 text-xs text-red-400">
-            {error}
-          </div>
-        )}
-
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={handleParse} disabled={!yamlText.trim()}>Import</Button>
-        </div>
+        {error && <Alert tone="danger">{error}</Alert>}
       </div>
     </Modal>
   )
@@ -837,40 +794,41 @@ const HIERARCHY_TEMPLATES = [
 function HierarchyPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2">
+      <label className="mb-1.5 block text-xs font-medium text-fg-secondary">
         Hierarchy Template
       </label>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-4">
         {HIERARCHY_TEMPLATES.map(t => (
           <button
             key={t.value}
             type="button"
             onClick={() => onChange(t.value)}
+            aria-pressed={value === t.value}
             className={cn(
-              'flex flex-col p-3 rounded-lg border text-left transition-all',
+              'flex cursor-pointer flex-col rounded-card border p-3 text-left transition-colors',
               value === t.value
-                ? 'border-[var(--text-accent)] bg-[var(--bg-active)]'
-                : 'border-[var(--border-default)] bg-[var(--bg-elevated)] hover:border-[var(--border-default)] hover:bg-[var(--bg-hover)]'
+                ? 'border-accent-line bg-accent-soft'
+                : 'border-line bg-surface-sunken hover:border-line-strong hover:bg-hover'
             )}
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <div className={cn(
-                'w-3 h-3 rounded-full border-2 flex items-center justify-center',
-                value === t.value ? 'border-[var(--text-accent)]' : 'border-[var(--text-muted)]'
+                'flex size-3 items-center justify-center rounded-full border-2',
+                value === t.value ? 'border-accent' : 'border-fg-muted'
               )}>
-                {value === t.value && <div className="w-1.5 h-1.5 rounded-full bg-[var(--text-accent)]" />}
+                {value === t.value && <div className="size-1.5 rounded-full bg-accent" />}
               </div>
               <span className={cn(
                 'text-xs font-semibold',
-                value === t.value ? 'text-[var(--text-accent)]' : 'text-[var(--text-primary)]'
+                value === t.value ? 'text-accent' : 'text-fg'
               )}>
                 {t.label}
               </span>
-              <span className="text-[10px] text-[var(--text-muted)]">{t.desc}</span>
+              <span className="text-2xs text-fg-muted">{t.desc}</span>
             </div>
-            <div className="font-mono text-[10px] leading-[16px] text-[var(--text-muted)] pl-5">
+            <div className="pl-5 font-mono text-2xs text-fg-muted">
               {t.preview.map((line, i) => (
-                <div key={i} className={line.startsWith(' ') ? 'text-[var(--text-muted)]' : 'text-[var(--text-secondary)] font-medium'}>
+                <div key={i} className={line.startsWith(' ') ? 'text-fg-muted' : 'font-medium text-fg-secondary'}>
                   {line.startsWith(' ') ? `└ ${line.trim()}` : line}
                 </div>
               ))}
@@ -1084,68 +1042,54 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
 
   if (editLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[var(--bg-app)]">
+      <div className="flex h-screen items-center justify-center bg-canvas">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-[var(--text-muted)] border-t-[var(--text-accent)] rounded-full animate-spin" />
-          <span className="text-sm text-[var(--text-secondary)]">Loading workspace...</span>
+          <div className="size-8 animate-spin rounded-full border-2 border-line-strong border-t-accent" />
+          <span className="text-sm text-fg-secondary">Loading workspace...</span>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[var(--bg-app)]">
+    <div className="flex h-screen flex-col bg-canvas">
       {/* Header */}
-      <header className="h-14 shrink-0 flex items-center px-5 gap-4 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
+      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
         {onBack ? (
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            <ChevronRight className="w-4 h-4 rotate-180" />
+          <Button variant="ghost" size="sm" onClick={onBack} leftIcon={<ChevronLeft />} className="-ml-2">
             Back
-          </button>
+          </Button>
         ) : (
           <AvalokWordmark height={22} />
         )}
-        <span className="text-[10px] text-[var(--text-muted)] italic">observe with clarity</span>
-        <div className="w-px h-5 bg-[var(--border-default)]" />
-        <span className="text-sm font-medium text-[var(--text-primary)]">
+        <span className="hidden text-2xs italic text-fg-muted sm:inline">observe with clarity</span>
+        <div className="h-5 w-px bg-line" />
+        <span className="truncate text-sm font-medium text-fg">
           {editWorkspace ? 'Edit Workspace' : editService ? 'Edit Service' : editEnvironment ? 'Edit Environment' : onImportToServer ? (mode === 'service' ? 'Create Service' : mode === 'environment' ? 'Create Environment' : 'Create Workspace') : 'Config Builder'}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setShowImport(true)}>
-            <Upload className="w-3.5 h-3.5" />
+          <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} leftIcon={<Upload />}>
             Import
           </Button>
-          <div className="w-px h-5 bg-[var(--border-default)]" />
-          <div className="flex items-center bg-[var(--bg-elevated)] rounded-lg p-0.5 border border-[var(--border-subtle)]">
-            {themeOptions.map(opt => {
+          <div className="h-5 w-px bg-line" />
+          <SegmentedControl
+            label="Theme"
+            size="sm"
+            value={theme}
+            onChange={setTheme}
+            options={themeOptions.map(opt => {
               const Icon = opt.icon
-              return (
-                <button
-                  key={opt.value}
-                  onClick={() => setTheme(opt.value)}
-                  className={cn(
-                    'p-1.5 rounded-md transition-all',
-                    theme === opt.value
-                      ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                  )}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                </button>
-              )
+              return { value: opt.value, icon: <Icon />, title: THEME_LABELS[opt.value] }
             })}
-          </div>
+          />
         </div>
       </header>
 
       {/* Body */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex min-h-0 flex-1">
         {/* Left: Form */}
-        <div className="flex-1 overflow-y-auto min-w-0">
-          <div className="px-6 py-6 space-y-5">
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          <div className="space-y-4 px-6 py-6">
 
             {mode === 'service' ? (
               <>
@@ -1176,7 +1120,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     const fields = PROVIDER_FIELDS[svc.provider] ?? []
                     return (
                       <>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-4">
                           <TextField
                             label="Friendly Name"
                             value={svc.friendly_name}
@@ -1192,9 +1136,9 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                           />
                         </div>
                         {fields.length > 0 && (
-                          <div className="pt-1 border-t border-[var(--border-subtle)] space-y-3">
-                            <span className="text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">Provider Config</span>
-                            <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-4 border-t border-line pt-4">
+                            <span className="block font-mono text-2xs font-medium uppercase tracking-wider text-fg-muted">Provider Config</span>
+                            <div className="grid grid-cols-2 gap-4">
                               {fields.map(field => (
                                 <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
                                   <ConfigField
@@ -1218,7 +1162,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                   const fields = TARGET_FIELDS[target.type] ?? []
                   return (
                     <Section title="Target" icon={Server} defaultOpen>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-4">
                         <TextField
                           label="Target Name"
                           value={target.name}
@@ -1246,7 +1190,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                           onConnectionChange={(key, v) => cfg(d => { if (d.environments[0]?.targets[0]) d.environments[0].targets[0].connection[key] = v })}
                         />
                       ) : fields.length > 0 ? (
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-4">
                           {fields.map(field => (
                             <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
                               <ConfigField
@@ -1296,48 +1240,43 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                   count={config.services.length}
                   defaultOpen
                   actions={
-                    <button
-                      onClick={addService}
-                      className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-[var(--text-accent)] hover:bg-[var(--bg-active)] transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
+                    <Button variant="ghost" size="sm" onClick={addService} leftIcon={<Plus />}>
                       Add
-                    </button>
+                    </Button>
                   }
                 >
                   {config.services.length === 0 ? (
-                    <div className="text-center py-6">
-                      <Box className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-2 opacity-30" />
-                      <p className="text-xs text-[var(--text-muted)] mb-3">No services defined yet</p>
-                      <button
-                        onClick={addService}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--text-accent)] text-white hover:opacity-90 hover:scale-[1.02] transition-all duration-150"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Add Service
-                      </button>
-                    </div>
+                    <EmptyState
+                      compact
+                      icon={<Box />}
+                      tone="neutral"
+                      title="No services defined yet"
+                      action={
+                        <Button size="sm" onClick={addService} leftIcon={<Plus />}>
+                          Add Service
+                        </Button>
+                      }
+                    />
                   ) : (
                     <div className="space-y-4">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
                         {config.services.map(svc => {
                           const SvcIcon = ProviderIconWrapper(svc.provider)
                           return (
                             <Card
                               key={svc.id}
-                              hover
+                              interactive
                               selected={expandedSvcId === svc.id}
                               padding="sm"
                               onClick={() => setExpandedSvcId(prev => prev === svc.id ? null : svc.id)}
-                              className="cursor-pointer"
                             >
                               <div className="flex items-center gap-2">
-                                <SvcIcon className="w-4 h-4 text-[var(--text-accent)] shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-medium text-[var(--text-primary)] truncate">
+                                <SvcIcon className="size-4 shrink-0 text-accent" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-xs font-medium text-fg">
                                     {svc.friendly_name || svc.name || 'New Service'}
                                   </p>
-                                  <p className="text-[10px] text-[var(--text-muted)]">{svc.provider}</p>
+                                  <p className="text-2xs text-fg-muted">{svc.provider}</p>
                                 </div>
                               </div>
                             </Card>
@@ -1366,7 +1305,9 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     count={config.environments[0]?.targets.length ?? 0}
                     defaultOpen
                     actions={
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => {
                           const newId = createId()
                           cfg(d => {
@@ -1378,18 +1319,22 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                           })
                           setExpandedTargetId(newId)
                         }}
-                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-[var(--text-accent)] hover:bg-[var(--bg-active)] transition-colors"
+                        leftIcon={<Plus />}
                       >
-                        <Plus className="w-3 h-3" />
                         Add
-                      </button>
+                      </Button>
                     }
                   >
                     {(config.environments[0]?.targets ?? []).length === 0 ? (
-                      <div className="text-center py-6">
-                        <Server className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-2 opacity-30" />
-                        <p className="text-xs text-[var(--text-muted)] mb-3">No targets defined yet</p>
-                        <button
+                      <EmptyState
+                        compact
+                        icon={<Server />}
+                        tone="neutral"
+                        title="No targets defined yet"
+                        action={
+                        <Button
+                          size="sm"
+                          leftIcon={<Plus />}
                           onClick={() => {
                             const newId = createId()
                             cfg(d => {
@@ -1401,14 +1346,13 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                             })
                             setExpandedTargetId(newId)
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--text-accent)] text-white hover:opacity-90 hover:scale-[1.02] transition-all duration-150"
                         >
-                          <Plus className="w-3 h-3" />
                           Add Target
-                        </button>
-                      </div>
+                        </Button>
+                        }
+                      />
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {config.environments[0].targets.map(target => (
                           <TargetCard
                             key={target.id}
@@ -1451,46 +1395,41 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                       count={config.environments.length}
                       defaultOpen
                       actions={
-                        <button
-                          onClick={addEnvironment}
-                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium text-[var(--text-accent)] hover:bg-[var(--bg-active)] transition-colors"
-                        >
-                          <Plus className="w-3 h-3" />
+                        <Button variant="ghost" size="sm" onClick={addEnvironment} leftIcon={<Plus />}>
                           Add
-                        </button>
+                        </Button>
                       }
                     >
                       {config.environments.length === 0 ? (
-                        <div className="text-center py-6">
-                          <FolderTree className="w-8 h-8 text-[var(--text-muted)] mx-auto mb-2 opacity-30" />
-                          <p className="text-xs text-[var(--text-muted)] mb-3">No environments defined yet</p>
-                          <button
-                            onClick={addEnvironment}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--text-accent)] text-white hover:opacity-90 hover:scale-[1.02] transition-all duration-150"
-                          >
-                            <Plus className="w-3 h-3" />
-                            Add Environment
-                          </button>
-                        </div>
+                        <EmptyState
+                          compact
+                          icon={<FolderTree />}
+                          tone="neutral"
+                          title="No environments defined yet"
+                          action={
+                            <Button size="sm" onClick={addEnvironment} leftIcon={<Plus />}>
+                              Add Environment
+                            </Button>
+                          }
+                        />
                       ) : (
                         <div className="space-y-4">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
                             {config.environments.map(env => (
                               <Card
                                 key={env.id}
-                                hover
+                                interactive
                                 selected={expandedEnvId === env.id}
                                 padding="sm"
                                 onClick={() => setExpandedEnvId(prev => prev === env.id ? null : env.id)}
-                                className="cursor-pointer"
                               >
                                 <div className="flex items-center gap-2">
-                                  <FolderTree className="w-4 h-4 text-[var(--text-accent)] shrink-0" />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium text-[var(--text-primary)] truncate">
+                                  <FolderTree className="size-4 shrink-0 text-accent" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-xs font-medium text-fg">
                                       {env.name || 'New Environment'}
                                     </p>
-                                    <p className="text-[10px] text-[var(--text-muted)]">
+                                    <p className="text-2xs text-fg-muted tabular-nums">
                                       {env.targets.length} target{env.targets.length !== 1 ? 's' : ''}
                                     </p>
                                   </div>
@@ -1519,17 +1458,14 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
                     {/* Settings (workspace mode only) */}
                     <Section title="Settings" icon={Settings} defaultOpen={false}>
                       <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">SSH Timeout</label>
-                          <input
+                        <FormField label="SSH Timeout" help="SSH connection timeout in seconds">
+                          <Input
                             type="number"
                             value={config.settings.ssh_timeout || ''}
                             onChange={e => cfg(d => { d.settings.ssh_timeout = parseInt(e.target.value) || 0 })}
                             placeholder="30"
-                            className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-subtle)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
                           />
-                          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">SSH connection timeout in seconds</p>
-                        </div>
+                        </FormField>
                       </div>
                     </Section>
                   </>
@@ -1542,7 +1478,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
 
         {/* Right: YAML Preview (collapsible) */}
         <div className={cn(
-          'shrink-0 border-l border-[var(--border-strong)] flex flex-col min-w-0 transition-all duration-200',
+          'flex min-w-0 shrink-0 flex-col border-l border-line bg-surface transition-[width] duration-200',
           yamlOpen ? 'w-[480px]' : 'w-10'
         )}>
           {yamlOpen ? (
@@ -1569,12 +1505,14 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
             />
           ) : (
             <button
+              type="button"
               onClick={() => setYamlOpen(true)}
-              className="flex flex-col items-center gap-2 py-4 w-full text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+              className="flex w-full cursor-pointer flex-col items-center gap-2 py-4 text-fg-muted transition-colors hover:bg-hover hover:text-fg"
               title="Show YAML preview"
+              aria-label="Show YAML preview"
             >
-              <ChevronLeft className="w-4 h-4" />
-              <span className="text-[10px] font-medium [writing-mode:vertical-lr] rotate-180">YAML</span>
+              <ChevronLeft className="size-4" />
+              <span className="rotate-180 text-2xs font-medium [writing-mode:vertical-lr]">YAML</span>
             </button>
           )}
         </div>

@@ -1,4 +1,6 @@
-import { cn } from '../../lib/cn'
+import SegmentedControl from '../ui/SegmentedControl'
+import FormField from '../ui/FormField'
+import { Select } from '../ui/Input'
 import { ConfigField } from './fields'
 import type { FieldDef } from './schema'
 import type { AdminCredential } from '../../lib/api'
@@ -36,7 +38,7 @@ export default function CredentialSelector({
   if (!hasCredentials) {
     if (fields.length === 0) return null
     return (
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-4">
         {fields.map(field => (
           <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
             <ConfigField
@@ -61,7 +63,7 @@ export default function CredentialSelector({
   return (
     <>
       {targetFields.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           {targetFields.map(field => (
             <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
               <ConfigField
@@ -75,54 +77,40 @@ export default function CredentialSelector({
       )}
 
       <div>
-        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">Authentication</label>
-        <div className="grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            onClick={onClearProfile}
-            className={cn(
-              'px-2 py-1.5 rounded-md text-xs transition-all border',
-              !useProfile
-                ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-            )}
-          >
-            Manual
-          </button>
-          <button
-            type="button"
-            onClick={() => {
+        <label className="mb-1.5 block text-xs font-medium text-fg-secondary">Authentication</label>
+        <SegmentedControl
+          label="Authentication"
+          size="sm"
+          className="flex w-full [&>button]:flex-1"
+          value={useProfile ? 'profile' : 'manual'}
+          onChange={mode => {
+            if (mode === 'manual') {
+              onClearProfile()
+            } else {
               const first = matchingCreds[0]
               if (first) handleSelectProfile(first.name)
-            }}
-            className={cn(
-              'px-2 py-1.5 rounded-md text-xs transition-all border',
-              useProfile
-                ? 'bg-[var(--bg-active)] border-[var(--text-accent)] text-[var(--text-accent)] font-medium'
-                : 'bg-[var(--bg-elevated)] border-[var(--border-subtle)] text-[var(--text-secondary)] hover:border-[var(--border-default)] hover:text-[var(--text-primary)]'
-            )}
-          >
-            Credential Profile
-          </button>
-        </div>
+            }
+          }}
+          options={[
+            { value: 'manual', label: 'Manual' },
+            { value: 'profile', label: 'Credential Profile' },
+          ]}
+        />
       </div>
 
       {useProfile ? (
-        <div>
-          <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Profile</label>
-          <select
+        <FormField label="Profile" help="Managed credential from Admin > Credentials">
+          <Select
             value={credentialProfile}
             onChange={e => handleSelectProfile(e.target.value)}
-            className="w-full px-3 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
           >
             {matchingCreds.map(c => (
               <option key={c.name} value={c.name}>{c.name}{c.description ? ` — ${c.description}` : ''}</option>
             ))}
-          </select>
-          <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Managed credential from Admin &gt; Credentials</p>
-        </div>
+          </Select>
+        </FormField>
       ) : authFields.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-4">
           {authFields.map(field => (
             <div key={field.key} className={field.type === 'toggle' ? 'col-span-2' : ''}>
               <ConfigField

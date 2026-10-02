@@ -5,7 +5,7 @@ This is the single source of truth for how the Avalok web UI looks and how to bu
 **North star:** calm, premium and data-first. Think Northflank's restraint, Kener's identical dark and light themes, Logdy's dense log tables, and Docker Desktop's command palette. Polish comes from **shadow depth, spacing and simplicity**, not from adding colors.
 
 > **Migration status:** the redesign is landing in phases. See the plan in the PR history.
-> - Phase 1 (tokens, type, fonts), Phase 2 (component kit) and Phase 3 (app shell, auth, search palette) are **done**.
+> - Phase 1 (tokens, type, fonts), Phase 2 (component kit), Phase 3 (app shell, auth, search palette) and Phase 4 (pages: dashboard, drill-downs, manage pages, admin, config builder) are **done**. Phase 5 (log viewer, file browser) is next.
 > - Pages still being migrated to the kit may use old props marked `@deprecated` (`Badge variant`, `Alert variant`, `Modal maxWidth`, `Card hover`, `EmptyState iconBg`, `StatItem accent/bg`). New code uses the replacements listed in the JSDoc.
 > - Legacy `var(--bg-*)` / `var(--text-*)` aliases still work but are deprecated.
 
@@ -121,7 +121,10 @@ Everything lives in [`src/components/ui/`](src/components/ui/). **If a pattern a
 | Page-level sections | `Tabs` (default `underline`; `pill` for compact in-card switching; optional `count`) | hand-built tab rows |
 | View mode toggle (table/grid, dark/light/auto) | `SegmentedControl` (icon-only segments need `title`); `LayoutToggle` is a preset of it | custom pill groups |
 | Any list of records | `DataTable`: column `sortValue`, `numeric`; props `density`, `loading`, `error` + `onRetry`, `empty`, `stickyHeader`, `isRowSelected`, `onRowClick` (keyboard-accessible) | stacked Cards as rows, hand-built `<table>` |
-| Browsable collection with visuals | `CollectionGrid` of `Card` with `onClick` | — |
+| Browsable collection with visuals | `CollectionGrid` (responsive 1 → 5 columns by default) of `Card` with `onClick` | per-page grid-cols classes |
+| Any list of workspaces / environments / services / resources / namespaces / workloads | `EntityCollection` (`items`, `kind`, `name`, `description`, `icon`, `status`, `badges`, `meta`, `columns`, `menuItems`, `onOpen`, `actionLabel`, `filters` + `filter`, `layoutKey`, `loading`, `empty`): one toolbar (search with `/`, filter chips, "N of M", table/grid toggle), DataTable in list mode and `EntityCard`s in grid mode, skeletons and a "no matches" state built in | per-page search + LayoutToggle + DataTable + grid wiring |
+| Delete an entity with confirm + toast | `useDeleteEntity({ noun, remove, detail, onDeleted })` → `{ busyName, deleteEntity }` (from `lib/useDeleteEntity.ts`); pass `busyName` as `busyKey` | inline confirm/toast boilerplate |
+| Counts, sizes, dates | `plural`, `formatBytes`, `formatDateTime` from `lib/format.ts` | local copies per file |
 | Container | `Card` (`padding`, `interactive`, `selected`) + `CardHeader` (`icon`, `title`, `description`, `actions`) / `CardFooter` | `div` with border + rounded + bg |
 | Workspace / environment / service / resource in a grid | `EntityCard` (`kind`, `icon`, `badges`, `meta`, `actionLabel`, `onOpen`, `menuItems`, `index` for stagger, `busy`): hover hairline, tile scale, arrow nudge | hand-built entity Cards |
 | Settings form layout | `Section` + `SettingsRow` | — |
@@ -158,7 +161,7 @@ Every page follows the same skeleton:
   {error ? <Alert tone="danger" action={retry}>…</Alert>
    : loading ? <Skeleton … />          // same shape as the loaded content; header always visible
    : items.length === 0 ? <EmptyState … action={<Button>Create…</Button>} />
-   : <DataTable … /> /* or CollectionGrid, toggled by SegmentedControl */}
+   : <DataTable … /> /* entity lists: EntityCollection instead; plain records (users, credentials, objects): DataTable */}
 </Page>
 ```
 
@@ -171,6 +174,8 @@ Every page follows the same skeleton:
   - failure shows an inline `Alert` or toast;
   - deletes go through `useConfirm()`.
 - **Settings and admin** use `Tabs`, with `Section` / `SettingsRow` inside. Search deep-links target these tabs.
+
+**Shared page building blocks** (`components/Views/`): `ServiceList` (services of an environment with live health checks; used by `ServicesView` and `StandaloneEnvServicesView`), `EnvironmentList` (used by `EnvironmentsView` and `ServiceEnvironmentsView`) and `ImportYAMLCard` (paste/upload workspace, environment or service YAML). Extend these instead of copying a view.
 
 **App shell** (`components/Layout/`):
 - `Header`: 56px, `bg-surface` with a bottom border, wordmark at 18px, breadcrumbs (the last one is `text-fg`), search trigger (`Ctrl K`), theme `SegmentedControl`, and a user `Dropdown`. It stays neutral, never brand-colored.

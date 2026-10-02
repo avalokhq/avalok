@@ -16,9 +16,9 @@ const variants = {
 }
 
 const sizes = {
-  sm: 'h-7 px-2.5 gap-1.5 text-xs',
-  md: 'h-8 px-3 gap-2 text-sm',
-  lg: 'h-9 px-4 gap-2 text-sm',
+  sm: 'h-7 px-2.5 gap-1.5 text-xs [&_svg:not([class*=size-])]:size-3.5',
+  md: 'h-8 px-3 gap-2 text-sm [&_svg:not([class*=size-])]:size-4',
+  lg: 'h-9 px-4 gap-2 text-sm [&_svg:not([class*=size-])]:size-4',
 }
 
 const iconOnlySizes = {

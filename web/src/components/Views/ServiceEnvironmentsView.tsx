@@ -1,17 +1,6 @@
-import { useState, useEffect } from 'react'
-import { ChevronRight, Target } from 'lucide-react'
 import { listServiceEnvironments } from '../../lib/api'
 import type { Workspace, Environment } from '../../lib/types'
-import EntityIcon, { EntityIconRaw } from '../ui/EntityIcon'
-import LayoutToggle from '../ui/LayoutToggle'
-import CollectionGrid from '../ui/CollectionGrid'
-import { useLayoutToggle } from '../../lib/useLayoutToggle'
-import PageHeader from '../ui/PageHeader'
-import Spinner from '../ui/Spinner'
-import EmptyState from '../ui/EmptyState'
-import Card from '../ui/Card'
-import DataTable from '../ui/DataTable'
-import Page from '../Layout/Page'
+import EnvironmentList from './EnvironmentList'
 
 interface Props {
   workspace: Workspace
@@ -20,85 +9,18 @@ interface Props {
   onSelectEnv: (env: Environment) => void
 }
 
+/** Environments a service runs in (service-first hierarchy). */
 export default function ServiceEnvironmentsView({ workspace, serviceName, serviceLabel, onSelectEnv }: Props) {
-  const [envs, setEnvs] = useState<Environment[]>([])
-  const [loading, setLoading] = useState(true)
-  const { layout, changeLayout } = useLayoutToggle('avalok-svc-env-layout')
-
-  useEffect(() => {
-    listServiceEnvironments(workspace.name, serviceName)
-      .then(setEnvs)
-      .catch(err => console.error('Failed to load environments:', err))
-      .finally(() => setLoading(false))
-  }, [workspace.name, serviceName])
-
-  if (loading) return <Spinner label="Loading environments..." />
-
   return (
-    <Page>
-        <PageHeader
-          title={workspace.name}
-          description={`${workspace.description} — ${serviceLabel}`}
-          actions={<LayoutToggle layout={layout} onChange={changeLayout} />}
-        />
-
-        {envs.length === 0 ? (
-          <EmptyState
-            icon={<EntityIconRaw kind="environment" className="w-7 h-7 text-blue-400 opacity-60" />}
-            iconBg="bg-blue-500/10"
-            title="No environments"
-            description="No environments found for this service."
-          />
-        ) : layout === 'list' ? (
-          <DataTable
-            columns={[
-              {
-                key: 'name',
-                header: 'Environment',
-                render: (env) => (
-                    <div className="flex items-center gap-3">
-                      <EntityIcon kind="environment" />
-                      <span className="font-medium text-[var(--text-primary)]">{env.name}</span>
-                    </div>
-                ),
-              },
-              {
-                key: 'targets',
-                header: 'Targets',
-                className: 'w-32',
-                render: (env) => (
-                  <span className="flex items-center gap-1.5 text-[var(--text-secondary)]">
-                    <Target className="w-3.5 h-3.5" />
-                    {env.targets}
-                  </span>
-                ),
-              },
-              {
-                key: 'nav',
-                header: '',
-                className: 'w-10',
-                render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-              },
-            ]}
-            data={envs}
-            keyFn={env => env.name}
-            onRowClick={onSelectEnv}
-          />
-        ) : (
-          <CollectionGrid>
-            {envs.map(env => (
-                <Card key={env.name} hover padding="md" className="cursor-pointer" onClick={() => onSelectEnv(env)}>
-                  <EntityIcon kind="environment" className="mb-3" />
-                  <div className="text-sm font-medium text-[var(--text-primary)]">{env.name}</div>
-                  <div className="flex items-center gap-1.5 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                    <Target className="w-3 h-3" />
-                    {env.targets} target{env.targets !== 1 ? 's' : ''}
-                  </div>
-                </Card>
-              )
-            )}
-          </CollectionGrid>
-        )}
-    </Page>
+    <EnvironmentList
+      eyebrow={workspace.name}
+      title={serviceLabel}
+      description="Pick an environment to stream this service's logs."
+      sourceKey={`${workspace.name}/${serviceName}`}
+      load={() => listServiceEnvironments(workspace.name, serviceName)}
+      onSelect={onSelectEnv}
+      layoutKey="avalok-svc-env-layout"
+      emptyDescription="This service isn't deployed to any environment."
+    />
   )
 }

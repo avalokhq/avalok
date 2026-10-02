@@ -1,16 +1,18 @@
-import { useState, useEffect } from 'react'
-import { ChevronRight, RefreshCw, Shield } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { RefreshCw, Shield, Box } from 'lucide-react'
 import { cn } from '../../lib/cn'
+import { plural } from '../../lib/format'
+import { toneText, type Tone } from '../../lib/statusTone'
 import { adminListResourceNamespaces, adminGetResourceOverview } from '../../lib/api'
 import type { NamespaceInfo, ResourceOverview } from '../../lib/api'
+import type { DotStatus } from '../ui/StatusDot'
 import PageHeader from '../ui/PageHeader'
 import Card from '../ui/Card'
 import Alert from '../ui/Alert'
+import Button from '../ui/Button'
 import EmptyState from '../ui/EmptyState'
 import IconButton from '../ui/IconButton'
-import LayoutToggle from '../ui/LayoutToggle'
-import CollectionGrid from '../ui/CollectionGrid'
-import { useLayoutToggle } from '../../lib/useLayoutToggle'
+import EntityCollection from '../ui/EntityCollection'
 import Page from '../Layout/Page'
 
 const K8S_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
@@ -20,14 +22,17 @@ interface Props {
   onSelect: (namespace: string) => void
 }
 
-const STATUS_DOT: Record<string, string> = {
-  healthy: 'bg-[var(--accent-bright)]',
-  unhealthy: 'bg-red-400',
-  pending: 'bg-amber-400',
-  empty: 'bg-[var(--text-muted)]',
+const NS_STATUS: Record<string, { status: DotStatus; label: string }> = {
+  healthy: { status: 'ok', label: 'Healthy' },
+  unhealthy: { status: 'error', label: 'Unhealthy' },
+  pending: { status: 'warn', label: 'Pending' },
 }
 
-function OverviewHeader({ overview, onRefresh, refreshing }: { overview: ResourceOverview; onRefresh: () => void; refreshing: boolean }) {
+function healthTone(percent: number): Tone {
+  return percent >= 90 ? 'success' : percent >= 70 ? 'warning' : 'danger'
+}
+
+function OverviewStrip({ overview }: { overview: ResourceOverview }) {
   const stats = [
     { label: 'Namespaces', value: overview.namespaces },
     { label: 'Pods', value: overview.pods.total },
@@ -37,32 +42,19 @@ function OverviewHeader({ overview, onRefresh, refreshing }: { overview: Resourc
   ]
 
   return (
-    <Card padding="md" className="mb-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-2.5">
-            <img src={K8S_LOGO} alt="" className="w-5 h-5" />
-            <span className="text-sm font-medium text-[var(--text-primary)]">{overview.name}</span>
-          </div>
-          <span className="w-px h-4 bg-[var(--border-default)]" />
-          {stats.map(s => (
-            <div key={s.label} className="flex items-center gap-1.5">
-              <span className="text-sm font-semibold text-[var(--text-primary)] tabular-nums">{s.value}</span>
-              <span className="text-[11px] text-[var(--text-secondary)]">{s.label}</span>
-            </div>
-          ))}
-          <span className="w-px h-4 bg-[var(--border-default)]" />
-          <span className={cn(
-            'text-xs font-medium',
-            overview.health_percent >= 90 ? 'text-emerald-400' : overview.health_percent >= 70 ? 'text-amber-400' : 'text-red-400'
-          )}>
-            <Shield className="w-3 h-3 inline mr-1" />
-            {overview.health_percent}%
-          </span>
+    <Card padding="none" className="mb-6 flex flex-wrap items-stretch divide-x divide-line">
+      {stats.map(s => (
+        <div key={s.label} className="min-w-28 flex-1 px-5 py-4">
+          <div className="text-xs text-fg-muted">{s.label}</div>
+          <div className="mt-1 text-xl font-semibold tracking-tight text-fg tabular-nums">{s.value}</div>
         </div>
-        <IconButton onClick={onRefresh} title="Refresh">
-          <RefreshCw className={cn('w-3.5 h-3.5', refreshing && 'animate-spin')} />
-        </IconButton>
+      ))}
+      <div className="min-w-28 flex-1 px-5 py-4">
+        <div className="text-xs text-fg-muted">Health</div>
+        <div className={cn('mt-1 flex items-center gap-1.5 text-xl font-semibold tracking-tight tabular-nums', toneText[healthTone(overview.health_percent)])}>
+          <Shield className="size-4" />
+          {overview.health_percent}%
+        </div>
       </div>
     </Card>
   )
@@ -73,13 +65,10 @@ export default function ResourceNamespacesView({ resourceName, onSelect }: Props
   const [overview, setOverview] = useState<ResourceOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState('')
-  const { layout, changeLayout } = useLayoutToggle('avalok-res-ns-layout')
+  const [error, setError] = useState<string | null>(null)
 
-  function load(showRefresh?: boolean) {
-    if (showRefresh) setRefreshing(true)
-    else setLoading(true)
-
+  const load = useCallback(() => {
+    setRefreshing(true)
     Promise.all([
       adminListResourceNamespaces(resourceName),
       adminGetResourceOverview(resourceName),
@@ -87,88 +76,72 @@ export default function ResourceNamespacesView({ resourceName, onSelect }: Props
       .then(([ns, ov]) => {
         setNamespaces(ns || [])
         setOverview(ov)
-        setError('')
+        setError(null)
       })
-      .catch(() => setError('Failed to load cluster data'))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load cluster data'))
       .finally(() => {
         setLoading(false)
         setRefreshing(false)
       })
-  }
+  }, [resourceName])
 
-  useEffect(() => { load() }, [resourceName])
-
-  if (loading) {
-    return (
-      <Page>
-          <div className="skeleton h-12 rounded-xl mb-6" />
-          <div className="grid gap-1.5">
-            {Array.from({ length: 12 }).map((_, i) => <div key={i} className="skeleton h-10 rounded-xl" />)}
-          </div>
-      </Page>
-    )
-  }
+  useEffect(() => { load() }, [load])
 
   return (
     <Page>
-        <PageHeader
-          title={resourceName}
-          description={`${namespaces.length} namespace${namespaces.length !== 1 ? 's' : ''}`}
-          actions={<LayoutToggle layout={layout} onChange={changeLayout} />}
-        />
+      <PageHeader
+        eyebrow="Kubernetes"
+        title={resourceName}
+        description={loading ? 'Loading namespaces…' : `${plural(namespaces.length, 'namespace')} · pick one to see its workloads`}
+        actions={
+          <IconButton label="Refresh" size="md" onClick={load} disabled={refreshing}>
+            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+          </IconButton>
+        }
+      />
 
-        {error && <Alert className="mb-4">{error}</Alert>}
+      {error && (
+        <Alert tone="danger" title="Couldn't load cluster data" className="mb-6"
+          action={<Button size="sm" variant="secondary" onClick={load} loading={refreshing}>Retry</Button>}>
+          {error}
+        </Alert>
+      )}
 
-        {overview && (
-          <OverviewHeader overview={overview} onRefresh={() => load(true)} refreshing={refreshing} />
+      {loading ? (
+        <div className="skeleton mb-6 h-20 rounded-card" />
+      ) : overview && <OverviewStrip overview={overview} />}
+
+      <EntityCollection
+        items={namespaces}
+        keyFn={ns => ns.name}
+        kind="resource"
+        kindLabel={() => 'Namespace'}
+        name={ns => ns.name}
+        icon={() => <img src={K8S_LOGO} alt="" />}
+        status={ns => NS_STATUS[ns.status] ?? { status: 'idle', label: 'No workloads' }}
+        meta={ns => (
+          <span className="flex items-center gap-3 tabular-nums">
+            <span title="Pods" className="flex items-center gap-1"><Box className="size-3.5" />{ns.pods.total}</span>
+            <span title="Deployments">{ns.deployments} deploy</span>
+            <span title="StatefulSets">{ns.statefulsets} sts</span>
+            <span title="DaemonSets">{ns.daemonsets} ds</span>
+          </span>
         )}
-
-        {namespaces.length === 0 ? (
+        metaHeader="Workloads"
+        searchPlaceholder="Filter namespaces…"
+        actionLabel="Workloads"
+        onOpen={ns => () => onSelect(ns.name)}
+        layoutKey="avalok-res-ns-layout"
+        loading={loading}
+        noun="namespaces"
+        empty={!error && (
           <EmptyState
-            icon={<img src={K8S_LOGO} alt="" className="w-7 h-7 opacity-40" />}
+            icon={<img src={K8S_LOGO} alt="" className="size-7 opacity-60" />}
             title="No namespaces found"
             description="Check the cluster connection and try again."
           />
-        ) : layout === 'list' ? (
-          <div className="grid gap-1.5">
-            {namespaces.map(ns => (
-              <Card key={ns.name} hover padding="none" className="cursor-pointer" onClick={() => onSelect(ns.name)}>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={cn('w-2 h-2 rounded-full shrink-0', STATUS_DOT[ns.status] || STATUS_DOT.empty, ns.status === 'healthy' && 'status-pulse')} />
-                    <span className="text-[13px] font-medium text-[var(--text-primary)] truncate">{ns.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0 ml-3">
-                    <div className="flex items-center gap-2.5 text-[11px] text-[var(--text-secondary)] tabular-nums">
-                      <span title="Pods">{ns.pods.total}p</span>
-                      <span title="Deployments">{ns.deployments}d</span>
-                      <span title="StatefulSets">{ns.statefulsets}s</span>
-                      <span title="DaemonSets">{ns.daemonsets}ds</span>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <CollectionGrid>
-            {namespaces.map(ns => (
-              <Card key={ns.name} hover padding="md" className="cursor-pointer" onClick={() => onSelect(ns.name)}>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className={cn('w-2 h-2 rounded-full shrink-0', STATUS_DOT[ns.status] || STATUS_DOT.empty, ns.status === 'healthy' && 'status-pulse')} />
-                  <span className="text-sm font-medium text-[var(--text-primary)] truncate">{ns.name}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--text-secondary)] tabular-nums">
-                  <span title="Pods">{ns.pods.total} pods</span>
-                  <span title="Deployments">{ns.deployments} deploy</span>
-                  <span title="StatefulSets">{ns.statefulsets} sts</span>
-                  <span title="DaemonSets">{ns.daemonsets} ds</span>
-                </div>
-              </Card>
-            ))}
-          </CollectionGrid>
         )}
+      />
     </Page>
   )
 }
