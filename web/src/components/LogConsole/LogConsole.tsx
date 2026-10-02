@@ -159,22 +159,22 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Console header */}
-      <div className="flex items-center gap-3 px-4 h-10 shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
+      <div className="flex items-center gap-3 px-4 h-11 shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
         <button
           onClick={onBack}
           className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
 
         <div className="flex items-center gap-2 min-w-0">
           <span className={cn(
-            'w-2 h-2 rounded-full shrink-0',
+            'w-2.5 h-2.5 rounded-full shrink-0',
             connected ? 'bg-[var(--accent-bright)]' : isFileMode && fileData.loading ? 'bg-amber-400 animate-pulse' : 'bg-red-400'
           )} />
           <span className="text-base text-[var(--text-primary)] truncate">{label}</span>
           {workspace && (
-            <span className="text-xs text-[var(--text-muted)] shrink-0">
+            <span className="text-sm text-[var(--text-muted)] shrink-0">
               {workspace} / {environment} / {service}
             </span>
           )}
@@ -188,7 +188,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
               className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors"
               title="Toggle columns"
             >
-              <Columns3 className="w-3.5 h-3.5" />
+              <Columns3 className="w-4 h-4" />
             </button>
             {showColumnMenu && (
               <>
@@ -198,14 +198,14 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
                     onClick={() => setShowTimestamp(v => !v)}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                   >
-                    {showTimestamp ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                    {showTimestamp ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                     Timestamp
                   </button>
                   <button
                     onClick={() => setShowSource(v => !v)}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                   >
-                    {showSource ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                    {showSource ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                     Source
                   </button>
                 </div>
@@ -219,7 +219,7 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
               className="p-1.5 rounded-md text-[var(--text-muted)] hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
               title="Browse log files"
             >
-              <FolderOpen className="w-3.5 h-3.5" />
+              <FolderOpen className="w-4 h-4" />
             </button>
           )}
 
@@ -228,11 +228,11 @@ export default function LogConsole({ workspace, environment, service, streamUrl,
             className="p-1.5 rounded-md text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
             title="Export logs"
           >
-            <ArrowDownToLine className="w-3.5 h-3.5" />
+            <ArrowDownToLine className="w-4 h-4" />
           </button>
 
           {paused && (
-            <span className="text-xs text-red-400 bg-red-500/10 px-2 py-0.5 rounded">
+            <span className="text-sm text-red-400 bg-red-500/10 px-2 py-0.5 rounded">
               Paused
             </span>
           )}

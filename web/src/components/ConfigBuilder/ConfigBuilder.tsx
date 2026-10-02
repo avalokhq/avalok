@@ -1108,6 +1108,7 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
         ) : (
           <AvalokWordmark height={22} />
         )}
+        <span className="text-[10px] text-[var(--text-muted)] italic">observe with clarity</span>
         <div className="w-px h-5 bg-[var(--border-default)]" />
         <span className="text-sm font-medium text-[var(--text-primary)]">
           {editWorkspace ? 'Edit Workspace' : editService ? 'Edit Service' : editEnvironment ? 'Edit Environment' : onImportToServer ? (mode === 'service' ? 'Create Service' : mode === 'environment' ? 'Create Environment' : 'Create Workspace') : 'Config Builder'}

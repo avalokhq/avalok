@@ -25,10 +25,13 @@ const themeOptions: { value: Theme; icon: React.FC<{ className?: string }> }[] =
 export default function Header({ theme, onThemeChange, breadcrumbs, connected, onNavigateHome, onLogout, currentUser, onSearchOpen }: Props) {
   return (
     <header className="h-14 shrink-0 flex items-center px-5 gap-4 brand-header">
-      {/* Logo */}
-      <button onClick={onNavigateHome} className="cursor-pointer hover:opacity-70 transition-opacity shrink-0">
-        <AvalokWordmark height={22} forceInvert />
-      </button>
+      {/* Logo + tagline */}
+      <div className="flex items-center gap-3 shrink-0">
+        <button onClick={onNavigateHome} className="cursor-pointer hover:opacity-70 transition-opacity">
+          <AvalokWordmark height={22} forceInvert />
+        </button>
+        <span className="text-[11px] text-white/40 italic hidden sm:inline">observe with clarity</span>
+      </div>
 
       {/* Search trigger */}
       {onSearchOpen && (

@@ -52,10 +52,10 @@ html, html.dark {
   --border-hover: rgba(90,184,148,0.30);
   --border-strong: #4a4a4f;
 
-  --text-primary: #cccccc;
-  --text-secondary: #969696;
-  --text-muted: #737373;
-  --text-subtle: #808080;
+  --text-primary: #e5e5e5;
+  --text-secondary: #b0b0b0;
+  --text-muted: #8c8c8c;
+  --text-subtle: #999999;
   --text-accent: var(--color-accent-300);
   --accent-bright: var(--color-accent-500);
 

@@ -71,23 +71,23 @@ export default function LogToolbar({
   }
 
   return (
-    <div className="flex items-center gap-2 px-3 h-10 shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
+    <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
       {/* Search */}
       <div className="relative flex-1 max-w-xs">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)]" />
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
         <input
           type="text"
           value={search}
           onChange={e => onSearchChange(e.target.value)}
           placeholder="Search logs..."
-          className="w-full pl-8 pr-7 py-1 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
+          className="w-full pl-8 pr-7 py-1 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
         />
         {search && (
           <button
             onClick={() => onSearchChange('')}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           >
-            <X className="w-3 h-3" />
+            <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -101,14 +101,14 @@ export default function LogToolbar({
               key={l.key}
               onClick={() => onToggleLevel(l.key)}
               className={cn(
-                'flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors',
+                'flex items-center gap-1 px-2 py-0.5 rounded text-sm transition-colors',
                 active
                   ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
               )}
               title={`${active ? 'Hide' : 'Show'} ${l.label} logs`}
             >
-              <span className={cn('w-1.5 h-1.5 rounded-full', active ? l.color : 'bg-chrome-700')} />
+              <span className={cn('w-2 h-2 rounded-full', active ? l.color : 'bg-chrome-700')} />
               {l.label}
             </button>
           )
@@ -125,7 +125,7 @@ export default function LogToolbar({
                 key={m.key}
                 onClick={() => onViewModeChange!(m.key)}
                 className={cn(
-                  'px-2 py-0.5 rounded text-xs font-medium transition-colors',
+                  'px-2 py-0.5 rounded text-sm font-medium transition-colors',
                   active
                     ? 'bg-accent-500/20 text-accent-400'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
@@ -161,9 +161,9 @@ export default function LogToolbar({
           )}
           title="Decrease font size"
         >
-          <Minus className="w-3 h-3" />
+          <Minus className="w-3.5 h-3.5" />
         </button>
-        <span className="text-[10px] text-[var(--text-muted)] tabular-nums w-5 text-center">{fontSize}</span>
+        <span className="text-xs text-[var(--text-muted)] tabular-nums w-5 text-center">{fontSize}</span>
         <button
           onClick={() => canIncrease && onFontSizeChange(FONT_SIZES[sizeIdx + 1])}
           disabled={!canIncrease}
@@ -175,7 +175,7 @@ export default function LogToolbar({
           )}
           title="Increase font size"
         >
-          <Plus className="w-3 h-3" />
+          <Plus className="w-3.5 h-3.5" />
         </button>
       </div>
 
@@ -190,7 +190,7 @@ export default function LogToolbar({
         )}
         title={wrap ? 'Wrap ON' : 'Wrap OFF'}
       >
-        <WrapText className="w-3.5 h-3.5" />
+        <WrapText className="w-4 h-4" />
       </button>
 
       {/* Relative line numbers toggle */}
@@ -205,12 +205,12 @@ export default function LogToolbar({
           )}
           title={relativeLineNumbers ? 'Relative line numbers (click for sequential)' : 'Sequential line numbers (click for relative)'}
         >
-          <Hash className="w-3.5 h-3.5" />
+          <Hash className="w-4 h-4" />
         </button>
       )}
 
       {/* Line count */}
-      <span className="text-xs text-[var(--text-muted)] tabular-nums">
+      <span className="text-sm text-[var(--text-muted)] tabular-nums">
         {lineCount === totalCount
           ? `${totalCount.toLocaleString()} lines`
           : `${lineCount.toLocaleString()} / ${totalCount.toLocaleString()}`
@@ -225,7 +225,7 @@ export default function LogToolbar({
           className="p-1.5 rounded-md text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
           title="Scroll to bottom"
         >
-          <ArrowDown className="w-3.5 h-3.5" />
+          <ArrowDown className="w-4 h-4" />
         </button>
 
         {/* Follow mode toggle */}
@@ -239,7 +239,7 @@ export default function LogToolbar({
           )}
           title={follow ? 'Follow mode ON' : 'Follow mode OFF'}
         >
-          <ChevronsDown className="w-3.5 h-3.5" />
+          <ChevronsDown className="w-4 h-4" />
         </button>
 
         {/* Pause / Play */}
@@ -253,7 +253,7 @@ export default function LogToolbar({
           )}
           title={paused ? 'Resume' : 'Pause'}
         >
-          {paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+          {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
         </button>
 
         {/* Clear */}
@@ -262,7 +262,7 @@ export default function LogToolbar({
           className="p-1.5 rounded-md text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
           title="Clear logs"
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Trash2 className="w-4 h-4" />
         </button>
       </div>
     </div>

@@ -47,8 +47,9 @@ export default function RegisterPage({ onBack }: Props) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-premium">
         <div className="w-full max-w-sm px-4">
-          <div className="flex justify-center mb-8">
+          <div className="flex flex-col items-center mb-8 gap-2">
             <AvalokWordmark height={28} />
+            <span className="text-xs text-[var(--text-muted)] italic">observe with clarity</span>
           </div>
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 text-center">
             <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
