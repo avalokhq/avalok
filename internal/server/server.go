@@ -133,6 +133,7 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("PUT /api/admin/credentials/{name}", s.adminOnly(s.handleUpdateCredential))
 		s.mux.HandleFunc("DELETE /api/admin/credentials/{name}", s.adminOnly(s.handleDeleteCredential))
 		s.mux.HandleFunc("POST /api/admin/credentials/{name}/test", s.adminOnly(s.handleTestCredential))
+		s.mux.HandleFunc("GET /api/admin/credentials/{name}/usage", s.adminOnly(s.handleCredentialUsage))
 
 		s.mux.HandleFunc("GET /api/admin/resources", s.adminOrResourceScoped(s.handleListResources))
 		s.mux.HandleFunc("GET /api/admin/resources/{name}", s.adminOrResourceScoped(s.handleGetResource))

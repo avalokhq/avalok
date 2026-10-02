@@ -221,6 +221,18 @@ export async function adminUpdateCredential(name: string, data: { config?: Recor
   return fetchAPI(`/admin/credentials/${name}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
+export interface CredentialUsage {
+  kind: 'resource' | 'workspace' | 'environment' | 'service'
+  name: string
+  path: string
+}
+
+export async function adminCredentialUsage(name: string): Promise<CredentialUsage[]> {
+  const res = await fetchAPI<{ used_by: CredentialUsage[] }>(`/admin/credentials/${name}/usage`)
+  return res.used_by
+}
+
+// Fails with 409 while anything still references the credential.
 export async function adminDeleteCredential(name: string): Promise<void> {
   await fetchAPI(`/admin/credentials/${name}`, { method: 'DELETE' })
 }

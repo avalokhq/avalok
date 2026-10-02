@@ -171,7 +171,8 @@ PUT /api/admin/users/{username}
 | `POST` | `/api/admin/credentials` | Create a credential profile. |
 | `GET` | `/api/admin/credentials/{name}` | Get credential details. |
 | `PUT` | `/api/admin/credentials/{name}` | Update a credential. |
-| `DELETE` | `/api/admin/credentials/{name}` | Delete a credential. |
+| `DELETE` | `/api/admin/credentials/{name}` | Delete a credential. Returns `409` with `used_by` if anything still references it. |
+| `GET` | `/api/admin/credentials/{name}/usage` | List the resources, workspaces, environments and services that reference a credential. |
 | `POST` | `/api/admin/credentials/{name}/test` | Test credential connectivity. |
 
 ## Admin: Resources

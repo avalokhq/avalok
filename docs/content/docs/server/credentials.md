@@ -239,7 +239,32 @@ DELETE /api/admin/credentials/{name}
 Authorization: Bearer <token>
 ```
 
-If the credential is referenced by one or more resources, the delete request will fail with a `409 Conflict` response listing the dependent resources. Remove or reassign the resources first, or use `?force=true` to delete anyway.
+A credential can't be deleted while anything uses it. That covers:
+
+- resources
+- workspace and standalone-environment targets
+- standalone-service targets
+- service configs and per-target service overrides that set `credential_profile`
+
+Repoint each one to another credential, or remove it, before deleting. There is no force option.
+
+To see where a credential is used:
+
+```
+GET /api/admin/credentials/{name}/usage
+```
+
+```json
+{
+  "used_by": [
+    { "kind": "workspace", "name": "shop", "path": "production › target web-1" },
+    { "kind": "service", "name": "nginx-logs", "path": "target nginx-host" },
+    { "kind": "resource", "name": "prod-cluster", "path": "" }
+  ]
+}
+```
+
+`kind` is one of `resource`, `workspace`, `environment` or `service`. A delete request for a credential that is still in use returns `409 Conflict` with the same `used_by` list alongside `error`. In the admin UI, **Delete** checks first and shows that list instead of the confirmation dialog.
 
 ## Using Credentials in Workspaces
 

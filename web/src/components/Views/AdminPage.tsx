@@ -29,13 +29,13 @@ import ProviderIcon from '../ui/ProviderIcon'
 const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import {
   adminListUsers, adminApproveUser, adminDisableUser, adminDeleteUser, adminCreateUser, adminUpdateUser, adminResetPassword,
-  adminListCredentials, adminGetCredential, adminCreateCredential, adminUpdateCredential, adminDeleteCredential, adminTestCredential,
+  adminListCredentials, adminGetCredential, adminCreateCredential, adminUpdateCredential, adminDeleteCredential, adminTestCredential, adminCredentialUsage,
   adminListResources, adminListResourceNamespaces,
   adminGetSettings, adminUpdateSettings,
   listWorkspaces, listEnvironments, listServices,
   listStandaloneEnvs, listStandaloneEnvServices, listStandaloneServices,
 } from '../../lib/api'
-import type { AdminUser, AdminCredential, AdminResource, NamespaceInfo, CredentialTestResult, CredentialTestStep } from '../../lib/api'
+import type { AdminUser, AdminCredential, CredentialUsage, AdminResource, NamespaceInfo, CredentialTestResult, CredentialTestStep } from '../../lib/api'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from '../../lib/types'
 import {
   type StorageField, type AzureAuthMethod,
@@ -765,6 +765,7 @@ function CredentialsPanel() {
   const [testResults, setTestResults] = useState<Record<string, TestState>>({})
   const [hostPrompt, setHostPrompt] = useState<AdminCredential | null>(null)
   const [reportFor, setReportFor] = useState<string | null>(null)
+  const [inUse, setInUse] = useState<{ name: string; usages: CredentialUsage[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const confirm = useConfirm()
   const toast = useToast()
@@ -783,16 +784,34 @@ function CredentialsPanel() {
 
   useEffect(() => { load() }, [])
 
+  // Returns true if the credential is referenced anywhere (and shows where).
+  async function blockIfInUse(name: string): Promise<boolean> {
+    const usages = await adminCredentialUsage(name)
+    if (usages.length === 0) return false
+    setInUse({ name, usages })
+    return true
+  }
+
   async function handleDelete(name: string) {
+    try {
+      if (await blockIfInUse(name)) return
+    } catch (err) {
+      toast.error("Couldn't check where this credential is used", err instanceof Error ? err.message : undefined)
+      return
+    }
     const ok = await confirm({
       title: `Delete credential "${name}"?`,
-      description: 'Services and resources that reference this profile will fail to connect until they are updated.',
+      description: "Nothing references this profile. This can't be undone.",
       confirmLabel: 'Delete',
       danger: true,
     })
     if (!ok) return
     try { await adminDeleteCredential(name); toast.success(`Deleted ${name}`); load() }
-    catch (err) { toast.error("Couldn't delete credential", err instanceof Error ? err.message : undefined) }
+    catch (err) {
+      // Something may have started using it after the check above.
+      if (await blockIfInUse(name).catch(() => false)) return
+      toast.error("Couldn't delete credential", err instanceof Error ? err.message : undefined)
+    }
   }
 
   async function handleEdit(name: string) {
@@ -926,6 +945,7 @@ function CredentialsPanel() {
           <CredentialTestReport result={report} />
         </Modal>
       )}
+      {inUse && <CredentialInUseModal {...inUse} onClose={() => setInUse(null)} />}
 
       <DataTable
         columns={columns}
@@ -944,6 +964,37 @@ function CredentialsPanel() {
         }
       />
     </div>
+  )
+}
+
+const USAGE_KIND_LABEL: Record<CredentialUsage['kind'], string> = {
+  resource: 'Resource',
+  workspace: 'Workspace',
+  environment: 'Environment',
+  service: 'Service',
+}
+
+function CredentialInUseModal({ name, usages, onClose }: { name: string; usages: CredentialUsage[]; onClose: () => void }) {
+  return (
+    <Modal
+      title={`Can't delete "${name}"`}
+      description={`It's used in ${plural(usages.length, 'place')}. Switch these to another credential or remove them, then try again.`}
+      size="md"
+      onClose={onClose}
+      footer={<Button variant="secondary" type="button" onClick={onClose}>Close</Button>}
+    >
+      <ul className="divide-y divide-line overflow-hidden rounded-control border border-line">
+        {usages.map((u, i) => (
+          <li key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
+            <Badge tone="neutral" size="sm">{USAGE_KIND_LABEL[u.kind]}</Badge>
+            <span className="min-w-0 truncate">
+              <span className="font-medium text-fg">{u.name}</span>
+              {u.path && <span className="text-fg-muted"> › {u.path}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Modal>
   )
 }
 

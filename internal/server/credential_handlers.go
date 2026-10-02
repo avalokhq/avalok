@@ -237,15 +237,18 @@ func (s *Server) handleDeleteCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	resources, _ := s.store.ListResources(r.Context())
-	var dependents []string
-	for _, res := range resources {
-		if profile, _ := res.Config["credential_profile"].(string); profile == name {
-			dependents = append(dependents, res.Name)
-		}
+	// No force override: anything still pointing at the profile would fail to
+	// connect. Callers must repoint or remove those first.
+	usages, err := s.credentialUsages(r.Context(), name)
+	if err != nil {
+		writeInternalError(w, "failed to check credential usage", err)
+		return
 	}
-	if len(dependents) > 0 && r.URL.Query().Get("force") != "true" {
-		writeError(w, http.StatusConflict, fmt.Sprintf("credential is used by resources: %s", strings.Join(dependents, ", ")))
+	if len(usages) > 0 {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":   fmt.Sprintf("credential is in use in %d place(s); switch or remove them before deleting", len(usages)),
+			"used_by": usages,
+		})
 		return
 	}
 
