@@ -1,4 +1,5 @@
 import { AvalokWordmark } from '../ui/AvalokLogo'
+import LogStreamBackground from './LogStreamBackground'
 
 interface AuthLayoutProps {
   title?: string
@@ -8,10 +9,11 @@ interface AuthLayoutProps {
   footer?: React.ReactNode
 }
 
-/** Centered card on the canvas glow, shared by sign-in and registration. */
+/** Centered card on the canvas glow over a faint scrolling log stream, shared by sign-in and registration. */
 export default function AuthLayout({ title, description, children, footer }: AuthLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-premium px-4 py-12">
+      <LogStreamBackground />
       <div className="w-full max-w-[400px] animate-fade-up">
         <div className="mb-8 flex flex-col items-center gap-3">
           <AvalokWordmark height={32} />

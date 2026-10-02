@@ -340,6 +340,28 @@ body {
   z-index: 1;
 }
 
+/* ── Auth log-stream backdrop (decorative columns of scrolling log lines) ── */
+.bg-premium > .log-stream-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Quiet behind the card, full strength toward the edges */
+  mask-image: radial-gradient(ellipse 45% 50% at 50% 50%, rgb(0 0 0 / 0.2) 0%, #000 100%);
+}
+@keyframes log-stream {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -50%, 0); }
+}
+.log-stream {
+  animation: log-stream var(--log-stream-duration, 120s) linear infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .log-stream { animation: none !important; }
+}
+
 /* ── Skeleton shimmer ── */
 @keyframes skeleton-shimmer {
   0% { background-position: 100% 0; }
