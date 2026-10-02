@@ -420,8 +420,15 @@ body {
   width: 12px;
 }
 
-.log-row-alt {
-  background-color: color-mix(in srgb, var(--fg-muted) 6%, transparent);
+/* Row separation in the log table: hairline divider plus zebra stripe. In the components
+   layer so hover:bg-hover and border utilities on the row still win. */
+@layer components {
+  .log-row {
+    border-bottom: 1px solid var(--line);
+  }
+  .log-row-alt {
+    background-color: color-mix(in srgb, var(--fg-muted) 11%, transparent);
+  }
 }
 
 @keyframes log-blink {

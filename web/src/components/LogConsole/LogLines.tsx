@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useLayoutEffect, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
@@ -72,6 +72,20 @@ export default function LogLines<T extends LogEntry>({ view, connected, paused, 
     scrollPaddingStart: HEADER_HEIGHT,
   })
 
+  // Unwrapped rows are absolutely positioned, so the container cannot size to them. Track the
+  // widest row drawn so far and stretch every row to it; stripes and dividers then span the
+  // whole horizontal scroll instead of stopping at each line's own text.
+  const contentRef = useRef<HTMLDivElement>(null)
+  const widthKey = `${wrap}|${fontSize}|${[...columns].join()}|${lineNumWidth}`
+  const [measured, setMeasured] = useState({ key: widthKey, width: 0 })
+  const contentWidth = wrap || measured.key !== widthKey ? 0 : measured.width
+  useLayoutEffect(() => {
+    if (wrap) return
+    let max = 0
+    contentRef.current?.querySelectorAll<HTMLElement>('[data-index]').forEach(row => { max = Math.max(max, row.scrollWidth) })
+    if (max > contentWidth) setMeasured({ key: widthKey, width: max })
+  }, [wrap, widthKey, contentWidth, logs, virtualizer.range?.startIndex, virtualizer.range?.endIndex])
+
   useEffect(() => {
     if (following && logs.length > 0) {
       virtualizer.scrollToIndex(logs.length - 1, { align: 'end' })
@@ -122,7 +136,7 @@ export default function LogLines<T extends LogEntry>({ view, connected, paused, 
         className="log-surface log-scroll h-full overflow-auto font-mono focus-visible:outline-none"
         style={{ fontSize: `${fontSize}px` }}
       >
-        <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+        <div ref={contentRef} className="relative min-w-full" style={{ height: virtualizer.getTotalSize(), width: contentWidth || undefined }}>
           {/* Column header */}
           <div
             className="sticky top-0 z-10 flex min-w-full items-center border-b border-line bg-surface-sunken px-3 font-sans text-2xs font-medium uppercase tracking-wide text-fg-muted"
@@ -148,11 +162,11 @@ export default function LogLines<T extends LogEntry>({ view, connected, paused, 
                 data-index={vRow.index}
                 ref={virtualizer.measureElement}
                 className={cn(
-                  'absolute top-0 left-0 flex w-full min-w-max items-start px-3 transition-colors hover:bg-hover',
-                  wrap && 'min-w-0',
+                  'log-row absolute top-0 left-0 flex w-full items-start px-3 transition-colors hover:bg-hover',
+                  !wrap && 'min-w-max',
                   vRow.index % 2 === 1 && 'log-row-alt',
                   entry._blinkAt != null && now - entry._blinkAt < BLINK_DURATION && 'log-new-line',
-                  relativeLineNumbers && lineNum === 0 && 'border-b border-dashed border-info-line',
+                  relativeLineNumbers && lineNum === 0 && 'border-dashed border-info-line',
                 )}
                 style={{ transform: `translateY(${vRow.start}px)`, lineHeight: `${rowHeight}px` }}
               >
