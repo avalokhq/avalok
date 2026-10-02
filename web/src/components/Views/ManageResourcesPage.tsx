@@ -1,23 +1,24 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Pencil, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
+import Page from '../Layout/Page'
+import { ArrowRight, Plus, PlugZap, RefreshCw, Trash2, Pencil, ChevronDown, ChevronRight, Copy, Check, X } from 'lucide-react'
 import { EntityIconRaw } from '../ui/EntityIcon'
 import { cn } from '../../lib/cn'
 import PageHeader from '../ui/PageHeader'
 import Tabs from '../ui/Tabs'
 import Card from '../ui/Card'
-import CollectionGrid from '../ui/CollectionGrid'
-import DataTable from '../ui/DataTable'
-import LayoutToggle from '../ui/LayoutToggle'
-import { useLayoutToggle } from '../../lib/useLayoutToggle'
+import EntityCollection from '../ui/EntityCollection'
+import type { MenuItem } from '../ui/Dropdown'
+import type { DotStatus } from '../ui/StatusDot'
+import { useToast } from '../ui/Feedback'
+import { useDeleteEntity } from '../../lib/useDeleteEntity'
 import Button from '../ui/Button'
 import Alert from '../ui/Alert'
-import Spinner from '../ui/Spinner'
 import EmptyState from '../ui/EmptyState'
 import FormField from '../ui/FormField'
 import IconButton from '../ui/IconButton'
 import Toggle from '../ui/Toggle'
 import Input, { Textarea, Select } from '../ui/Input'
-import ProviderIcon from '../ui/ProviderIcon'
+import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
 import {
   adminListResources, adminGetResource, adminCreateResource, adminUpdateResource,
   adminDeleteResource, adminTestResource, adminListCredentials,
@@ -35,36 +36,46 @@ interface Props {
   onNavigateResource?: (name: string, description: string, type: string) => void
 }
 
+type TestResult = { status: string; error?: string; message?: string }
+
 export default function ManageResourcesPage({ onNavigateResource }: Props) {
   const [resources, setResources] = useState<AdminResource[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [editingResource, setEditingResource] = useState<AdminResource | null>(null)
-  const [testResults, setTestResults] = useState<Record<string, { status: string; error?: string; message?: string }>>({})
-  const [error, setError] = useState('')
-  const { layout, changeLayout } = useLayoutToggle('avalok-manage-res-layout')
+  const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
+  const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
 
-  async function load() {
-    setLoading(true)
-    try { setResources(await adminListResources() || []) } catch { setError('Failed to load resources') }
-    finally { setLoading(false) }
+  function load() {
+    setRefreshing(true)
+    adminListResources()
+      .then(res => { setResources(res || []); setError(null) })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load resources'))
+      .finally(() => { setLoading(false); setRefreshing(false) })
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
-  async function handleDelete(name: string, e?: React.MouseEvent) {
-    e?.stopPropagation()
-    if (!confirm(`Delete resource "${name}"? This will not affect the cluster itself.`)) return
-    try { await adminDeleteResource(name); load() } catch { setError('Failed to delete resource') }
-  }
+  const { busyName, deleteEntity } = useDeleteEntity({
+    noun: 'resource',
+    remove: adminDeleteResource,
+    detail: 'Avalok forgets this connection. The cluster or storage itself is not affected.',
+    onDeleted: load,
+  })
 
   async function handleTest(name: string) {
     setTestResults(prev => ({ ...prev, [name]: { status: 'testing' } }))
     try {
       const result = await adminTestResource(name)
       setTestResults(prev => ({ ...prev, [name]: result }))
-    } catch {
+      if (result.status === 'ok') toast.success(`${name} is reachable`, result.message)
+      else toast.error(`${name} failed the connection test`, result.error)
+    } catch (err) {
       setTestResults(prev => ({ ...prev, [name]: { status: 'error', error: 'Test failed' } }))
+      toast.error(`Couldn't test ${name}`, err instanceof Error ? err.message : undefined)
     }
   }
 
@@ -73,131 +84,96 @@ export default function ManageResourcesPage({ onNavigateResource }: Props) {
       const res = await adminGetResource(name)
       setEditingResource(res)
       setShowCreate(false)
-    } catch { setError('Failed to load resource details') }
+    } catch (err) {
+      toast.error(`Couldn't load ${name}`, err instanceof Error ? err.message : undefined)
+    }
+  }
+
+  function testStatus(res: AdminResource): { status: DotStatus; label: string } | undefined {
+    const t = testResults[res.name]
+    if (!t) return undefined
+    if (t.status === 'testing') return { status: 'warn', label: 'Testing connection…' }
+    if (t.status === 'ok') return { status: 'ok', label: t.message || 'Connected' }
+    return { status: 'error', label: t.error || 'Connection failed' }
+  }
+
+  function menuItems(res: AdminResource): MenuItem[] {
+    return [
+      ...(onNavigateResource ? [{ label: 'Explore', icon: <ArrowRight />, onClick: () => onNavigateResource(res.name, res.description || '', res.type) }] : []),
+      { label: 'Test connection', icon: <PlugZap />, disabled: testResults[res.name]?.status === 'testing', onClick: () => handleTest(res.name) },
+      { label: 'Edit', icon: <Pencil />, onClick: () => handleEdit(res.name) },
+      { separator: true as const },
+      { label: 'Delete', icon: <Trash2 />, danger: true, onClick: () => deleteEntity(res.name) },
+    ]
   }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
-        <PageHeader
-          title="Resources"
-          actions={
-            <div className="flex items-center gap-2">
-              <Button onClick={() => { setShowCreate(!showCreate); setEditingResource(null) }}>
-                <Plus className="w-4 h-4" /> Add Resource
-              </Button>
-              <LayoutToggle layout={layout} onChange={changeLayout} />
-            </div>
-          }
-        />
+    <Page>
+      <PageHeader
+        eyebrow="Manage"
+        title="Resources"
+        description="Kubernetes clusters and cloud storage Avalok can browse and stream from."
+        actions={
+          <>
+            <IconButton label="Refresh" size="md" onClick={load} disabled={refreshing}>
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+            </IconButton>
+            <Button
+              variant={showCreate ? 'secondary' : 'primary'}
+              leftIcon={showCreate ? <X /> : <Plus />}
+              onClick={() => { setShowCreate(s => !s); setEditingResource(null) }}
+            >
+              {showCreate ? 'Cancel' : 'Add resource'}
+            </Button>
+          </>
+        }
+      />
 
-        {error && <Alert variant="error" className="mb-4">{error}</Alert>}
+      {error && (
+        <Alert tone="danger" title="Couldn't load resources" className="mb-6"
+          action={<Button size="sm" variant="secondary" onClick={load} loading={refreshing}>Retry</Button>}>
+          {error}
+        </Alert>
+      )}
 
-        {showCreate && <AddResourceForm onDone={() => { setShowCreate(false); load() }} />}
-        {editingResource && <AddResourceForm editing={editingResource} onDone={() => { setEditingResource(null); load() }} />}
+      {showCreate && <AddResourceForm onDone={() => { setShowCreate(false); load() }} />}
+      {editingResource && <AddResourceForm editing={editingResource} onDone={() => { setEditingResource(null); load() }} />}
 
-        {loading ? <Spinner label="Loading resources..." /> : (
-          resources.length > 0 ? (
-            layout === 'list' ? (
-              <DataTable
-                columns={[
-                  {
-                    key: 'name',
-                    header: 'Name',
-                    render: (res: AdminResource) => (
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center shrink-0">
-                          <ProviderIcon provider={res.type} className="w-5 h-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-[var(--text-primary)]">{res.name}</div>
-                          {res.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{res.description}</div>}
-                        </div>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'type',
-                    header: 'Type',
-                    align: 'right' as const,
-                    render: (res: AdminResource) => (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-500/10 text-accent-400 border border-accent-500/20 font-medium">{res.type}</span>
-                    ),
-                  },
-                  {
-                    key: 'actions',
-                    header: '',
-                    className: 'w-32',
-                    render: (res: AdminResource) => (
-                      <div className="flex items-center gap-1 justify-end">
-                        <Button variant="secondary" size="sm" onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleTest(res.name) }}>Test</Button>
-                        <IconButton variant={'accent' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); handleEdit(res.name) }} title="Edit">
-                          <Pencil className="w-4 h-4" />
-                        </IconButton>
-                        <IconButton variant={'danger' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleDelete(res.name, e)} title="Delete">
-                          <Trash2 className="w-4 h-4" />
-                        </IconButton>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: 'arrow',
-                    header: '',
-                    className: 'w-8',
-                    render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-                  },
-                ]}
-                data={resources}
-                keyFn={res => res.name}
-                onRowClick={res => onNavigateResource?.(res.name, res.description || '', res.type)}
-              />
-            ) : (
-              <CollectionGrid>
-                {resources.map(res => (
-                  <Card key={res.name} hover padding="lg" onClick={() => onNavigateResource?.(res.name, res.description || '', res.type)} className="cursor-pointer text-left group">
-                    <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center mb-3">
-                      <ProviderIcon provider={res.type} className="w-5 h-5" />
-                    </div>
-                    <div className="text-sm font-medium text-[var(--text-primary)] truncate">{res.name}</div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{res.description || res.type}</div>
-                    {testResults[res.name] && (
-                      <div className={cn('text-xs mt-1',
-                        testResults[res.name].status === 'ok' ? 'text-emerald-400' :
-                        testResults[res.name].status === 'testing' ? 'text-[var(--text-muted)]' : 'text-red-400'
-                      )}>
-                        {testResults[res.name].status === 'ok'
-                          ? (testResults[res.name].message || 'Connected')
-                          : testResults[res.name].status === 'testing'
-                            ? 'Testing...'
-                            : testResults[res.name].error}
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-500/10 text-accent-400 border border-accent-500/20 font-medium">{res.type}</span>
-                      <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                        <Button variant="secondary" size="sm" onClick={e => { e.stopPropagation(); handleTest(res.name) }}>Test</Button>
-                        <IconButton variant="accent" onClick={e => { e.stopPropagation(); handleEdit(res.name) }} title="Edit">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </IconButton>
-                        <IconButton variant="danger" onClick={e => handleDelete(res.name, e)} title="Delete">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </IconButton>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </CollectionGrid>
-            )
-          ) : (
-            <EmptyState
-              icon={<EntityIconRaw kind="resource" className="w-6 h-6 text-amber-400 opacity-60" />}
-              title="No resources yet"
-              description="Add a Kubernetes cluster or cloud storage to get started."
-            />
-          )
+      <EntityCollection
+        items={resources}
+        keyFn={res => res.name}
+        kind="resource"
+        name={res => res.name}
+        description={res => res.description || ''}
+        icon={res => <ProviderIcon provider={res.type} />}
+        status={testStatus}
+        meta={res => (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ProviderIcon provider={res.type} className="size-3.5 shrink-0" />
+            <span className="truncate">{providerDisplayName(res.type)}</span>
+          </span>
         )}
-      </div>
-    </div>
+        metaHeader="Type"
+        searchText={res => [res.name, res.description, res.type, providerDisplayName(res.type)]}
+        searchPlaceholder="Filter by name, description or type…"
+        actionLabel="Explore"
+        onOpen={onNavigateResource && (res => () => onNavigateResource(res.name, res.description || '', res.type))}
+        menuItems={menuItems}
+        busyKey={busyName}
+        layoutKey="avalok-manage-res-layout"
+        loading={loading}
+        noun="resources"
+        empty={!error && !showCreate && (
+          <EmptyState
+            icon={<EntityIconRaw kind="resource" />}
+            tone="warning"
+            title="No resources yet"
+            description="Add a Kubernetes cluster or cloud storage to browse and stream from it."
+            action={<Button leftIcon={<Plus />} onClick={() => setShowCreate(true)}>Add resource</Button>}
+          />
+        )}
+      />
+    </Page>
   )
 }
 
@@ -388,10 +364,10 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
+      className="p-1 rounded text-fg-muted hover:text-fg hover:bg-hover transition-colors"
       title="Copy"
     >
-      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
     </button>
   )
 }
@@ -599,24 +575,24 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
       </div>
 
       {!isCloudType && (
-        <div className="border-b border-[var(--border-subtle)]">
+        <div className="border-b border-line">
           <button
             onClick={() => setShowInstructions(!showInstructions)}
-            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--bg-hover)] transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-hover transition-colors"
           >
             <div className="flex items-center gap-2">
               <img src={KUBERNETES_LOGO} alt="Kubernetes" className="w-4 h-4" />
-              <span className="text-base text-[var(--text-primary)]">Setup Instructions</span>
-              <span className="text-xs text-[var(--text-muted)]">
+              <span className="text-base text-fg">Setup Instructions</span>
+              <span className="text-xs text-fg-muted">
                 {authMethod === 'kubeconfig' ? 'Generate or use an existing kubeconfig' : 'Create a read-only ServiceAccount'}
               </span>
             </div>
-            {showInstructions ? <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" /> : <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />}
+            {showInstructions ? <ChevronDown className="w-4 h-4 text-fg-muted" /> : <ChevronRight className="w-4 h-4 text-fg-muted" />}
           </button>
 
           {showInstructions && (
             <div className="px-4 pb-4 space-y-3">
-              <p className="text-xs text-[var(--text-secondary)]">
+              <p className="text-xs text-fg-secondary">
                 {authMethod === 'kubeconfig'
                   ? 'Generate a kubeconfig with a dedicated ServiceAccount for best security, or use an existing kubeconfig. Avalok needs read-only access to pods, logs, namespaces, and workloads.'
                   : 'These commands create a read-only ServiceAccount on your cluster. Avalok uses this to list namespaces, discover workloads, and stream pod logs. No write access is granted.'}
@@ -624,10 +600,10 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
               {activeCommands.map((cmd, i) => (
                 <div key={i}>
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-[var(--text-secondary)]">{cmd.title}</span>
+                    <span className="text-xs font-medium text-fg-secondary">{cmd.title}</span>
                     <CopyButton text={cmd.command} />
                   </div>
-                  <pre className="text-xs font-mono bg-[var(--bg-app)] border border-[var(--border-subtle)] rounded-md px-3 py-2 text-[var(--text-primary)] overflow-x-auto whitespace-pre">
+                  <pre className="text-xs font-mono bg-surface-sunken border border-line rounded-md px-3 py-2 text-fg overflow-x-auto whitespace-pre">
                     {cmd.command}
                   </pre>
                 </div>
@@ -672,8 +648,8 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
                 field.type === 'toggle' ? (
                   <div key={field.key} className="flex items-center justify-between py-1">
                     <div>
-                      <span className="text-xs font-medium text-[var(--text-secondary)]">{field.label}</span>
-                      {field.hint && <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{field.hint}</p>}
+                      <span className="text-xs font-medium text-fg-secondary">{field.label}</span>
+                      {field.hint && <p className="mt-0.5 text-2xs text-fg-muted">{field.hint}</p>}
                     </div>
                     <Toggle checked={!!storageConfig[field.key]} onChange={v => updateStorageField(field.key, v ? 'true' : '')} />
                   </div>
@@ -691,8 +667,8 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
               ))}
             </div>
           ) : usingCredential ? (
-            <div className="text-xs text-[var(--text-secondary)] py-2">
-              Authentication from credential profile <span className="font-medium text-[var(--text-primary)]">{credentialProfile}</span>
+            <div className="text-xs text-fg-secondary py-2">
+              Authentication from credential profile <span className="font-medium text-fg">{credentialProfile}</span>
             </div>
           ) : authMethod === 'kubeconfig' ? (
             <>
@@ -736,15 +712,15 @@ function AddResourceForm({ editing, onDone }: { editing?: AdminResource; onDone:
 
               <div className="flex items-center justify-between py-1">
                 <div>
-                  <span className="text-xs font-medium text-[var(--text-secondary)]">Skip TLS Verification</span>
-                  <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Enable for clusters with self-signed certificates</p>
+                  <span className="text-xs font-medium text-fg-secondary">Skip TLS Verification</span>
+                  <p className="mt-0.5 text-2xs text-fg-muted">Enable for clusters with self-signed certificates</p>
                 </div>
                 <Toggle checked={insecureSkipTls} onChange={setInsecureSkipTls} />
               </div>
             </>
           )}
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-subtle)]">
+          <div className="flex justify-end gap-2 pt-2 border-t border-line">
             <Button variant="ghost" type="button" onClick={onDone}>Cancel</Button>
             <Button variant="secondary" type="button" onClick={handleSubmit} loading={loading}>
               {loading ? 'Saving...' : isEdit ? 'Update' : 'Save'}

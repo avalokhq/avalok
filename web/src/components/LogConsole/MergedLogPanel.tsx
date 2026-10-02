@@ -1,16 +1,12 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
-import { ArrowDownToLine, X } from 'lucide-react'
-import { cn } from '../../lib/cn'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { X } from 'lucide-react'
 import { streamURL } from '../../lib/api'
-import { useDebouncedValue } from '../../lib/useDebouncedValue'
-import LogToolbar from './LogToolbar'
-import SourceDot from '../ui/SourceDot'
 import type { LogEntry } from '../../lib/types'
-import { parseLevel } from '../../lib/parseLevel'
-import { filterByTime } from '../../lib/filterByTime'
-import { assignLineNumbers } from '../../lib/assignLineNumbers'
-import type { TimeFilterValue } from './TimeFilter'
+import SourceDot from '../ui/SourceDot'
+import StatusDot from '../ui/StatusDot'
+import LogToolbar from './LogToolbar'
+import LogLines from './LogLines'
+import { useLogViewState } from './useLogViewState'
 
 interface Session {
   id: string
@@ -34,59 +30,20 @@ interface TaggedEntry extends LogEntry {
 
 const DEFAULT_MAX_LINES = 10000
 const BLINK_GAP_MS = 2000
-const BLINK_DURATION = 2000
 const FLUSH_INTERVAL_MS = 100
 
-function formatTimestamp(ts: string): string {
-  if (!ts) return ''
-  try {
-    const d = new Date(ts)
-    return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      + '.' + String(d.getMilliseconds()).padStart(3, '0')
-  } catch {
-    return ts.substring(11, 23)
-  }
-}
+const sessionLabelOf = (e: TaggedEntry) => e.sessionLabel
+const sessionIdOf = (e: TaggedEntry) => e.sessionId
+const exportPrefix = (e: TaggedEntry) => `[${e.sessionLabel}] `
 
-function highlightSearch(text: string | undefined, query: string): React.ReactNode {
-  if (!text) return text ?? ''
-  if (!query) return text
-  const idx = text.toLowerCase().indexOf(query.toLowerCase())
-  if (idx === -1) return text
-  return (
-    <>
-      {text.substring(0, idx)}
-      <mark className="bg-amber-500/30 text-inherit rounded-sm px-0.5">{text.substring(idx, idx + query.length)}</mark>
-      {text.substring(idx + query.length)}
-    </>
-  )
-}
-
-function getStoredFontSize(): number {
-  const v = localStorage.getItem('avalok-log-font-size')
-  return v ? parseInt(v, 10) : 12
-}
-
-function estimateRowHeight(fontSize: number): number {
-  return fontSize + 10
-}
-
+/** Several services interleaved into one stream, tagged by source. */
 export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES, onRemoveSession }: Props) {
   const storeRef = useRef<TaggedEntry[]>([])
   const [version, setVersion] = useState(0)
-  const [search, setSearch] = useState('')
-  const debouncedSearch = useDebouncedValue(search, 300)
-  const [follow, setFollow] = useState(true)
   const [paused, setPaused] = useState(false)
-  const [levelFilter, setLevelFilter] = useState<Set<string>>(() => new Set(['error', 'warn', 'info', 'debug']))
-  const [fontSize, setFontSize] = useState(getStoredFontSize)
-  const [wrap, setWrap] = useState(true)
-  const [timeFilter, setTimeFilter] = useState<TimeFilterValue>({ source: 'live' })
-  const [connected, setConnected] = useState(false)
-  const [relativeLineNumbers, setRelativeLineNumbers] = useState(() => localStorage.getItem('avalok-relative-linenums') === 'true')
+  const [openCount, setOpenCount] = useState(0)
   const wsRefs = useRef<Map<string, WebSocket>>(new Map())
   const pausedRef = useRef(false)
-  const parentRef = useRef<HTMLDivElement>(null)
   const lastReceivedRef = useRef<Map<string, number>>(new Map())
   const bufferRef = useRef<TaggedEntry[]>([])
   const rafRef = useRef(0)
@@ -95,14 +52,11 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
   const historyDoneSessionsRef = useRef<Set<string>>(new Set())
   const trimThreshold = Math.ceil(maxLines * 2.0)
 
-  const handleFontSizeChange = useCallback((size: number) => {
-    setFontSize(size)
-    localStorage.setItem('avalok-log-font-size', String(size))
-  }, [])
-
   useEffect(() => {
     const currentIds = new Set(sessions.map(s => s.id))
     const existing = wsRefs.current
+    const historyDone = historyDoneSessionsRef.current
+    const countOpen = () => setOpenCount([...existing.values()].filter(w => w.readyState === WebSocket.OPEN).length)
 
     for (const [id, ws] of existing) {
       if (!currentIds.has(id)) {
@@ -119,14 +73,15 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
       const ws = new WebSocket(url)
       lastReceivedRef.current.set(session.id, Date.now())
 
-      ws.onopen = () => setConnected(true)
+      ws.onopen = countOpen
+      ws.onclose = countOpen
 
       ws.onmessage = (event) => {
         const entry: LogEntry = JSON.parse(event.data)
 
         if (entry.type === 'history_end') {
-          historyDoneSessionsRef.current.add(session.id)
-          if (historyDoneSessionsRef.current.size >= sessions.length && historyEndIndexRef.current === -1) {
+          historyDone.add(session.id)
+          if (historyDone.size >= sessions.length && historyEndIndexRef.current === -1) {
             const store = storeRef.current
             const batch = bufferRef.current
             bufferRef.current = []
@@ -180,13 +135,19 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
     rafRef.current = requestAnimationFrame(flush)
 
     return () => {
-      for (const ws of existing.values()) ws.close()
+      for (const ws of existing.values()) {
+        ws.onclose = null
+        ws.close()
+      }
       existing.clear()
+      setOpenCount(0)
       cancelAnimationFrame(rafRef.current)
       bufferRef.current = []
       historyEndIndexRef.current = -1
-      historyDoneSessionsRef.current.clear()
+      historyDone.clear()
     }
+  // Reconnect only when the set of sessions changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions.map(s => s.id).join(',')])
 
   const togglePause = useCallback(() => {
@@ -200,229 +161,67 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
     }
   }, [])
 
-  const handleTogglePause = useCallback(() => {
-    if (pausedRef.current && follow) {
-      // resuming in follow mode — will auto-scroll via the effect
-    }
-    togglePause()
-  }, [follow, togglePause])
-
   const clear = useCallback(() => {
     storeRef.current.length = 0
     historyEndIndexRef.current = -1
     setVersion(v => v + 1)
   }, [])
 
-  const toggleRelativeLineNumbers = useCallback(() => {
-    setRelativeLineNumbers(prev => {
-      const next = !prev
-      localStorage.setItem('avalok-relative-linenums', String(next))
-      return next
-    })
-  }, [])
-
-  const toggleLevel = useCallback((level: string) => {
-    setLevelFilter(prev => {
-      const next = new Set(prev)
-      next.has(level) ? next.delete(level) : next.add(level)
-      return next
-    })
-  }, [])
-
-  const toggleFollow = useCallback(() => {
-    setFollow(prev => !prev)
-  }, [])
-
-  const scrollToBottom = useCallback(() => {
-    setFollow(true)
-  }, [])
-
-  const logs = storeRef.current
-
-  const filtered = useMemo(() => {
-    void version
-    assignLineNumbers(logs, relativeLineNumbers, historyEndIndexRef.current)
-    let result = filterByTime(logs, timeFilter)
-    if (levelFilter.size < 4) {
-      result = result.filter(l => levelFilter.has(parseLevel(l.line)))
-    }
-    if (debouncedSearch) {
-      const q = debouncedSearch.toLowerCase()
-      result = result.filter(l => (l.line?.toLowerCase().includes(q)) || l.sessionLabel.toLowerCase().includes(q))
-    }
-    return result
-  }, [version, debouncedSearch, levelFilter, timeFilter, relativeLineNumbers])
-
-  const download = useCallback(() => {
-    const text = filtered.map(l => {
-      const ts = l.timestamp ? `${l.timestamp} ` : ''
-      return `[${l.sessionLabel}] ${ts}${l.line}`
-    }).join('\n')
-    const blob = new Blob([text], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `merged-${sessions.map(s => s.service).join('-')}.log`
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [filtered, sessions])
-
-  const rowHeight = estimateRowHeight(fontSize)
-  const hIdx = historyEndIndexRef.current
-  const maxAbsNum = relativeLineNumbers && hIdx > 0
-    ? Math.max(hIdx, logs.length - hIdx)
-    : logs.length
-  const lineNumWidth = `${Math.max(4, String(maxAbsNum).length + (relativeLineNumbers ? 1 : 0)) + 1}ch`
-  const shouldFollow = follow && !paused
-
-  const virtualizer = useVirtualizer({
-    count: filtered.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => rowHeight,
-    overscan: 30,
+  const view = useLogViewState({
+    logs: storeRef.current,
+    version,
+    historyEndIndex: historyEndIndexRef.current,
+    sourceOf: sessionLabelOf,
+    searchExtra: sessionLabelOf,
+    defaultColumns: ['timestamp', 'level', 'source'],
   })
 
-  useEffect(() => {
-    if (shouldFollow && filtered.length > 0) {
-      virtualizer.scrollToIndex(filtered.length - 1, { align: 'end' })
-    }
-  }, [filtered.length, shouldFollow, virtualizer])
-
-  const now = Date.now()
+  const connected = openCount > 0
+  const status = !connected
+    ? { status: 'warn' as const, label: 'Connecting' }
+    : paused
+      ? { status: 'idle' as const, label: 'Paused' }
+      : { status: 'live' as const, label: openCount < sessions.length ? `Live ${openCount}/${sessions.length}` : 'Live' }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden border border-[var(--border-default)] rounded-lg bg-[var(--bg-surface)]">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 h-9 shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-elevated)]">
-        <span className="text-xs font-medium text-[var(--text-primary)]">Merged View</span>
-        <span className="text-[10px] text-[var(--text-muted)]">{sessions.length} sources</span>
-        <div className="flex-1" />
-        <div className="flex items-center gap-1">
+    <div className="flex h-full flex-col overflow-hidden rounded-card border border-line bg-surface shadow-sm">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-sunken px-3 py-1">
+        <span className="text-xs font-medium text-fg">Merged view</span>
+        <span className="text-2xs text-fg-muted">{sessions.length} sources</span>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1">
           {sessions.map(s => (
-            <div key={s.id} className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--bg-app)] text-[10px] text-[var(--text-secondary)]">
+            <span key={s.id} className="inline-flex h-6 items-center gap-1.5 rounded-control border border-line bg-surface pr-0.5 pl-2 text-2xs text-fg-secondary">
               <SourceDot name={s.id} />
-              {s.label}
+              <span className="max-w-32 truncate">{s.label}</span>
               {onRemoveSession && (
                 <button
+                  type="button"
                   onClick={() => onRemoveSession(s.id)}
-                  className="p-0 ml-0.5 rounded text-[var(--text-muted)] hover:text-rose-400 transition-colors"
+                  className="flex size-5 cursor-pointer items-center justify-center rounded-control text-fg-muted transition-colors hover:bg-danger-soft hover:text-danger"
+                  aria-label={`Remove ${s.label}`}
                   title={`Remove ${s.label}`}
                 >
-                  <X className="w-2.5 h-2.5" />
+                  <X className="size-3" />
                 </button>
               )}
-            </div>
+            </span>
           ))}
         </div>
-        {paused && (
-          <span className="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">Paused</span>
-        )}
-        <button
-          onClick={download}
-          className="p-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors"
-          title="Export merged logs"
-        >
-          <ArrowDownToLine className="w-3.5 h-3.5" />
-        </button>
+        <StatusDot status={status.status} label={status.label} className="text-2xs" />
       </div>
 
-      {/* Toolbar */}
       <LogToolbar
-        search={search}
-        onSearchChange={setSearch}
+        view={view}
         paused={paused}
-        onTogglePause={handleTogglePause}
+        onTogglePause={togglePause}
         onClear={clear}
-        onScrollToBottom={scrollToBottom}
-        lineCount={filtered.length}
-        totalCount={logs.length}
-        follow={follow}
-        onToggleFollow={toggleFollow}
-        levelFilter={levelFilter}
-        onToggleLevel={toggleLevel}
-        fontSize={fontSize}
-        onFontSizeChange={handleFontSizeChange}
-        wrap={wrap}
-        onToggleWrap={() => setWrap(v => !v)}
-        timeFilter={timeFilter}
-        onTimeFilterChange={setTimeFilter}
+        onExport={() => view.exportLines(`merged-${sessions.map(s => s.service).join('-')}.log`, exportPrefix)}
         viewMode="stream"
-        relativeLineNumbers={relativeLineNumbers}
-        onToggleRelativeLineNumbers={toggleRelativeLineNumbers}
       />
 
-      {/* Log lines */}
-      {filtered.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-muted)]">
-          {logs.length > 0 ? 'No matching logs found' : connected ? 'Loading logs...' : 'Connecting...'}
-        </div>
-      ) : (
-        <div
-          ref={parentRef}
-          className="flex-1 overflow-auto log-scroll"
-          style={{ background: 'var(--log-bg)' }}
-        >
-          <div style={{ height: virtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
-            {virtualizer.getVirtualItems().map(vRow => {
-              const entry = filtered[vRow.index] as TaggedEntry
-              const level = parseLevel(entry.line)
-              const shouldBlink = entry._blinkAt != null && now - entry._blinkAt < BLINK_DURATION
-              const lineNum = entry._lineNum ?? vRow.index + 1
-              const isBoundaryLine = relativeLineNumbers && lineNum === 0
-
-              return (
-                <div
-                  key={vRow.index}
-                  data-index={vRow.index}
-                  ref={virtualizer.measureElement}
-                  className={cn(
-                    'absolute top-0 left-0 w-full flex items-start font-mono px-3 hover:bg-[var(--log-line-hover)] cursor-default transition-colors',
-                    level === 'error' && 'log-level-error',
-                    level === 'warn' && 'log-level-warn',
-                    level === 'debug' && 'log-level-debug',
-                    level === 'info' && 'log-level-info',
-                    vRow.index % 2 === 1 && 'log-row-alt',
-                    shouldBlink && 'log-new-line',
-                    isBoundaryLine && 'border-b border-dashed border-cyan-500/30',
-                  )}
-                  style={{
-                    transform: `translateY(${vRow.start}px)`,
-                    fontSize: `${fontSize}px`,
-                    lineHeight: `${rowHeight}px`,
-                  }}
-                >
-                  <span
-                    className={cn(
-                      'shrink-0 pr-3 text-right select-none tabular-nums',
-                      relativeLineNumbers && lineNum <= 0
-                        ? 'text-cyan-700 dark:text-cyan-600'
-                        : 'text-[var(--text-muted)]'
-                    )}
-                    style={{ width: lineNumWidth }}
-                  >
-                    {lineNum}
-                  </span>
-
-                  {entry.timestamp && (
-                    <span className="shrink-0 pr-3 text-[var(--text-muted)] tabular-nums overflow-hidden" style={{ width: '13ch' }}>
-                      {formatTimestamp(entry.timestamp)}
-                    </span>
-                  )}
-
-                  <span className="shrink-0 pr-3 flex items-center gap-1.5 whitespace-nowrap">
-                    <SourceDot name={entry.sessionId} />
-                    <span className="text-[var(--text-secondary)]">{entry.sessionLabel}</span>
-                  </span>
-
-                  <span className={cn('flex-1', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')}>
-                    {highlightSearch(entry.line, debouncedSearch)}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      <div className="min-h-0 flex-1">
+        <LogLines view={view} connected={connected} paused={paused} sourceKey={sessionIdOf} />
+      </div>
     </div>
   )
 }

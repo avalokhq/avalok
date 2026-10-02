@@ -25,6 +25,10 @@ func (s *Server) handlePublicConfig(w http.ResponseWriter, r *http.Request) {
 		v, ok := settings[key]
 		return !ok || v != "false"
 	}
+	// Opt-in settings: off until an admin enables them.
+	optInSetting := func(key string) bool {
+		return settings[key] == "true"
+	}
 
 	logBufferLines := 10000
 	if v, ok := settings["log_buffer_lines"]; ok {
@@ -35,8 +39,8 @@ func (s *Server) handlePublicConfig(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enable_workspaces":   boolSetting("enable_workspaces"),
-		"enable_environments": boolSetting("enable_environments"),
-		"enable_services":     boolSetting("enable_services"),
+		"enable_environments": optInSetting("enable_environments"),
+		"enable_services":     optInSetting("enable_services"),
 		"log_buffer_lines":    logBufferLines,
 	})
 }

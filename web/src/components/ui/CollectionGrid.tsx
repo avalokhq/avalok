@@ -7,7 +7,7 @@ interface Props {
 
 export default function CollectionGrid({ children, className }: Props) {
   return (
-    <div className={cn('grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4', className)}>
+    <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5', className)}>
       {children}
     </div>
   )

@@ -2,29 +2,52 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Avalok design system
+ * ────────────────────
+ * Raw values live in html.dark / html.light below. @theme inline maps them to
+ * Tailwind utilities, so components write `bg-surface text-fg border-line`
+ * and never a hex value or a raw palette class.
+ */
+
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
-  --color-chrome-50: #fafafa;
-  --color-chrome-100: #f5f5f5;
-  --color-chrome-200: #e5e5e5;
-  --color-chrome-300: #d4d4d4;
-  --color-chrome-400: #a3a3a3;
-  --color-chrome-500: #737373;
-  --color-chrome-600: #525252;
-  --color-chrome-700: #404040;
-  --color-chrome-800: #262626;
-  --color-chrome-850: #1a1a1a;
-  --color-chrome-900: #171717;
-  --color-chrome-950: #0a0a0a;
+  /* Type scale: 13px body for a dense, calm UI */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 16px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+  --text-display: 32px;
+  --text-display--line-height: 40px;
 
+  /* Radius: controls / cards / overlays */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-overlay: 14px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Brand green palette (kept for legacy accent-* classes; prefer semantic tokens) */
   --color-accent-300: #5ab894;
   --color-accent-400: #3d9a74;
   --color-accent-500: #1a7a55;
   --color-accent-600: #12593e;
   --color-accent-700: #0d4330;
 
+  /* Log source colors (distinct hues for multi-source streams) */
   --color-source-0: #22d3ee;
   --color-source-1: #a78bfa;
   --color-source-2: #34d399;
@@ -37,84 +60,204 @@
   --color-source-9: #c084fc;
 }
 
-/* ── Dark mode (default) ── */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-hover: var(--hover);
+  --color-selected: var(--selected);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-faint: var(--fg-faint);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-solid-hover: var(--accent-solid-hover);
+  --color-accent-solid-fg: var(--accent-solid-fg);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-line: var(--success-line);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-line: var(--warning-line);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-line: var(--info-line);
+
+  --color-overlay: var(--overlay);
+
+  --shadow-xs: var(--elev-xs);
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev-md);
+  --shadow-lg: var(--elev-lg);
+}
+
+/* ── Dark (default): green-tinted near-black ── */
 html, html.dark {
-  --bg-app: #1e1e1e;
-  --bg-app-end: #1a2420;
-  --bg-surface: #252526;
-  --bg-elevated: #2d2d2d;
-  --bg-hover: #383838;
-  --bg-selected: #37373d;
-  --bg-active: #37373d;
+  --canvas: #0b0f0e;
+  --surface: #111715;
+  --surface-raised: #161d1b;
+  --surface-sunken: #0e1312;
+  --hover: #1b2321;
+  --selected: #1a2a24;
 
-  --border-default: #3e3e42;
-  --border-subtle: #333333;
-  --border-hover: rgba(90,184,148,0.30);
-  --border-strong: #4a4a4f;
+  --line: #1f2826;
+  --line-strong: #2a3532;
 
-  --text-primary: #cccccc;
-  --text-secondary: #969696;
-  --text-muted: #737373;
-  --text-subtle: #808080;
-  --text-accent: var(--color-accent-300);
-  --accent-bright: var(--color-accent-500);
+  --fg: #e8ecea;
+  --fg-secondary: #a9b3af;
+  --fg-muted: #7c8783;
+  --fg-faint: #58625e;
 
-  --log-bg: #1e1e1e;
-  --log-line-hover: rgba(255,255,255,0.04);
+  --accent: #34c48b;
+  --accent-hover: #4fd39d;
+  --accent-soft: rgba(52, 196, 139, 0.12);
+  --accent-line: rgba(52, 196, 139, 0.32);
+  --accent-solid: #1f8f62;
+  --accent-solid-hover: #239e6d;
+  --accent-solid-fg: #ffffff;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-card-hover: 0 2px 6px rgba(0,0,0,0.5);
-  --shadow-dialog: 0 4px 16px rgba(0,0,0,0.5);
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.12);
+  --success-line: rgba(52, 211, 153, 0.28);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --warning-line: rgba(251, 191, 36, 0.28);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --danger-line: rgba(248, 113, 113, 0.28);
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.12);
+  --info-line: rgba(56, 189, 248, 0.28);
+
+  --overlay: rgba(5, 8, 7, 0.55);
+  --focus-ring: rgba(52, 196, 139, 0.45);
+  --glow: rgba(52, 196, 139, 0.10);
+
+  --elev-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --elev-sm: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.25);
+  --elev-md: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 12px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --elev-lg: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 16px 40px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
+
+  --log-bg: var(--surface-sunken);
+  --log-line-hover: rgba(255, 255, 255, 0.035);
 
   color-scheme: dark;
 }
 
-/* ── Light mode ── */
+/* ── Light ── */
 html.light {
-  --bg-app: var(--color-chrome-100);
-  --bg-app-end: #edf2f0;
-  --bg-surface: #ffffff;
-  --bg-elevated: var(--color-chrome-100);
-  --bg-hover: var(--color-chrome-200);
-  --bg-selected: #eef5f3;
-  --bg-active: #eef5f3;
+  --canvas: #f6f7f7;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f1f3f2;
+  --hover: #eef1f0;
+  --selected: #e8f3ee;
 
-  --border-default: var(--color-chrome-200);
-  --border-subtle: var(--color-chrome-100);
-  --border-hover: rgba(26,122,85,0.25);
-  --border-strong: var(--color-chrome-300);
+  --line: #e3e7e5;
+  --line-strong: #d3d9d6;
 
-  --text-primary: var(--color-chrome-900);
-  --text-secondary: var(--color-chrome-500);
-  --text-muted: #888888;
-  --text-subtle: #888888;
-  --text-accent: var(--color-accent-600);
-  --accent-bright: var(--color-accent-500);
+  --fg: #111816;
+  --fg-secondary: #4b5552;
+  --fg-muted: #6b7571;
+  --fg-faint: #9aa39f;
 
-  --log-bg: #ffffff;
-  --log-line-hover: var(--color-chrome-50);
+  --accent: #1a7a55;
+  --accent-hover: #12593e;
+  --accent-soft: #e6f3ed;
+  --accent-line: rgba(26, 122, 85, 0.30);
+  --accent-solid: #1a7a55;
+  --accent-solid-hover: #156847;
+  --accent-solid-fg: #ffffff;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-card-hover: 0 2px 6px rgba(0,0,0,0.08);
-  --shadow-dialog: 0 4px 16px rgba(0,0,0,0.12);
+  --success: #047857;
+  --success-soft: #ecfdf5;
+  --success-line: #a7f3d0;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --warning-line: #fde68a;
+  --danger: #b91c1c;
+  --danger-soft: #fef2f2;
+  --danger-line: #fecaca;
+  --info: #0369a1;
+  --info-soft: #f0f9ff;
+  --info-line: #bae6fd;
+
+  --overlay: rgba(17, 24, 22, 0.20);
+  --focus-ring: rgba(26, 122, 85, 0.40);
+  --glow: rgba(26, 122, 85, 0.07);
+
+  --elev-xs: 0 1px 2px rgba(16, 24, 22, 0.05);
+  --elev-sm: 0 1px 2px rgba(16, 24, 22, 0.05), 0 1px 3px rgba(16, 24, 22, 0.06);
+  --elev-md: 0 4px 12px rgba(16, 24, 22, 0.08), 0 1px 3px rgba(16, 24, 22, 0.06);
+  --elev-lg: 0 16px 40px rgba(16, 24, 22, 0.14), 0 4px 12px rgba(16, 24, 22, 0.08);
+
+  --log-bg: var(--surface);
+  --log-line-hover: var(--hover);
 
   color-scheme: light;
 }
 
+/*
+ * Legacy aliases. Older components still read these names; they now resolve
+ * to the new tokens. Removed once every component uses the semantic utilities.
+ */
+html, html.dark, html.light {
+  --bg-app: var(--canvas);
+  --bg-app-end: var(--canvas);
+  --bg-surface: var(--surface);
+  --bg-elevated: var(--surface-sunken);
+  --bg-hover: var(--hover);
+  --bg-selected: var(--selected);
+  --bg-active: var(--selected);
+
+  --border-default: var(--line);
+  --border-subtle: var(--line);
+  --border-hover: var(--accent-line);
+  --border-strong: var(--line-strong);
+
+  --text-primary: var(--fg);
+  --text-secondary: var(--fg-secondary);
+  --text-muted: var(--fg-muted);
+  --text-subtle: var(--fg-muted);
+  --text-accent: var(--accent);
+  --accent-bright: var(--accent-solid);
+
+  --shadow-card: var(--elev-sm);
+  --shadow-card-hover: var(--elev-md);
+  --shadow-dialog: var(--elev-lg);
+}
+
+/* ── Base ── */
 * {
-  scrollbar-width: auto;
-  scrollbar-color: var(--text-muted) var(--bg-elevated);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 body {
   margin: 0;
-  background: linear-gradient(to bottom, var(--bg-app), var(--bg-app-end)) fixed;
-  color: var(--text-primary);
+  background: var(--canvas);
+  color: var(--fg);
   font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 #root {
@@ -123,7 +266,64 @@ body {
   position: relative;
 }
 
-/* ── Premium background ── */
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+/* Keyboard focus: one consistent ring everywhere, mouse clicks stay clean.
+   In @layer base so component utilities (e.g. fields' own focus ring) can override it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline-offset: 0;
+  }
+}
+
+/* Native <select> with a token-colored chevron (used by ui/Input Select) */
+.select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237c8783' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 14px;
+}
+.select-chevron option {
+  background: var(--surface-raised);
+  color: var(--fg);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-faint);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Ambient glow (auth and hero areas) ── */
 .bg-premium {
   position: relative;
 }
@@ -131,75 +331,108 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(26,122,85,0.12), transparent 70%);
+  background: radial-gradient(ellipse 70% 45% at 50% -10%, var(--glow), transparent 70%);
   pointer-events: none;
   z-index: 0;
-}
-html.light .bg-premium::before {
-  background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(26,122,85,0.08), transparent 70%);
 }
 .bg-premium > * {
   position: relative;
   z-index: 1;
 }
 
-/* ── Brand header ── */
-.brand-header {
-  background: var(--color-accent-500);
+/* ── Auth log-stream backdrop (decorative columns of scrolling log lines) ── */
+.bg-premium > .log-stream-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Quiet behind the card, full strength toward the edges */
+  mask-image: radial-gradient(ellipse 45% 50% at 50% 50%, rgb(0 0 0 / 0.2) 0%, #000 100%);
+}
+@keyframes log-stream {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -50%, 0); }
+}
+.log-stream {
+  animation: log-stream var(--log-stream-duration, 120s) linear infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .log-stream { animation: none !important; }
 }
 
-
-/* ── Skeleton loading ── */
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.06; }
-  50% { opacity: 0.12; }
+/* ── Skeleton shimmer ── */
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }
 .skeleton {
-  background: linear-gradient(to bottom, var(--bg-surface), var(--bg-elevated));
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  animation: skeleton-pulse 1.8s ease-in-out infinite;
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--hover) 50%, var(--surface-sunken) 75%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-card);
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
 }
 
-/* ── Pulsing status dot ── */
+/* ── Status pulse ── */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.45; }
 }
 .status-pulse {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
-/* Log level colors */
-.log-level-error { color: #ef4444; }
-.log-level-warn { color: #f59e0b; }
-.log-level-info { color: var(--text-primary); }
-.log-level-debug { color: var(--text-muted); }
+/* ── Entrance motion ── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up {
+  animation: fade-up 280ms var(--ease-out) both;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 180ms var(--ease-out) both;
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-scale-in {
+  animation: scale-in 180ms var(--ease-out) both;
+}
 
-/* Scrollbar for log area */
+/* ── Logs ── */
+.log-level-error { color: var(--danger); }
+.log-level-warn { color: var(--warning); }
+.log-level-info { color: var(--fg); }
+.log-level-debug { color: var(--fg-muted); }
+
+.log-surface {
+  background: var(--log-bg);
+}
+
 .log-scroll::-webkit-scrollbar {
-  width: 14px;
-}
-.log-scroll::-webkit-scrollbar-track {
-  background: var(--bg-elevated);
-}
-.log-scroll::-webkit-scrollbar-thumb {
-  background: var(--text-muted);
-  border-radius: 7px;
-  border: 2px solid var(--bg-elevated);
-}
-.log-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  width: 12px;
 }
 
-/* Alternating row background for readability */
-.log-row-alt {
-  background-color: color-mix(in srgb, var(--text-muted) 12%, transparent);
+/* Row separation in the log table: hairline divider plus zebra stripe. In the components
+   layer so hover:bg-hover and border utilities on the row still win. */
+@layer components {
+  .log-row {
+    border-bottom: 1px solid var(--line);
+  }
+  .log-row-alt {
+    background-color: color-mix(in srgb, var(--fg-muted) 11%, transparent);
+  }
 }
 
-/* Green blink for first line after quiet period */
 @keyframes log-blink {
-  0% { background-color: rgba(34, 197, 94, 0.3); }
+  0% { background-color: var(--accent-soft); }
   100% { background-color: transparent; }
 }
 .log-new-line {
@@ -208,9 +441,8 @@ html.light .bg-premium::before {
 
 @keyframes setting-blink {
   0%, 100% { background-color: transparent; }
-  25% { background-color: rgba(61, 154, 116, 0.15); }
+  25%, 75% { background-color: var(--accent-soft); }
   50% { background-color: transparent; }
-  75% { background-color: rgba(61, 154, 116, 0.15); }
 }
 .animate-setting-blink {
   animation: setting-blink 2s ease-in-out;

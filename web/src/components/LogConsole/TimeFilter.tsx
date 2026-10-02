@@ -1,6 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { Clock, X, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
+import Popover from '../ui/Popover'
+import SegmentedControl from '../ui/SegmentedControl'
+import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
+import Input, { Select } from '../ui/Input'
 
 export type TimeSource = 'live' | 'log'
 
@@ -40,11 +45,24 @@ function toLocalDatetime(date: Date): string {
 function formatActiveLabel(mode: Mode, rel: RelativeState, absFrom: string, absTo: string): string {
   if (mode === 'relative') {
     const u = rel.unit === 'minutes' ? 'min' : rel.unit === 'hours' ? 'hr' : 'd'
-    return `${rel.amount}${u} ago`
+    return `Last ${rel.amount}${u}`
   }
-  const from = absFrom ? new Date(absFrom).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '...'
-  const to = absTo ? new Date(absTo).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : 'now'
-  return `${from} – ${to}`
+  const fmt = (v: string) => new Date(v).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${absFrom ? fmt(absFrom) : '…'} – ${absTo ? fmt(absTo) : 'now'}`
+}
+
+const SOURCE_OPTIONS = [
+  { value: 'live' as const, label: 'Received', title: 'When Avalok received the line' },
+  { value: 'log' as const, label: 'Log time', title: 'Timestamp parsed from the log line' },
+]
+
+const MODE_OPTIONS = [
+  { value: 'relative' as const, label: 'Relative' },
+  { value: 'absolute' as const, label: 'Absolute' },
+]
+
+function FieldLabel({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
+  return <label htmlFor={htmlFor} className="mb-1 block text-2xs font-medium uppercase tracking-wide text-fg-muted">{children}</label>
 }
 
 interface Props {
@@ -53,251 +71,124 @@ interface Props {
 }
 
 export default function TimeFilter({ value, onChange }: Props) {
-  const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('relative')
   const [rel, setRel] = useState<RelativeState>({ amount: 15, unit: 'minutes' })
   const [absFrom, setAbsFrom] = useState('')
   const [absTo, setAbsTo] = useState('')
-  const popRef = useRef<HTMLDivElement>(null)
   const active = !!(value.since || value.until)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  const applyRelative = (r?: RelativeState) => {
-    const use = r ?? rel
-    if (r) setRel(use)
-    onChange({ since: computeSince(use), source: value.source })
-    setOpen(false)
-  }
-
-  const applyAbsolute = () => {
-    if (!absFrom) return
-    const since = new Date(absFrom).toISOString()
-    const until = absTo ? new Date(absTo).toISOString() : undefined
-    onChange({ since, until, source: value.source })
-    setOpen(false)
-  }
-
-  const clearFilter = () => {
-    onChange({ source: value.source })
-    setOpen(false)
-  }
-
-  const toggleSource = () => {
-    const next: TimeSource = value.source === 'live' ? 'log' : 'live'
-    onChange({ ...value, source: next })
-  }
+  const nowLocal = toLocalDatetime(new Date())
 
   return (
-    <div className="relative flex items-center" ref={popRef}>
-      {/* Source toggle */}
-      <button
-        onClick={toggleSource}
-        className={cn(
-          'px-2 py-1 rounded-l-md text-[10px] font-medium border transition-colors',
-          value.source === 'live'
-            ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
-            : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+    <div className="flex items-center">
+      <Popover
+        label="Time range"
+        trigger={({ open, toggle }) => (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            aria-haspopup="dialog"
+            className={cn(
+              'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-control border px-2 text-xs font-medium transition-colors',
+              active || open
+                ? 'border-accent-line bg-accent-soft text-accent'
+                : 'border-line bg-surface text-fg-secondary hover:bg-hover hover:text-fg',
+            )}
+          >
+            <Clock className="size-3.5 shrink-0" />
+            <span className="max-w-40 truncate">{active ? formatActiveLabel(mode, rel, absFrom, absTo) : 'Any time'}</span>
+            {value.source === 'log' && <span className="text-2xs text-fg-muted">log time</span>}
+            <ChevronDown className="size-3.5 shrink-0 opacity-70" />
+          </button>
         )}
-        title={value.source === 'live' ? 'Using server receive time — click to switch to log timestamp' : 'Using parsed log timestamp — click to switch to server receive time'}
       >
-        {value.source === 'live' ? 'Live' : 'Log'}
-      </button>
+        {close => {
+          const applyRelative = (r: RelativeState = rel) => {
+            setRel(r)
+            onChange({ since: computeSince(r), source: value.source })
+            close()
+          }
+          const applyAbsolute = () => {
+            if (!absFrom) return
+            onChange({ since: new Date(absFrom).toISOString(), until: absTo ? new Date(absTo).toISOString() : undefined, source: value.source })
+            close()
+          }
+          return (
+            <>
+              <div className="space-y-2 border-b border-line bg-surface-sunken p-3">
+                <FieldLabel>Filter by</FieldLabel>
+                <SegmentedControl size="sm" label="Timestamp source" className="w-full" options={SOURCE_OPTIONS} value={value.source} onChange={source => onChange({ ...value, source })} />
+              </div>
 
-      <button
-        onClick={() => setOpen(v => !v)}
-        className={cn(
-          'flex items-center gap-1.5 px-2 py-1 rounded-r-md text-xs transition-colors border border-l-0',
-          active
-            ? 'bg-accent-500/15 text-accent-400 border-accent-500/30 hover:bg-accent-500/25'
-            : 'text-[var(--text-muted)] border-[var(--border-default)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-        )}
-        title="Time filter"
-      >
-        <Clock className="w-3.5 h-3.5 shrink-0" />
-        {active ? (
-          <span className="max-w-[160px] truncate">{formatActiveLabel(mode, rel, absFrom, absTo)}</span>
-        ) : (
-          <>
-            <span>Time</span>
-            <ChevronDown className="w-3 h-3" />
-          </>
-        )}
-      </button>
+              <div className="space-y-3 p-3">
+                <SegmentedControl size="sm" label="Range type" className="w-full" options={MODE_OPTIONS} value={mode} onChange={setMode} />
+
+                {mode === 'relative' ? (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PRESETS.map(p => {
+                        const selected = active && rel.amount === p.amount && rel.unit === p.unit
+                        return (
+                          <button
+                            key={p.label}
+                            type="button"
+                            aria-pressed={selected}
+                            onClick={() => applyRelative({ amount: p.amount, unit: p.unit })}
+                            className={cn(
+                              'h-7 cursor-pointer rounded-control border px-2.5 text-xs font-medium tabular-nums transition-colors',
+                              selected ? 'border-accent-line bg-accent-soft text-accent' : 'border-line bg-surface text-fg-secondary hover:bg-hover hover:text-fg',
+                            )}
+                          >
+                            {p.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        aria-label="Amount"
+                        value={rel.amount}
+                        onChange={e => setRel(prev => ({ ...prev, amount: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        className="w-16 text-center tabular-nums"
+                      />
+                      <Select
+                        aria-label="Unit"
+                        value={rel.unit}
+                        onChange={e => setRel(prev => ({ ...prev, unit: e.target.value as RelativeState['unit'] }))}
+                        className="flex-1"
+                      >
+                        <option value="minutes">minutes ago</option>
+                        <option value="hours">hours ago</option>
+                        <option value="days">days ago</option>
+                      </Select>
+                      <Button size="md" onClick={() => applyRelative()}>Apply</Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <FieldLabel htmlFor="tf-from">From</FieldLabel>
+                      <Input id="tf-from" type="datetime-local" value={absFrom} max={nowLocal} onChange={e => setAbsFrom(e.target.value)} />
+                    </div>
+                    <div>
+                      <FieldLabel htmlFor="tf-to">To <span className="normal-case tracking-normal">(empty = now)</span></FieldLabel>
+                      <Input id="tf-to" type="datetime-local" value={absTo} max={nowLocal} onChange={e => setAbsTo(e.target.value)} />
+                    </div>
+                    <Button className="w-full" onClick={applyAbsolute} disabled={!absFrom}>Apply range</Button>
+                  </>
+                )}
+              </div>
+            </>
+          )
+        }}
+      </Popover>
 
       {active && (
-        <button
-          onClick={(e) => { e.stopPropagation(); clearFilter() }}
-          className="ml-0.5 p-0.5 rounded text-accent-400 hover:text-accent-300 hover:bg-accent-500/15 transition-colors shrink-0"
-          title="Clear time filter"
-        >
-          <X className="w-3 h-3" />
-        </button>
-      )}
-
-      {open && (
-        <div className="absolute left-0 top-full mt-1.5 z-30 w-72 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-xl overflow-hidden">
-          {/* Source info */}
-          <div className="px-3 py-2 border-b border-[var(--border-default)] bg-[var(--bg-elevated)]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">Timestamp source</span>
-              <div className="flex rounded-md overflow-hidden border border-[var(--border-default)]">
-                <button
-                  onClick={() => onChange({ ...value, source: 'live' })}
-                  className={cn(
-                    'px-2 py-0.5 text-[10px] font-medium transition-colors',
-                    value.source === 'live'
-                      ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                  )}
-                >
-                  Live
-                </button>
-                <button
-                  onClick={() => onChange({ ...value, source: 'log' })}
-                  className={cn(
-                    'px-2 py-0.5 text-[10px] font-medium transition-colors border-l border-[var(--border-default)]',
-                    value.source === 'log'
-                      ? 'bg-amber-500/20 text-amber-400'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                  )}
-                >
-                  Log
-                </button>
-              </div>
-            </div>
-            <p className="text-[10px] text-[var(--text-muted)] mt-1">
-              {value.source === 'live'
-                ? 'Filter by when Avalok received the log'
-                : 'Filter by timestamp parsed from the log line'}
-            </p>
-          </div>
-
-          {/* Mode tabs */}
-          <div className="flex border-b border-[var(--border-default)]">
-            <button
-              onClick={() => setMode('relative')}
-              className={cn(
-                'flex-1 py-2 text-xs font-medium transition-colors',
-                mode === 'relative'
-                  ? 'text-accent-400 border-b-2 border-accent-400 bg-accent-500/5'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              )}
-            >
-              Relative
-            </button>
-            <button
-              onClick={() => setMode('absolute')}
-              className={cn(
-                'flex-1 py-2 text-xs font-medium transition-colors',
-                mode === 'absolute'
-                  ? 'text-accent-400 border-b-2 border-accent-400 bg-accent-500/5'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              )}
-            >
-              Absolute
-            </button>
-          </div>
-
-          {mode === 'relative' ? (
-            <div className="p-3 space-y-3">
-              <div className="flex flex-wrap gap-1.5">
-                {PRESETS.map(p => (
-                  <button
-                    key={p.label}
-                    onClick={() => applyRelative({ amount: p.amount, unit: p.unit })}
-                    className={cn(
-                      'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                      rel.amount === p.amount && rel.unit === p.unit && active
-                        ? 'bg-accent-500/20 text-accent-400 ring-1 ring-accent-500/30'
-                        : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={1}
-                  value={rel.amount}
-                  onChange={e => setRel(prev => ({ ...prev, amount: Math.max(1, parseInt(e.target.value) || 1) }))}
-                  className="w-16 px-2 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-xs text-[var(--text-primary)] text-center focus:outline-none focus:border-accent-500 transition-colors"
-                />
-                <select
-                  value={rel.unit}
-                  onChange={e => setRel(prev => ({ ...prev, unit: e.target.value as RelativeState['unit'] }))}
-                  className="flex-1 px-2 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-accent-500 transition-colors appearance-none cursor-pointer"
-                >
-                  <option value="minutes">minutes ago</option>
-                  <option value="hours">hours ago</option>
-                  <option value="days">days ago</option>
-                </select>
-                <button
-                  onClick={() => applyRelative()}
-                  className="px-3 py-1.5 rounded-md bg-accent-600 text-white text-xs font-medium hover:bg-accent-500 transition-colors"
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="p-3 space-y-3">
-              <div className="space-y-2">
-                <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">From</label>
-                <input
-                  type="datetime-local"
-                  value={absFrom}
-                  max={toLocalDatetime(new Date())}
-                  onChange={e => setAbsFrom(e.target.value)}
-                  className="w-full px-2 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-accent-500 transition-colors [color-scheme:dark]"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="block text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-medium">To <span className="normal-case text-[var(--text-muted)]">(leave empty for live)</span></label>
-                <input
-                  type="datetime-local"
-                  value={absTo}
-                  max={toLocalDatetime(new Date())}
-                  onChange={e => setAbsTo(e.target.value)}
-                  className="w-full px-2 py-1.5 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-accent-500 transition-colors [color-scheme:dark]"
-                />
-              </div>
-              <button
-                onClick={applyAbsolute}
-                disabled={!absFrom}
-                className={cn(
-                  'w-full py-1.5 rounded-md text-xs font-medium transition-colors',
-                  absFrom
-                    ? 'bg-accent-600 text-white hover:bg-accent-500'
-                    : 'bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed'
-                )}
-              >
-                Apply Range
-              </button>
-            </div>
-          )}
-
-          {active && (
-            <div className="px-3 pb-3">
-              <button
-                onClick={clearFilter}
-                className="w-full py-1.5 rounded-md text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] bg-[var(--bg-elevated)] hover:bg-[var(--bg-hover)] transition-colors"
-              >
-                Clear Filter
-              </button>
-            </div>
-          )}
-        </div>
+        <IconButton label="Clear time filter" size="xs" className="ml-0.5" onClick={() => onChange({ source: value.source })}>
+          <X className="size-3.5" />
+        </IconButton>
       )}
     </div>
   )

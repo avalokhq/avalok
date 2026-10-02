@@ -1,8 +1,14 @@
-import { useState, useCallback } from 'react'
-import { Search, X, FileText, Loader2 } from 'lucide-react'
-import { cn } from '../../lib/cn'
+import { useState, useCallback, useMemo } from 'react'
+import { Search, X, FileText, SearchX } from 'lucide-react'
 import { searchFiles } from '../../lib/api'
+import { plural } from '../../lib/format'
 import type { FileSearchResult } from '../../lib/types'
+import Alert from '../ui/Alert'
+import Button from '../ui/Button'
+import EmptyState from '../ui/EmptyState'
+import IconButton from '../ui/IconButton'
+import Spinner from '../ui/Spinner'
+import { SearchInput } from '../ui/Input'
 
 interface Props {
   workspace: string
@@ -17,15 +23,16 @@ export default function FileSearch({ workspace, environment, service, onNavigate
   const [useRegex, setUseRegex] = useState(false)
   const [results, setResults] = useState<FileSearchResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [truncated, setTruncated] = useState(false)
   const [searched, setSearched] = useState(false)
 
-  const handleSearch = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
+  const runSearch = useCallback(async () => {
     if (!query.trim()) return
 
     setLoading(true)
     setSearched(true)
+    setError(null)
     try {
       const res = await searchFiles(workspace, environment, service, {
         pattern: query,
@@ -34,108 +41,97 @@ export default function FileSearch({ workspace, environment, service, onNavigate
       })
       setResults(res.results)
       setTruncated(res.truncated)
-    } catch {
+    } catch (err) {
+      // A failed search must not look like "no matches".
       setResults([])
+      setTruncated(false)
+      setError(err instanceof Error ? err.message : 'Search failed')
     } finally {
       setLoading(false)
     }
   }, [workspace, environment, service, query, useRegex])
 
-  const grouped = results.reduce<Record<string, FileSearchResult[]>>((acc, r) => {
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    runSearch()
+  }
+
+  const grouped = useMemo(() => results.reduce<Record<string, FileSearchResult[]>>((acc, r) => {
     if (!acc[r.file]) acc[r.file] = []
     acc[r.file].push(r)
     return acc
-  }, {})
+  }, {}), [results])
+  const fileCount = Object.keys(grouped).length
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-3 py-2 border-b border-[var(--border-default)]">
-        <div className="flex items-center gap-2 mb-2">
-          <Search className="w-3.5 h-3.5 text-[var(--text-muted)]" />
-          <span className="text-xs font-medium text-[var(--text-primary)]">Search Files</span>
-          <button
-            onClick={onClose}
-            className="ml-auto p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-col gap-2 border-b border-line px-3 py-2.5">
+        <div className="flex items-center gap-2">
+          <Search className="size-4 text-fg-muted" />
+          <span className="text-sm font-medium text-fg">Search files</span>
+          <IconButton label="Close search" size="xs" onClick={onClose} className="ml-auto">
+            <X className="size-3.5" />
+          </IconButton>
         </div>
-        <form onSubmit={handleSearch} className="flex gap-1.5">
-          <input
-            type="text"
+        <form onSubmit={handleSubmit} className="flex items-center gap-2">
+          <SearchInput
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search pattern..."
+            onChange={setQuery}
+            placeholder={useRegex ? 'Regular expression…' : 'Search pattern…'}
+            aria-label="Search pattern"
             autoFocus
-            className="flex-1 px-2 py-1 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--text-accent)]"
+            wrapperClassName="min-w-0 flex-1"
           />
-          <button
-            type="button"
-            onClick={() => setUseRegex(v => !v)}
-            className={cn(
-              'px-1.5 py-1 text-[10px] rounded border transition-colors',
-              useRegex
-                ? 'border-[var(--text-accent)] text-[var(--text-accent)] bg-[var(--bg-active)]'
-                : 'border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            )}
-            title="Use regex"
-          >
-            .*
-          </button>
-          <button
-            type="submit"
-            disabled={loading || !query.trim()}
-            className="px-2 py-1 text-xs rounded bg-[var(--text-accent)] text-white hover:opacity-90 transition-opacity disabled:opacity-40"
-          >
-            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Search'}
-          </button>
+          <IconButton label={useRegex ? 'Regex on' : 'Use regex'} size="md" active={useRegex} onClick={() => setUseRegex(v => !v)}>
+            <span className="font-mono text-xs">.*</span>
+          </IconButton>
+          <Button type="submit" size="md" loading={loading} disabled={!query.trim()}>Search</Button>
         </form>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        {loading && (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-5 h-5 text-[var(--text-accent)] animate-spin" />
+      <div className="min-h-0 flex-1 overflow-auto">
+        {error ? (
+          <div className="p-3">
+            <Alert
+              tone="danger"
+              title="Search failed"
+              action={<Button size="sm" variant="secondary" onClick={runSearch} loading={loading}>Retry</Button>}
+            >
+              {error}
+            </Alert>
           </div>
-        )}
-
-        {!loading && searched && results.length === 0 && (
-          <div className="text-center py-8 text-xs text-[var(--text-muted)]">
-            No matches found
-          </div>
-        )}
-
-        {!loading && results.length > 0 && (
+        ) : loading ? (
+          <Spinner size="md" label="Searching…" />
+        ) : searched && results.length === 0 ? (
+          <EmptyState compact tone="neutral" icon={<SearchX />} title="No matches found" description="Try a different pattern." />
+        ) : results.length > 0 && (
           <div>
             {truncated && (
-              <div className="px-3 py-1.5 text-[10px] text-amber-400 bg-amber-500/10 border-b border-amber-500/20">
-                Results truncated. Refine your search for more specific results.
+              <div className="p-3 pb-0">
+                <Alert tone="warning">Results truncated. Refine your search for more specific results.</Alert>
               </div>
             )}
 
-            <div className="text-[10px] text-[var(--text-muted)] px-3 py-1.5 border-b border-[var(--border-default)]">
-              {results.length} matches in {Object.keys(grouped).length} files
+            <div className="px-3 py-2 text-2xs text-fg-muted tabular-nums">
+              {results.length} {results.length === 1 ? 'match' : 'matches'} in {plural(fileCount, 'file')}
             </div>
 
             {Object.entries(grouped).map(([file, hits]) => (
               <div key={file}>
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-[var(--bg-elevated)] border-b border-[var(--border-default)]">
-                  <FileText className="w-3 h-3 text-[var(--text-muted)]" />
-                  <span className="text-[11px] font-medium text-[var(--text-secondary)]">{file}</span>
-                  <span className="text-[10px] text-[var(--text-muted)]">({hits.length})</span>
+                <div className="sticky top-0 flex items-center gap-2 border-y border-line bg-surface-sunken px-3 py-1.5">
+                  <FileText className="size-3.5 shrink-0 text-fg-muted" />
+                  <span className="truncate text-xs font-medium text-fg-secondary" title={file}>{file}</span>
+                  <span className="shrink-0 text-2xs text-fg-muted tabular-nums">{hits.length}</span>
                 </div>
                 {hits.map((hit, i) => (
                   <button
                     key={i}
+                    type="button"
                     onClick={() => onNavigate(hit.file, hit.line)}
-                    className="w-full text-left px-3 py-1 hover:bg-[var(--bg-hover)] transition-colors border-b border-[var(--border-subtle)] flex items-start gap-2"
+                    className="flex w-full cursor-pointer items-start gap-2 border-b border-line px-3 py-1 text-left transition-colors hover:bg-hover"
                   >
-                    <span className="text-[10px] text-[var(--text-muted)] shrink-0 w-8 text-right mt-px">
-                      {hit.line}
-                    </span>
-                    <span className="text-[11px] text-[var(--text-primary)] font-mono truncate">
-                      {hit.content}
-                    </span>
+                    <span className="mt-px w-10 shrink-0 text-right font-mono text-2xs text-fg-muted tabular-nums">{hit.line}</span>
+                    <span className="truncate font-mono text-xs text-fg">{hit.content}</span>
                   </button>
                 ))}
               </div>

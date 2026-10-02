@@ -22,13 +22,16 @@ interface WordmarkProps {
   height?: number
 }
 
-export function AvalokWordmark({ className, height = 20, forceInvert }: WordmarkProps & { forceInvert?: boolean }) {
+// Uses dedicated light/dark artwork. CSS invert would turn the blue dot orange.
+export function AvalokWordmark({ className, height = 20, onDark }: WordmarkProps & { onDark?: boolean }) {
+  const style = { height, width: 'auto' }
+  if (onDark) {
+    return <img src="/avalok-dark-mode.png" alt="avalok" className={cn('block', className)} style={style} />
+  }
   return (
-    <img
-      src="/avalok-5.png"
-      alt="avalok"
-      className={cn('block', forceInvert ? 'invert' : 'dark:invert', className)}
-      style={{ height, width: 'auto' }}
-    />
+    <>
+      <img src="/avalok-light-mode.png" alt="avalok" className={cn('block dark:hidden', className)} style={style} />
+      <img src="/avalok-dark-mode.png" alt="avalok" className={cn('hidden dark:block', className)} style={style} />
+    </>
   )
 }

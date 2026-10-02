@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { cn } from '../../lib/cn'
+import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
+import Input from '../ui/Input'
 
 interface Props {
   page: number
@@ -22,59 +24,37 @@ export default function FilePagination({ page, totalPages, totalLines, onPageCha
   }
 
   return (
-    <div className="flex items-center gap-3 px-3 py-1.5 border-t border-[var(--border-default)] bg-[var(--bg-surface)]">
-      <button
-        onClick={() => onPageChange(page - 1)}
-        disabled={page <= 1}
-        className={cn(
-          'p-1 rounded transition-colors',
-          page <= 1
-            ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-        )}
-      >
-        <ChevronLeft className="w-4 h-4" />
-      </button>
+    <div className="flex shrink-0 items-center gap-2 border-t border-line bg-surface px-3 py-1.5">
+      <IconButton label="Previous page" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+        <ChevronLeft className="size-4" />
+      </IconButton>
 
-      <span className="text-xs text-[var(--text-secondary)]">
-        Page <span className="font-medium text-[var(--text-primary)]">{page}</span> of{' '}
-        <span className="font-medium text-[var(--text-primary)]">{totalPages}</span>
+      <span className="text-xs text-fg-secondary tabular-nums">
+        Page <span className="font-medium text-fg">{page.toLocaleString()}</span> of{' '}
+        <span className="font-medium text-fg">{totalPages.toLocaleString()}</span>
       </span>
 
-      <button
-        onClick={() => onPageChange(page + 1)}
-        disabled={page >= totalPages}
-        className={cn(
-          'p-1 rounded transition-colors',
-          page >= totalPages
-            ? 'text-[var(--text-muted)] opacity-30 cursor-not-allowed'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-        )}
-      >
-        <ChevronRight className="w-4 h-4" />
-      </button>
+      <IconButton label="Next page" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+        <ChevronRight className="size-4" />
+      </IconButton>
 
       {totalPages > 2 && (
-        <form onSubmit={handleJump} className="flex items-center gap-1.5 ml-2">
-          <input
+        <form onSubmit={handleJump} className="ml-2 flex items-center gap-2">
+          <Input
             type="number"
             min={1}
             max={totalPages}
             value={jumpValue}
             onChange={e => setJumpValue(e.target.value)}
             placeholder="Go to"
-            className="w-16 px-1.5 py-0.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-app)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--text-accent)]"
+            aria-label="Go to page"
+            className="w-20 tabular-nums"
           />
-          <button
-            type="submit"
-            className="text-[10px] px-1.5 py-0.5 rounded text-[var(--text-accent)] hover:bg-[var(--bg-active)] transition-colors"
-          >
-            Go
-          </button>
+          <Button type="submit" size="sm" variant="secondary" disabled={!jumpValue}>Go</Button>
         </form>
       )}
 
-      <span className="ml-auto text-[10px] text-[var(--text-muted)]">
+      <span className="ml-auto text-xs text-fg-muted tabular-nums">
         {totalLines.toLocaleString()} lines total
       </span>
     </div>

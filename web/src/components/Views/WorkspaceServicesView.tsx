@@ -1,129 +1,91 @@
-import { useState, useEffect } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
+import { cn } from '../../lib/cn'
+import { plural } from '../../lib/format'
 import { listWorkspaceServices } from '../../lib/api'
-import EntityIcon, { EntityIconRaw } from '../ui/EntityIcon'
 import type { Workspace } from '../../lib/types'
+import EntityCollection from '../ui/EntityCollection'
+import { EntityIconRaw } from '../ui/EntityIcon'
 import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
-import Badge, { providerVariant } from '../ui/Badge'
-import LayoutToggle from '../ui/LayoutToggle'
-import CollectionGrid from '../ui/CollectionGrid'
-import { useLayoutToggle } from '../../lib/useLayoutToggle'
 import PageHeader from '../ui/PageHeader'
-import Spinner from '../ui/Spinner'
+import IconButton from '../ui/IconButton'
+import Button from '../ui/Button'
+import Alert from '../ui/Alert'
 import EmptyState from '../ui/EmptyState'
-import Card from '../ui/Card'
-import DataTable from '../ui/DataTable'
+import Page from '../Layout/Page'
+
+type WorkspaceService = Awaited<ReturnType<typeof listWorkspaceServices>>[number]
 
 interface Props {
   workspace: Workspace
   onSelectService: (svcName: string, svcLabel: string) => void
 }
 
+/** Services of a workspace (service-first hierarchy). */
 export default function WorkspaceServicesView({ workspace, onSelectService }: Props) {
-  const [services, setServices] = useState<{ name: string; friendly_name: string; provider: string; environments: number }[]>([])
+  const [services, setServices] = useState<WorkspaceService[]>([])
   const [loading, setLoading] = useState(true)
-  const { layout, changeLayout } = useLayoutToggle('avalok-ws-svc-layout')
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setRefreshing(true)
     listWorkspaceServices(workspace.name)
-      .then(setServices)
-      .catch(err => console.error('Failed to load services:', err))
-      .finally(() => setLoading(false))
+      .then(list => { setServices(list || []); setError(null) })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load services'))
+      .finally(() => { setLoading(false); setRefreshing(false) })
   }, [workspace.name])
 
-  if (loading) return <Spinner label="Loading services..." />
+  useEffect(() => { load() }, [load])
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
-        <PageHeader
-          title={workspace.name}
-          description={workspace.description}
-          actions={<LayoutToggle layout={layout} onChange={changeLayout} />}
-        />
+    <Page>
+      <PageHeader
+        eyebrow="Workspace"
+        title={workspace.name}
+        description={workspace.description}
+        actions={
+          <IconButton label="Refresh" size="md" onClick={load} disabled={refreshing}>
+            <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+          </IconButton>
+        }
+      />
 
-        {services.length === 0 ? (
-          <EmptyState
-            icon={<EntityIconRaw kind="service" className="w-7 h-7 text-emerald-400 opacity-60" />}
-            iconBg="bg-emerald-500/10"
-            title="No services"
-            description="No services found in this workspace."
-          />
-        ) : layout === 'list' ? (
-          <DataTable
-            columns={[
-              {
-                key: 'name',
-                header: 'Service',
-                render: (svc) => (
-                  <div className="flex items-center gap-3">
-                    <EntityIcon kind="service" />
-                    <div>
-                      <div className="font-medium text-[var(--text-primary)]">{svc.friendly_name || svc.name}</div>
-                      {svc.friendly_name && svc.friendly_name !== svc.name && (
-                        <div className="text-xs text-[var(--text-muted)]">{svc.name}</div>
-                      )}
-                    </div>
-                  </div>
-                ),
-              },
-              {
-                key: 'provider',
-                header: 'Provider',
-                align: 'right' as const,
-                render: (svc) => (
-                  <Badge variant={providerVariant(svc.provider)}>
-                    <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-                    {providerDisplayName(svc.provider)}
-                  </Badge>
-                ),
-              },
-              {
-                key: 'environments',
-                header: 'Environments',
-                className: 'w-36',
-                render: (svc) => (
-                  <span className="flex items-center gap-1.5 text-[var(--text-secondary)]">
-                    <EntityIconRaw kind="environment" className="w-3.5 h-3.5" />
-                    {svc.environments}
-                  </span>
-                ),
-              },
-              {
-                key: 'nav',
-                header: '',
-                className: 'w-10',
-                render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-              },
-            ]}
-            data={services}
-            keyFn={svc => svc.name}
-            onRowClick={svc => onSelectService(svc.name, svc.friendly_name || svc.name)}
-          />
-        ) : (
-          <CollectionGrid>
-            {services.map(svc => (
-              <Card key={svc.name} hover padding="md" className="cursor-pointer" onClick={() => onSelectService(svc.name, svc.friendly_name || svc.name)}>
-                <EntityIcon kind="service" className="mb-3" />
-                <div className="text-sm font-medium text-[var(--text-primary)]">{svc.friendly_name || svc.name}</div>
-                {svc.friendly_name && svc.friendly_name !== svc.name && (
-                  <div className="text-xs text-[var(--text-muted)] mt-0.5">{svc.name}</div>
-                )}
-                <div className="flex items-center justify-between w-full mt-4 pt-3 border-t border-[var(--border-subtle)]">
-                  <Badge variant={providerVariant(svc.provider)} className="text-[10px]">
-                    <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-                    {providerDisplayName(svc.provider)}
-                  </Badge>
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                    <EntityIconRaw kind="environment" className="w-3 h-3" />
-                    {svc.environments} env{svc.environments !== 1 ? 's' : ''}
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </CollectionGrid>
+      {error && (
+        <Alert tone="danger" title="Couldn't load services" className="mb-6"
+          action={<Button size="sm" variant="secondary" onClick={load} loading={refreshing}>Retry</Button>}>
+          {error}
+        </Alert>
+      )}
+
+      <EntityCollection
+        items={services}
+        keyFn={svc => svc.name}
+        kind="service"
+        name={svc => svc.friendly_name || svc.name}
+        description={svc => (svc.friendly_name && svc.friendly_name !== svc.name ? svc.name : undefined)}
+        icon={svc => <ProviderIcon provider={svc.provider} />}
+        meta={svc => (
+          <>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <ProviderIcon provider={svc.provider} className="size-3.5 shrink-0" />
+              <span className="truncate">{providerDisplayName(svc.provider)}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <EntityIconRaw kind="environment" className="size-3.5" />{plural(svc.environments, 'env')}
+            </span>
+          </>
         )}
-      </div>
-    </div>
+        searchText={svc => [svc.name, svc.friendly_name, svc.provider, providerDisplayName(svc.provider)]}
+        searchPlaceholder="Filter by name or provider…"
+        onOpen={svc => () => onSelectService(svc.name, svc.friendly_name || svc.name)}
+        layoutKey="avalok-ws-svc-layout"
+        loading={loading}
+        noun="services"
+        empty={!error && (
+          <EmptyState icon={<EntityIconRaw kind="service" />} tone="success" title="No services" description="No services are defined in this workspace." />
+        )}
+      />
+    </Page>
   )
 }

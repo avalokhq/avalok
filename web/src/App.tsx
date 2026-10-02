@@ -5,7 +5,7 @@ import { useTheme } from './lib/useTheme'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from './lib/types'
 import Header from './components/Layout/Header'
 import AppSidebar from './components/Layout/AppSidebar'
-import StatusIndicator from './components/Layout/StatusIndicator'
+import { SpinnerIcon } from './components/ui/Spinner'
 import WorkspacesView from './components/Views/WorkspacesView'
 import EnvironmentsView from './components/Views/EnvironmentsView'
 import ServicesView from './components/Views/ServicesView'
@@ -255,7 +255,6 @@ function coerceConnection(conn: Record<string, string>): Record<string, unknown>
 export default function App() {
   const { theme, setTheme } = useTheme()
   const [view, setView] = useState<View>({ page: 'workspaces' })
-  const [connected] = useState(true)
   const [serverMode, setServerMode] = useState(false)
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -340,8 +339,8 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[var(--bg-app)]">
-        <div className="text-sm text-[var(--text-muted)]">Loading...</div>
+      <div className="flex h-screen items-center justify-center bg-canvas">
+        <SpinnerIcon size="md" />
       </div>
     )
   }
@@ -718,12 +717,11 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-premium">
+    <div className="flex flex-col h-screen overflow-hidden bg-canvas">
       <Header
         theme={theme}
         onThemeChange={setTheme}
         breadcrumbs={breadcrumbs()}
-        connected={view.page === 'console' || view.page === 'sf-console' || view.page === 'resource-console' ? connected : undefined}
         onNavigateHome={() => navigate({ page: 'workspaces' })}
         onLogout={serverMode ? handleLogout : undefined}
         currentUser={currentUser}
@@ -999,8 +997,6 @@ export default function App() {
           )}
         </main>
       </div>
-
-      <StatusIndicator connected={connected} />
 
       <SearchDialog
         open={searchOpen}

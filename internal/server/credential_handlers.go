@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
-	"github.com/avalokhq/avalok/internal/provider"
 	"github.com/avalokhq/avalok/internal/store"
 )
 
@@ -26,17 +27,20 @@ func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		TargetType  string `json:"target_type"`
 		Description string `json:"description"`
+		Host        string `json:"host,omitempty"`
 		CreatedAt   any    `json:"created_at"`
 		UpdatedAt   any    `json:"updated_at"`
 	}
 
 	result := make([]credResponse, 0, len(creds))
 	for _, c := range creds {
+		host, _ := c.Config["host"].(string)
 		result = append(result, credResponse{
 			ID:          c.ID,
 			Name:        c.Name,
 			TargetType:  c.TargetType,
 			Description: c.Description,
+			Host:        host,
 			CreatedAt:   nullTimeJSON(c.CreatedAt),
 			UpdatedAt:   nullTimeJSON(c.UpdatedAt),
 		})
@@ -142,46 +146,76 @@ func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if req.TargetType != nil {
-		validTypes := map[string]bool{"kubernetes": true, "ssh": true, "winrm": true, "s3": true, "azure-storage": true, "gcs": true}
-		if !validTypes[*req.TargetType] {
-			writeError(w, http.StatusBadRequest, "target_type must be kubernetes, ssh, winrm, s3, azure-storage, or gcs")
-			return
-		}
-		existing.TargetType = *req.TargetType
-	}
-	if req.Config != nil {
-		if existing.Config == nil {
-			existing.Config = req.Config
-		} else {
-			for k, v := range req.Config {
-				if s, ok := v.(string); ok && (s == "" || s == "***redacted***") {
-					continue
-				}
-				existing.Config[k] = v
-			}
-		}
-	}
-	if req.Description != nil {
-		existing.Description = *req.Description
+	// Type is immutable: dependents resolve the profile by type and would break.
+	if req.TargetType != nil && *req.TargetType != existing.TargetType {
+		writeError(w, http.StatusBadRequest, "credential type cannot be changed")
+		return
 	}
 
-	if err := s.store.SaveCredential(r.Context(), existing); err != nil {
+	// Merge into a copy so a failed save never mutates the stored credential.
+	// "" or "***redacted***" keeps the existing value; null removes the key.
+	merged := make(map[string]any, len(existing.Config))
+	for k, v := range existing.Config {
+		merged[k] = v
+	}
+	var changed, cleared []string
+	for k, v := range req.Config {
+		if v == nil {
+			if _, ok := merged[k]; ok {
+				delete(merged, k)
+				cleared = append(cleared, k)
+			}
+			continue
+		}
+		if s, ok := v.(string); ok && (s == "" || s == "***redacted***") {
+			continue
+		}
+		merged[k] = v
+		changed = append(changed, k)
+	}
+
+	if p, ok := merged["port"]; ok && !validPort(p) {
+		writeError(w, http.StatusBadRequest, "port must be a number between 1 and 65535")
+		return
+	}
+
+	updated := *existing
+	updated.Config = merged
+	if req.Description != nil {
+		updated.Description = *req.Description
+	}
+
+	if err := s.store.SaveCredential(r.Context(), &updated); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update credential")
 		return
 	}
 
+	details := map[string]string{}
+	if len(changed) > 0 {
+		sort.Strings(changed)
+		details["changed"] = strings.Join(changed, ",")
+	}
+	if len(cleared) > 0 {
+		sort.Strings(cleared)
+		details["cleared"] = strings.Join(cleared, ",")
+	}
+	if req.Description != nil && *req.Description != existing.Description {
+		details["description"] = "updated"
+	}
 	s.store.RecordAudit(r.Context(), &store.AuditEntry{
 		UserID:   actor.ID,
 		Action:   "update_credential",
 		Resource: "credential/" + name,
+		Details:  details,
 	})
 
+	host, _ := updated.Config["host"].(string)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":          existing.ID,
-		"name":        existing.Name,
-		"target_type": existing.TargetType,
-		"description": existing.Description,
+		"id":          updated.ID,
+		"name":        updated.Name,
+		"target_type": updated.TargetType,
+		"description": updated.Description,
+		"host":        host,
 	})
 }
 
@@ -234,86 +268,91 @@ func (s *Server) handleTestCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	var testProvider string
-	switch cred.TargetType {
-	case "ssh":
-		testProvider = "ssh"
-	case "winrm":
-		testProvider = "winrm"
-	case "kubernetes":
-		testProvider = "kubernetes"
-	case "s3":
-		testProvider = "s3"
-	case "azure-storage":
-		accountName, _ := cred.Config["account_name"].(string)
-		connStr, _ := cred.Config["connection_string"].(string)
-		if accountName == "" && connStr == "" {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"status": "error",
-				"error":  "account_name or connection_string is required",
-			})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "ok",
-			"message": "credential configuration looks valid",
-		})
-		return
-	case "gcs":
-		testProvider = "gcs"
-	default:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("cannot test target type: %s", cred.TargetType))
-		return
-	}
-
-	p, ok := provider.Get(testProvider)
-	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "error",
-			"error":  fmt.Sprintf("provider %s not available", testProvider),
-		})
-		return
-	}
-
-	testConfig := make(map[string]any)
+	testConfig := make(map[string]any, len(cred.Config)+1)
 	for k, v := range cred.Config {
 		testConfig[k] = v
 	}
 	if body.Host != "" {
 		testConfig["host"] = body.Host
 	}
-	if testProvider == "ssh" {
-		if _, ok := testConfig["command"]; !ok {
-			testConfig["command"] = "echo ok"
-		}
-	}
 
-	host, _ := testConfig["host"].(string)
-	if host == "" && (testProvider == "ssh" || testProvider == "winrm") {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "error",
-			"error":  "host is required to test this credential",
-		})
+	var probe func(context.Context, *probeReport, map[string]any)
+	switch cred.TargetType {
+	case "ssh":
+		probe = probeSSH
+	case "winrm":
+		probe = probeWinRM
+	case "kubernetes":
+		probe = probeKubernetes
+	case "s3":
+		probe = probeS3
+	case "gcs":
+		probe = probeGCS
+	case "azure-storage":
+		probe = probeAzure
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("cannot test target type: %s", cred.TargetType))
 		return
 	}
 
-	if err := p.Connect(ctx, testConfig); err != nil {
-		logger.Error("credential test connection failed", "credential", cred.Name, "error", err)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "error",
-			"error":  "connection failed",
-		})
+	report := &probeReport{Steps: []probeStep{}}
+	if host, _ := testConfig["host"].(string); host == "" && (cred.TargetType == "ssh" || cred.TargetType == "winrm") {
+		report.Status = "error"
+		report.Error = "host is required to test this credential"
+		writeJSON(w, http.StatusOK, report)
 		return
 	}
-	defer p.Close()
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"message": "connection successful",
+	ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
+	defer cancel()
+	start := time.Now()
+	probe(ctx, report, testConfig)
+	report.finish(start)
+
+	if report.Status == "error" {
+		logger.Info("credential test failed", "credential", cred.Name, "target", report.Target, "reason", report.Error)
+	}
+
+	result := report.Error
+	if result == "" {
+		result = report.Message
+	}
+	details := map[string]string{"result": result}
+	if report.Target != "" {
+		details["target"] = report.Target
+	}
+	if body.Host != "" {
+		details["host_override"] = "true"
+	}
+	s.store.RecordAudit(r.Context(), &store.AuditEntry{
+		UserID:   userFromContext(r).ID,
+		Action:   "test_credential",
+		Resource: "credential/" + cred.Name,
+		Details:  details,
 	})
+
+	writeJSON(w, http.StatusOK, report)
+}
+
+func validPort(v any) bool {
+	var n int
+	switch p := v.(type) {
+	case float64:
+		if p != float64(int(p)) {
+			return false
+		}
+		n = int(p)
+	case int:
+		n = p
+	case string:
+		var err error
+		if n, err = strconv.Atoi(strings.TrimSpace(p)); err != nil {
+			return false
+		}
+	default:
+		return false
+	}
+	return n >= 1 && n <= 65535
 }
 
 func redactSensitiveKeys(config map[string]any) map[string]any {

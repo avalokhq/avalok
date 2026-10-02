@@ -1,12 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronRight, Terminal, LayoutGrid, Rows3, Merge, X, Loader2, FolderOpen, FileText } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Terminal, LayoutGrid, Rows3, Merge, X, Loader2, Folder, FileText } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageDirectory, storageObjectStreamURL, listServiceStorageObjects, serviceStorageStreamURL } from '../../lib/api'
+import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageDirectory, storageObjectStreamURL, listServiceStorageObjects, serviceStorageStreamURL, fetchConfig, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, listStandaloneServices, standaloneServiceStreamURL } from '../../lib/api'
 import type { ResourceWorkloads } from '../../lib/api'
-import type { Workspace, Environment, Service } from '../../lib/types'
+import type { Workspace, Environment, Service, StandaloneService } from '../../lib/types'
 import ProviderIcon from '../ui/ProviderIcon'
 import SourceDot from '../ui/SourceDot'
+import TreeItem from '../ui/TreeItem'
+import IconButton from '../ui/IconButton'
+import ResizeHandle from '../ui/ResizeHandle'
+import EmptyState from '../ui/EmptyState'
+import SegmentedControl from '../ui/SegmentedControl'
 import LogPanel from '../LogConsole/LogPanel'
 import MergedLogPanel from '../LogConsole/MergedLogPanel'
 
@@ -50,6 +55,14 @@ interface TreeSfEnv {
   targets: number
 }
 
+/** Standalone environment (outside any workspace); services load on first expand. */
+interface TreeStandaloneEnv {
+  name: string
+  expanded: boolean
+  loading: boolean
+  services: Service[] | null
+}
+
 interface TreeStorageNode {
   name: string
   path: string
@@ -80,6 +93,48 @@ type LayoutMode = 'grid' | 'tabs' | 'merged'
 
 const LIMITS: Record<LayoutMode, number> = { grid: 6, tabs: 10, merged: 10 }
 
+const LAYOUT_OPTIONS = [
+  { value: 'grid' as const, label: 'Grid', icon: <LayoutGrid />, title: 'Grid: split view with up to 6 panes' },
+  { value: 'tabs' as const, label: 'Tabs', icon: <Rows3 />, title: 'Tabs: one pane at a time' },
+  { value: 'merged' as const, label: 'Merged', icon: <Merge />, title: 'Merged: all sources in one stream' },
+]
+
+const SIDEBAR_MIN = 200
+const SIDEBAR_MAX = 480
+
+const spinner = <Loader2 className="size-3.5 shrink-0 animate-spin text-fg-muted" />
+
+/** Leaf row that opens or closes a log pane. */
+function SourceRow({ id, label, depth, icon, meta, active, full, onToggle }: {
+  id: string
+  label: string
+  depth: number
+  icon?: React.ReactNode
+  meta?: string
+  active: boolean
+  full: boolean
+  onToggle: () => void
+}) {
+  const blocked = !active && full
+  return (
+    <TreeItem
+      depth={depth}
+      label={label}
+      title={blocked ? 'Pane limit reached for this layout' : active ? `Close ${label}` : `Open ${label}`}
+      icon={<span className="flex items-center gap-1.5"><SourceDot name={id} />{icon}</span>}
+      selected={active}
+      onSelect={blocked ? undefined : onToggle}
+      className={cn(blocked && 'cursor-not-allowed opacity-50 hover:bg-transparent')}
+      status={
+        <>
+          {meta && <span className="shrink-0 text-2xs text-fg-muted">{meta}</span>}
+          {active && <Terminal className="size-3.5 shrink-0 text-accent" />}
+        </>
+      }
+    />
+  )
+}
+
 function StorageTreeNodes({ nodes, resName, resIdx, depth, parentPath, activeIds, isFull, onToggleDir, onSelect }: {
   nodes: TreeStorageNode[]
   resName: string
@@ -91,8 +146,6 @@ function StorageTreeNodes({ nodes, resName, resIdx, depth, parentPath, activeIds
   onToggleDir: (resIdx: number, path: string[]) => void
   onSelect: (key: string, name: string) => void
 }) {
-  const paddingLeft = 24 + depth * 16
-
   return (
     <>
       {nodes.map((node, nodeIdx) => {
@@ -102,20 +155,14 @@ function StorageTreeNodes({ nodes, resName, resIdx, depth, parentPath, activeIds
         if (node.isDirectory) {
           return (
             <div key={pathKey}>
-              <button
-                onClick={() => onToggleDir(resIdx, currentPath.map(String))}
-                style={{ paddingLeft }}
-                className="w-full flex items-center gap-1.5 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
-              >
-                {node.loading
-                  ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
-                  : node.expanded
-                    ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                    : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                }
-                <FolderOpen className="w-3 h-3 text-[var(--text-accent)] shrink-0" />
-                <span className="text-[var(--text-secondary)] font-medium text-xs truncate">{node.name}</span>
-              </button>
+              <TreeItem
+                depth={depth}
+                label={node.name}
+                icon={<Folder />}
+                expanded={node.expanded}
+                onToggle={() => onToggleDir(resIdx, currentPath.map(String))}
+                status={node.loading ? spinner : undefined}
+              />
               {node.expanded && node.children.length > 0 && (
                 <StorageTreeNodes
                   nodes={node.children}
@@ -134,28 +181,17 @@ function StorageTreeNodes({ nodes, resName, resIdx, depth, parentPath, activeIds
         }
 
         const id = `res:${resName}/obj/${node.path}`
-        const isActive = activeIds.has(id)
-
         return (
-          <button
+          <SourceRow
             key={pathKey}
-            onClick={() => onSelect(node.path, node.name)}
-            disabled={!isActive && isFull}
-            style={{ paddingLeft }}
-            className={cn(
-              'w-full flex items-center gap-2 pr-3 py-1.5 text-left transition-colors',
-              isActive
-                ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                : isFull
-                  ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
-                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-            )}
-          >
-            <SourceDot name={id} />
-            <FileText className={cn('w-3 h-3 shrink-0', isActive ? 'text-[var(--text-accent)]' : 'text-[var(--text-muted)]')} />
-            <span className="flex-1 truncate text-xs">{node.name}</span>
-            {isActive && <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />}
-          </button>
+            id={id}
+            label={node.name}
+            depth={depth}
+            icon={<FileText />}
+            active={activeIds.has(id)}
+            full={isFull}
+            onToggle={() => onSelect(node.path, node.name)}
+          />
         )
       })}
     </>
@@ -168,6 +204,9 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
   const [resourceTree, setResourceTree] = useState<TreeResource[]>([])
   const [svcStorageTrees, setSvcStorageTrees] = useState<Record<string, { expanded: boolean; loading: boolean; tree: TreeStorageNode[] }>>({})
   const [loading, setLoading] = useState(true)
+  // Standalone environments and services appear only when enabled in Settings (off by default).
+  const [standaloneEnvs, setStandaloneEnvs] = useState<TreeStandaloneEnv[]>([])
+  const [standaloneSvcs, setStandaloneSvcs] = useState<StandaloneService[]>([])
   const [layout, setLayout] = useState<LayoutMode>(() =>
     (localStorage.getItem('avalok-logs-layout') as LayoutMode) || 'grid'
   )
@@ -181,6 +220,7 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
 
   useEffect(() => {
     loadTree()
+    loadStandalone()
     if (hasResourceScope) loadResources()
   }, [])
 
@@ -257,6 +297,34 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
         )
       } : node
     ))
+  }
+
+  async function loadStandalone() {
+    try {
+      const config = await fetchConfig()
+      const [envs, svcs] = await Promise.all([
+        config.enable_environments ? listStandaloneEnvs().catch(() => []) : [],
+        config.enable_services ? listStandaloneServices().catch(() => []) : [],
+      ])
+      setStandaloneEnvs((envs || []).map(e => ({ name: e.name, expanded: false, loading: false, services: null })))
+      setStandaloneSvcs(svcs || [])
+    } catch { /* config unavailable: keep workspaces only */ }
+  }
+
+  async function toggleStandaloneEnv(name: string) {
+    const node = standaloneEnvs.find(e => e.name === name)
+    if (!node) return
+    const patch = (p: Partial<TreeStandaloneEnv>) => setStandaloneEnvs(prev => prev.map(e => e.name === name ? { ...e, ...p } : e))
+    if (node.expanded || node.services) {
+      patch({ expanded: !node.expanded })
+      return
+    }
+    patch({ expanded: true, loading: true })
+    try {
+      patch({ loading: false, services: await listStandaloneEnvServices(name) })
+    } catch {
+      patch({ loading: false, services: [] })
+    }
   }
 
   async function loadResources() {
@@ -521,303 +589,272 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
     setSessions(prev => prev.length > limit ? prev.slice(0, limit) : prev)
   }
 
-  function handleResize(e: React.MouseEvent) {
-    e.preventDefault()
-    const startX = e.clientX
-    const startW = sidebarWidth
-    function onMove(ev: MouseEvent) {
-      const w = Math.max(200, Math.min(400, startW + ev.clientX - startX))
-      setSidebarWidth(w)
-    }
-    function onUp() {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-      localStorage.setItem('avalok-logs-sidebar-w', String(sidebarWidth))
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+  const sidebarWRef = useRef(sidebarWidth)
+  useEffect(() => { sidebarWRef.current = sidebarWidth }, [sidebarWidth])
+
+  function resizeSidebar(delta: number) {
+    setSidebarWidth(w => Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, w + delta)))
+  }
+
+  function focusTab(idx: number) {
+    const next = sessions[(idx + sessions.length) % sessions.length]
+    setActiveTab(next.id)
+    requestAnimationFrame(() => document.getElementById(`log-tab-${next.id}`)?.focus())
   }
 
   const gridClass = (() => {
     const n = sessions.length
-    if (n <= 3) return 'grid-cols-1'
+    if (n <= 3) return 'grid-cols-1 auto-rows-fr'
     if (n <= 4) return 'grid-cols-2 grid-rows-2'
     return 'grid-cols-3 grid-rows-2'
   })()
 
   const activeIds = new Set(sessions.map(s => s.id))
+  const isFull = sessions.length >= maxForLayout
+  const toggleSession = (id: string, open: () => void) => activeIds.has(id) ? removeSession(id) : open()
+
+  const panelFor = (session: LogSession) => (
+    <LogPanel
+      key={session.id}
+      panelId={session.id}
+      workspace={session.workspace}
+      environment={session.environment}
+      service={session.service}
+      label={session.label}
+      streamUrl={session.streamUrl}
+      onClose={() => removeSession(session.id)}
+      maxLines={logBufferLines}
+      resourceName={session.resourceName}
+      objectKey={session.objectKey}
+    />
+  )
+
+  const serviceStorage = (wsName: string, svcName: string, depth: number) => {
+    const state = svcStorageTrees[`${wsName}/${svcName}`]
+    if (!state?.expanded || state.tree.length === 0) return null
+    const resPrefix = `svc-storage:${wsName}/${svcName}`
+    return (
+      <StorageTreeNodes
+        nodes={state.tree}
+        resName={resPrefix}
+        resIdx={0}
+        depth={depth}
+        parentPath={[]}
+        activeIds={activeIds}
+        isFull={isFull}
+        onToggleDir={(_idx, path) => toggleServiceStorageDir(wsName, svcName, path)}
+        onSelect={(key, name) => toggleSession(`res:${resPrefix}/obj/${key}`, () =>
+          addSession(resPrefix, 'obj', key, name, serviceStorageStreamURL(wsName, svcName, key)))}
+      />
+    )
+  }
+
+  const sectionLabel = 'px-2 pt-3 pb-1 text-2xs font-medium uppercase tracking-wider text-fg-muted'
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Sidebar */}
-      <div className="shrink-0 flex flex-col h-full bg-[var(--bg-surface)] border-r border-[var(--border-default)]" style={{ width: sidebarWidth }}>
-        {/* Sidebar header with layout toggle */}
-        <div className="shrink-0 px-3 py-2.5 border-b border-[var(--border-default)]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-medium text-[var(--text-secondary)] uppercase tracking-wider">Services</span>
-            <span className="text-[10px] text-[var(--text-muted)]">{sessions.length}/{maxForLayout}</span>
+      {/* Source tree */}
+      <aside className="flex h-full shrink-0 flex-col border-r border-line bg-surface" style={{ width: sidebarWidth }}>
+        <div className="shrink-0 space-y-2 border-b border-line p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-2xs font-medium uppercase tracking-wider text-fg-muted">Sources</span>
+            <span className="text-2xs tabular-nums text-fg-muted" title="Open panes / limit for this layout">
+              {sessions.length}/{maxForLayout} open
+            </span>
           </div>
-          {/* Layout mode toggle */}
-          <div className="flex items-center bg-[var(--bg-elevated)] rounded-lg p-0.5 border border-[var(--border-subtle)]">
-            <button
-              onClick={() => changeLayout('grid')}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[10px] transition-all',
-                layout === 'grid'
-                  ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm font-medium'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              )}
-              title="Grid: split view with up to 6 panels"
-            >
-              <LayoutGrid className="w-3 h-3" />
-              Grid
-            </button>
-            <button
-              onClick={() => changeLayout('tabs')}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[10px] transition-all',
-                layout === 'tabs'
-                  ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm font-medium'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              )}
-              title="Tabs: one panel at a time, browser-style tabs"
-            >
-              <Rows3 className="w-3 h-3" />
-              Tabs
-            </button>
-            <button
-              onClick={() => changeLayout('merged')}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md text-[10px] transition-all',
-                layout === 'merged'
-                  ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm font-medium'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              )}
-              title="Merged: all logs in a single combined stream"
-            >
-              <Merge className="w-3 h-3" />
-              Merged
-            </button>
-          </div>
+          <SegmentedControl size="sm" label="Layout" options={LAYOUT_OPTIONS} value={layout} onChange={changeLayout} />
         </div>
 
-        {/* Tree */}
-        <div className="flex-1 overflow-y-auto py-1 text-[13px] select-none">
+        <div role="tree" aria-label="Log sources" className="min-h-0 flex-1 overflow-y-auto p-2">
           {loading && (
-            <div className="px-4 py-3 text-xs text-[var(--text-muted)]">Loading...</div>
+            <div className="space-y-1.5 p-1" aria-busy>
+              {[70, 55, 80, 60, 45].map(w => <div key={w} className="skeleton h-6 rounded-control" style={{ width: `${w}%` }} />)}
+            </div>
           )}
 
-          {tree.map((wsNode, wsIdx) => (
-            <div key={wsNode.data.name}>
-              <button
-                onClick={() => toggleWorkspace(wsIdx)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors"
-              >
-                {wsNode.expanded
-                  ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                  : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                }
-                <span className="text-[var(--text-primary)] font-medium text-xs">{wsNode.data.name}</span>
-              </button>
+          {!loading && tree.length === 0 && standaloneEnvs.length === 0 && standaloneSvcs.length === 0 && resourceTree.length === 0 && (
+            <p className="px-2 py-3 text-xs text-fg-muted">No sources yet. Create a workspace to stream its logs here.</p>
+          )}
 
-              {wsNode.expanded && wsNode.isServiceFirst && wsNode.sfServices.map((svcNode, svcIdx) => {
-                if (isCloudType(svcNode.provider)) {
-                  const stKey = `${svcNode.workspaceName}/${svcNode.name}`
-                  const stState = svcStorageTrees[stKey]
-                  const resPrefix = `svc-storage:${svcNode.workspaceName}/${svcNode.name}`
+          {tree.length > 0 && (standaloneEnvs.length > 0 || standaloneSvcs.length > 0 || (hasResourceScope && resourceTree.length > 0)) && (
+            <div className={sectionLabel}>Workspaces</div>
+          )}
+
+          {tree.map((wsNode, wsIdx) => {
+            const wsName = wsNode.data.name
+            return (
+              <div key={wsName}>
+                <TreeItem
+                  label={<span className="font-medium text-fg">{wsName}</span>}
+                  expanded={wsNode.expanded}
+                  onToggle={() => toggleWorkspace(wsIdx)}
+                />
+
+                {wsNode.expanded && wsNode.isServiceFirst && wsNode.sfServices.map((svcNode, svcIdx) => {
+                  if (isCloudType(svcNode.provider)) {
+                    const st = svcStorageTrees[`${wsName}/${svcNode.name}`]
+                    return (
+                      <div key={svcNode.name}>
+                        <TreeItem
+                          depth={1}
+                          label={svcNode.friendlyName}
+                          icon={<ProviderIcon provider={svcNode.provider} />}
+                          expanded={!!st?.expanded}
+                          onToggle={() => toggleServiceStorage(wsName, svcNode.name)}
+                          status={st?.loading ? spinner : undefined}
+                        />
+                        {serviceStorage(wsName, svcNode.name, 2)}
+                      </div>
+                    )
+                  }
+
                   return (
                     <div key={svcNode.name}>
-                      <button
-                        onClick={() => toggleServiceStorage(svcNode.workspaceName, svcNode.name)}
-                        className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
-                      >
-                        {stState?.loading
-                          ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
-                          : stState?.expanded
-                            ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                            : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                        }
-                        <ProviderIcon provider={svcNode.provider} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                        <span className="text-[var(--text-secondary)] font-medium text-xs">{svcNode.friendlyName}</span>
-                      </button>
-                      {stState?.expanded && stState.tree.length > 0 && (
-                        <StorageTreeNodes
-                          nodes={stState.tree}
-                          resName={resPrefix}
-                          resIdx={0}
-                          depth={2}
-                          parentPath={[]}
-                          activeIds={activeIds}
-                          isFull={sessions.length >= maxForLayout}
-                          onToggleDir={(_idx, path) => toggleServiceStorageDir(svcNode.workspaceName, svcNode.name, path)}
-                          onSelect={(key, name) => {
-                            const url = serviceStorageStreamURL(svcNode.workspaceName, svcNode.name, key)
-                            const id = `res:${resPrefix}/obj/${key}`
-                            if (activeIds.has(id)) removeSession(id)
-                            else addSession(resPrefix, 'obj', key, name, url)
-                          }}
-                        />
-                      )}
+                      <TreeItem
+                        depth={1}
+                        label={svcNode.friendlyName}
+                        icon={<ProviderIcon provider={svcNode.provider} />}
+                        expanded={svcNode.expanded}
+                        onToggle={() => toggleSfService(wsIdx, svcIdx)}
+                      />
+                      {svcNode.expanded && svcNode.environments.map(env => {
+                        const id = `${wsName}/${env.name}/${svcNode.name}`
+                        return (
+                          <SourceRow
+                            key={env.name}
+                            id={id}
+                            label={env.name}
+                            depth={2}
+                            active={activeIds.has(id)}
+                            full={isFull}
+                            onToggle={() => toggleSession(id, () => addSession(wsName, env.name, svcNode.name, svcNode.friendlyName))}
+                          />
+                        )
+                      })}
                     </div>
                   )
-                }
+                })}
 
-                return (
-                  <div key={svcNode.name}>
-                    <button
-                      onClick={() => toggleSfService(wsIdx, svcIdx)}
-                      className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
-                    >
-                      {svcNode.expanded
-                        ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                        : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
+                {wsNode.expanded && !wsNode.isServiceFirst && wsNode.environments.map((envNode, envIdx) => (
+                  <div key={envNode.data.name}>
+                    <TreeItem
+                      depth={1}
+                      label={envNode.data.name}
+                      expanded={envNode.expanded}
+                      onToggle={() => toggleEnv(wsIdx, envIdx)}
+                    />
+
+                    {envNode.expanded && envNode.services.map(svc => {
+                      const svcLabel = svc.friendly_name || svc.name
+                      if (isCloudType(svc.provider)) {
+                        const st = svcStorageTrees[`${wsName}/${svc.name}`]
+                        return (
+                          <div key={svc.name}>
+                            <TreeItem
+                              depth={2}
+                              label={svcLabel}
+                              icon={<ProviderIcon provider={svc.provider} />}
+                              expanded={!!st?.expanded}
+                              onToggle={() => toggleServiceStorage(wsName, svc.name)}
+                              status={st?.loading ? spinner : undefined}
+                            />
+                            {serviceStorage(wsName, svc.name, 3)}
+                          </div>
+                        )
                       }
-                      <ProviderIcon provider={svcNode.provider} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                      <span className="text-[var(--text-secondary)] font-medium text-xs">{svcNode.friendlyName}</span>
-                    </button>
 
-                    {svcNode.expanded && svcNode.environments.map(env => {
-                      const id = `${svcNode.workspaceName}/${env.name}/${svcNode.name}`
-                      const isActive = activeIds.has(id)
-                      const isFull = sessions.length >= maxForLayout
-
+                      const id = `${wsName}/${envNode.data.name}/${svc.name}`
                       return (
-                        <button
-                          key={env.name}
-                          onClick={() => isActive ? removeSession(id) : addSession(svcNode.workspaceName, env.name, svcNode.name, svcNode.friendlyName)}
-                          disabled={!isActive && isFull}
-                          className={cn(
-                            'w-full flex items-center gap-2 pl-10 pr-3 py-1.5 text-left transition-colors',
-                            isActive
-                              ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                              : isFull
-                                ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
-                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                          )}
-                        >
-                          <SourceDot name={id} />
-                          <span className="flex-1 truncate text-xs">{env.name}</span>
-                          {isActive && (
-                            <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />
-                          )}
-                        </button>
+                        <SourceRow
+                          key={svc.name}
+                          id={id}
+                          label={svcLabel}
+                          depth={2}
+                          icon={<ProviderIcon provider={svc.provider} />}
+                          active={activeIds.has(id)}
+                          full={isFull}
+                          onToggle={() => toggleSession(id, () => addSession(wsName, envNode.data.name, svc.name, svcLabel))}
+                        />
                       )
                     })}
                   </div>
-                )
-              })}
+                ))}
+              </div>
+            )
+          })}
 
-              {wsNode.expanded && !wsNode.isServiceFirst && wsNode.environments.map((envNode, envIdx) => (
-                <div key={envNode.data.name}>
-                  <button
-                    onClick={() => toggleEnv(wsIdx, envIdx)}
-                    className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
-                  >
-                    {envNode.expanded
-                      ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                      : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                    }
-                    <span className="text-[var(--text-secondary)] font-medium text-xs">{envNode.data.name}</span>
-                  </button>
-
-                  {envNode.expanded && envNode.services.map(svc => {
-                    if (isCloudType(svc.provider)) {
-                      const stKey = `${wsNode.data.name}/${svc.name}`
-                      const stState = svcStorageTrees[stKey]
-                      const resPrefix = `svc-storage:${wsNode.data.name}/${svc.name}`
-                      return (
-                        <div key={svc.name}>
-                          <button
-                            onClick={() => toggleServiceStorage(wsNode.data.name, svc.name)}
-                            className="w-full flex items-center gap-1.5 pl-10 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
-                          >
-                            {stState?.loading
-                              ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
-                              : stState?.expanded
-                                ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                                : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                            }
-                            <ProviderIcon provider={svc.provider} className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                            <span className="text-[var(--text-secondary)] font-medium text-xs truncate">{svc.friendly_name || svc.name}</span>
-                          </button>
-                          {stState?.expanded && stState.tree.length > 0 && (
-                            <StorageTreeNodes
-                              nodes={stState.tree}
-                              resName={resPrefix}
-                              resIdx={0}
-                              depth={2}
-                              parentPath={[]}
-                              activeIds={activeIds}
-                              isFull={sessions.length >= maxForLayout}
-                              onToggleDir={(_idx, path) => toggleServiceStorageDir(wsNode.data.name, svc.name, path)}
-                              onSelect={(key, name) => {
-                                const url = serviceStorageStreamURL(wsNode.data.name, svc.name, key)
-                                const id = `res:${resPrefix}/obj/${key}`
-                                if (activeIds.has(id)) removeSession(id)
-                                else addSession(resPrefix, 'obj', key, name, url)
-                              }}
-                            />
-                          )}
-                        </div>
-                      )
-                    }
-
-                    const id = `${wsNode.data.name}/${envNode.data.name}/${svc.name}`
-                    const isActive = activeIds.has(id)
-                    const isFull = sessions.length >= maxForLayout
-
+          {standaloneEnvs.length > 0 && (
+            <>
+              <div className={sectionLabel}>Environments</div>
+              {standaloneEnvs.map(env => (
+                <div key={env.name}>
+                  <TreeItem
+                    label={<span className="font-medium text-fg">{env.name}</span>}
+                    expanded={env.expanded}
+                    onToggle={() => toggleStandaloneEnv(env.name)}
+                    status={env.loading ? spinner : undefined}
+                  />
+                  {env.expanded && env.services?.length === 0 && (
+                    <p className="py-1 pl-10 text-xs text-fg-muted">No services</p>
+                  )}
+                  {env.expanded && env.services?.map(svc => {
+                    const svcLabel = svc.friendly_name || svc.name
+                    const scope = `env:${env.name}`
+                    const id = `res:${scope}/${env.name}/${svc.name}`
                     return (
-                      <button
+                      <SourceRow
                         key={svc.name}
-                        onClick={() => isActive ? removeSession(id) : addSession(wsNode.data.name, envNode.data.name, svc.name, svc.friendly_name || svc.name)}
-                        disabled={!isActive && isFull}
-                        className={cn(
-                          'w-full flex items-center gap-2 pl-10 pr-3 py-1.5 text-left transition-colors',
-                          isActive
-                            ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                            : isFull
-                              ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
-                              : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                        )}
-                      >
-                        <SourceDot name={id} />
-                        <ProviderIcon
-                          provider={svc.provider}
-                          className={cn('w-3 h-3 shrink-0', isActive ? 'text-[var(--text-accent)]' : 'text-[var(--text-muted)]')}
-                        />
-                        <span className="flex-1 truncate text-xs">{svc.friendly_name || svc.name}</span>
-                        {isActive && (
-                          <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />
-                        )}
-                      </button>
+                        id={id}
+                        label={svcLabel}
+                        depth={1}
+                        icon={<ProviderIcon provider={svc.provider} />}
+                        active={activeIds.has(id)}
+                        full={isFull}
+                        onToggle={() => toggleSession(id, () =>
+                          addSession(scope, env.name, svc.name, svcLabel, standaloneEnvStreamURL(env.name, svc.name)))}
+                      />
                     )
                   })}
                 </div>
               ))}
-            </div>
-          ))}
+            </>
+          )}
 
-          {/* Resources section */}
+          {standaloneSvcs.length > 0 && (
+            <>
+              <div className={sectionLabel}>Services</div>
+              {standaloneSvcs.map(svc => {
+                const id = `res:svc:${svc.name}/standalone/${svc.name}`
+                return (
+                  <SourceRow
+                    key={svc.name}
+                    id={id}
+                    label={svc.name}
+                    depth={0}
+                    icon={<ProviderIcon provider={svc.provider} />}
+                    active={activeIds.has(id)}
+                    full={isFull}
+                    onToggle={() => toggleSession(id, () =>
+                      addSession(`svc:${svc.name}`, 'standalone', svc.name, svc.name, standaloneServiceStreamURL(svc.name)))}
+                  />
+                )
+              })}
+            </>
+          )}
+
           {hasResourceScope && resourceTree.length > 0 && (
             <>
-              <div className="px-3 pt-3 pb-1">
-                <span className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wider">Resources</span>
-              </div>
+              <div className={sectionLabel}>Resources</div>
               {resourceTree.map((resNode, resIdx) => (
                 <div key={resNode.name}>
-                  <button
-                    onClick={() => toggleResource(resIdx)}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--bg-hover)] transition-colors"
-                  >
-                    {resNode.loading
-                      ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
-                      : resNode.expanded
-                        ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                        : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                    }
-                    <ProviderIcon provider={resNode.type} className="w-3.5 h-3.5 shrink-0" />
-                    <span className="text-[var(--text-primary)] font-medium text-xs truncate">{resNode.name}</span>
-                  </button>
+                  <TreeItem
+                    label={<span className="font-medium text-fg">{resNode.name}</span>}
+                    icon={<ProviderIcon provider={resNode.type} />}
+                    expanded={resNode.expanded}
+                    onToggle={() => toggleResource(resIdx)}
+                    status={resNode.loading ? spinner : undefined}
+                    title={resNode.description || undefined}
+                  />
 
                   {resNode.expanded && isCloudType(resNode.type) && (
                     <StorageTreeNodes
@@ -827,62 +864,37 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
                       depth={1}
                       parentPath={[]}
                       activeIds={activeIds}
-                      isFull={sessions.length >= maxForLayout}
+                      isFull={isFull}
                       onToggleDir={toggleStorageDir}
-                      onSelect={(key, name) => {
-                        const url = storageObjectStreamURL(resNode.name, key)
-                        const id = `res:${resNode.name}/obj/${key}`
-                        if (activeIds.has(id)) removeSession(id)
-                        else addSession(resNode.name, 'storage', key, name, url, resNode.name, key)
-                      }}
+                      onSelect={(key, name) => toggleSession(`res:${resNode.name}/obj/${key}`, () =>
+                        addSession(resNode.name, 'storage', key, name, storageObjectStreamURL(resNode.name, key), resNode.name, key))}
                     />
                   )}
 
                   {resNode.expanded && !isCloudType(resNode.type) && resNode.namespaces.map((nsNode, nsIdx) => (
                     <div key={nsNode.name}>
-                      <button
-                        onClick={() => toggleResourceNs(resIdx, nsIdx)}
-                        className="w-full flex items-center gap-1.5 pl-6 pr-3 py-1.5 text-left hover:bg-[var(--bg-hover)] transition-colors"
-                      >
-                        {nsNode.loading
-                          ? <Loader2 className="w-3 h-3 text-[var(--text-muted)] shrink-0 animate-spin" />
-                          : nsNode.expanded
-                            ? <ChevronDown className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                            : <ChevronRight className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-                        }
-                        <span className="text-[var(--text-secondary)] font-medium text-xs truncate">{nsNode.name}</span>
-                      </button>
+                      <TreeItem
+                        depth={1}
+                        label={nsNode.name}
+                        expanded={nsNode.expanded}
+                        onToggle={() => toggleResourceNs(resIdx, nsIdx)}
+                        status={nsNode.loading ? spinner : undefined}
+                      />
 
                       {nsNode.expanded && nsNode.workloads.map(wl => {
-                        const url = resourceStreamURL(resNode.name, nsNode.name, wl.kind, wl.name)
                         const id = `res:${resNode.name}/${nsNode.name}/${wl.name}`
-                        const isActive = activeIds.has(id)
-                        const isFull = sessions.length >= maxForLayout
-
+                        const url = resourceStreamURL(resNode.name, nsNode.name, wl.kind, wl.name)
                         return (
-                          <button
+                          <SourceRow
                             key={`${wl.kind}:${wl.name}`}
-                            onClick={() => isActive ? removeSession(id) : addSession(resNode.name, nsNode.name, wl.name, wl.name, url)}
-                            disabled={!isActive && isFull}
-                            className={cn(
-                              'w-full flex items-center gap-2 pl-10 pr-3 py-1.5 text-left transition-colors',
-                              isActive
-                                ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                                : isFull
-                                  ? 'text-[var(--text-muted)] cursor-not-allowed opacity-50'
-                                  : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                            )}
-                          >
-                            <SourceDot name={id} />
-                            <span className="flex-1 truncate text-xs">{wl.name}</span>
-                            <span className={cn(
-                              'text-[9px] px-1 rounded shrink-0',
-                              isActive ? 'text-[var(--text-accent)]' : 'text-[var(--text-muted)]'
-                            )}>{wl.kindLabel}</span>
-                            {isActive && (
-                              <Terminal className="w-3 h-3 shrink-0 text-[var(--text-accent)]" />
-                            )}
-                          </button>
+                            id={id}
+                            label={wl.name}
+                            depth={2}
+                            meta={wl.kindLabel}
+                            active={activeIds.has(id)}
+                            full={isFull}
+                            onToggle={() => toggleSession(id, () => addSession(resNode.name, nsNode.name, wl.name, wl.name, url))}
+                          />
                         )
                       })}
                     </div>
@@ -892,92 +904,72 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
             </>
           )}
         </div>
-      </div>
+      </aside>
 
-      {/* Resize handle */}
-      <div
-        className="w-px shrink-0 cursor-col-resize bg-[var(--border-default)] hover:bg-[var(--text-accent)] active:bg-[var(--text-accent)] transition-colors"
-        onMouseDown={handleResize}
+      <ResizeHandle
+        label="Resize sources panel"
+        onResize={resizeSidebar}
+        onResizeEnd={() => localStorage.setItem('avalok-logs-sidebar-w', String(sidebarWRef.current))}
       />
 
-      {/* Main content area */}
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+      {/* Panes */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas">
         {sessions.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-3 text-[var(--text-muted)]">
-            <Terminal className="w-10 h-10 opacity-30" />
-            <p className="text-sm">Select services from the sidebar to open log panels</p>
-            <p className="text-xs">Up to {maxForLayout} panels in {layout} mode</p>
+          <div className="flex h-full items-center justify-center p-6">
+            <EmptyState
+              icon={<Terminal />}
+              title="Pick a source from the left"
+              description={`Click a service, workload or file to stream its logs. Up to ${maxForLayout} panes in ${layout} layout; click a source again to close it.`}
+            />
           </div>
         ) : layout === 'grid' ? (
-          /* ── Grid Mode ── */
-          <div className={cn('grid gap-2 h-full p-2', gridClass)}>
-            {sessions.map(session => (
-              <LogPanel
-                key={session.id}
-                panelId={session.id}
-                workspace={session.workspace}
-                environment={session.environment}
-                service={session.service}
-                label={session.label}
-                streamUrl={session.streamUrl}
-                onClose={() => removeSession(session.id)}
-                maxLines={logBufferLines}
-                resourceName={session.resourceName}
-                objectKey={session.objectKey}
-              />
-            ))}
+          <div className={cn('grid h-full gap-2 p-2', gridClass)}>
+            {sessions.map(panelFor)}
           </div>
         ) : layout === 'tabs' ? (
-          /* ── Tabs Mode ── */
-          <div className="flex flex-col h-full">
-            {/* Tab bar */}
-            <div className="shrink-0 flex items-end gap-0 px-2 pt-2 bg-[var(--bg-app)] border-b border-[var(--border-default)] overflow-x-auto">
-              {sessions.map(session => (
-                <button
-                  key={session.id}
-                  onClick={() => setActiveTab(session.id)}
-                  className={cn(
-                    'group flex items-center gap-2 px-4 py-2 text-xs border border-b-0 rounded-t-lg transition-colors relative',
-                    activeTab === session.id
-                      ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border-[var(--border-default)] font-medium -mb-px z-10'
-                      : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-transparent hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-                  )}
-                >
-                  <SourceDot name={session.id} />
-                  <span className="truncate max-w-[120px]">{session.label}</span>
-                  <span className="text-[10px] text-[var(--text-muted)] truncate max-w-[80px]">{session.environment}</span>
-                  <span
-                    onClick={(e) => { e.stopPropagation(); removeSession(session.id) }}
-                    className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-red-400 transition-all cursor-pointer"
+          <div className="flex h-full flex-col">
+            <div role="tablist" aria-label="Open sources" className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line bg-surface px-2">
+              {sessions.map((session, idx) => {
+                const isActive = activeTab === session.id
+                return (
+                  <div
+                    key={session.id}
+                    className={cn(
+                      '-mb-px flex h-10 shrink-0 items-center gap-1 border-b-2 pr-1 pl-2 transition-colors',
+                      isActive ? 'border-accent text-fg' : 'border-transparent text-fg-muted hover:text-fg',
+                    )}
                   >
-                    <X className="w-3 h-3" />
-                  </span>
-                </button>
-              ))}
+                    <button
+                      id={`log-tab-${session.id}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      tabIndex={isActive ? 0 : -1}
+                      onClick={() => setActiveTab(session.id)}
+                      onKeyDown={e => {
+                        if (e.key === 'ArrowRight') { e.preventDefault(); focusTab(idx + 1) }
+                        else if (e.key === 'ArrowLeft') { e.preventDefault(); focusTab(idx - 1) }
+                        else if (e.key === 'Delete') { e.preventDefault(); removeSession(session.id) }
+                      }}
+                      className="flex min-w-0 cursor-pointer items-center gap-2 rounded-control px-1 py-1 text-xs font-medium"
+                    >
+                      <SourceDot name={session.id} />
+                      <span className="max-w-40 truncate">{session.label}</span>
+                      {session.environment && <span className="max-w-24 truncate text-2xs font-normal text-fg-muted">{session.environment}</span>}
+                    </button>
+                    <IconButton size="xs" label={`Close ${session.label}`} onClick={() => removeSession(session.id)}>
+                      <X className="size-3" />
+                    </IconButton>
+                  </div>
+                )
+              })}
             </div>
 
-            {/* Active panel */}
-            <div className="flex-1 min-h-0 p-2">
-              {sessions.filter(s => s.id === activeTab).map(session => (
-                <div key={session.id} className="h-full">
-                  <LogPanel
-                    panelId={session.id}
-                    workspace={session.workspace}
-                    environment={session.environment}
-                    service={session.service}
-                    label={session.label}
-                    streamUrl={session.streamUrl}
-                    onClose={() => removeSession(session.id)}
-                    maxLines={logBufferLines}
-                    resourceName={session.resourceName}
-                    objectKey={session.objectKey}
-                  />
-                </div>
-              ))}
+            <div className="min-h-0 flex-1 p-2">
+              {sessions.filter(s => s.id === activeTab).map(panelFor)}
             </div>
           </div>
         ) : (
-          /* ── Merged Mode ── */
           <div className="h-full p-2">
             <MergedLogPanel sessions={sessions} maxLines={logBufferLines} onRemoveSession={removeSession} />
           </div>

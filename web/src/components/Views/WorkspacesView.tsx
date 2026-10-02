@@ -1,25 +1,28 @@
 import { useState, useEffect } from 'react'
-import { ChevronRight, Server, Plus, Upload, X, Trash2, Pencil, RefreshCw } from 'lucide-react'
+import { ArrowRight, Pencil, Plus, RefreshCw, Server, Trash2, Upload, X } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { listWorkspaces, fetchStats, fetchConfig, listStandaloneEnvs, listStandaloneServices, adminImportWorkspace, adminDeleteWorkspace, adminDeleteStandaloneEnv, adminDeleteStandaloneService, adminListResources } from '../../lib/api'
+import { plural } from '../../lib/format'
+import { listWorkspaces, fetchStats, fetchConfig, listStandaloneEnvs, listStandaloneServices, adminDeleteWorkspace, adminDeleteStandaloneEnv, adminDeleteStandaloneService, adminListResources } from '../../lib/api'
 import type { AdminResource } from '../../lib/api'
 import type { Workspace, StandaloneEnvironment, StandaloneService, GroupedStats, AppConfig } from '../../lib/types'
-import LayoutToggle from '../ui/LayoutToggle'
-import CollectionGrid from '../ui/CollectionGrid'
-import { useLayoutToggle } from '../../lib/useLayoutToggle'
 import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
-import EntityIcon, { EntityIconRaw, entityStyle } from '../ui/EntityIcon'
-import Badge, { providerVariant } from '../ui/Badge'
+import { EntityIconRaw, entityLabel, entityStyle, type EntityKind } from '../ui/EntityIcon'
+import EntityCollection from '../ui/EntityCollection'
+import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
-import Card from '../ui/Card'
-import StatsGrid from '../ui/StatsGrid'
-import DataTable from '../ui/DataTable'
+import StatsGrid, { type StatItem } from '../ui/StatsGrid'
+import { type Column } from '../ui/DataTable'
 import EmptyState from '../ui/EmptyState'
 import Alert from '../ui/Alert'
-import Dropdown, { DropdownButton } from '../ui/Dropdown'
-import { Textarea } from '../ui/Input'
+import PageHeader from '../ui/PageHeader'
+import Skeleton from '../ui/Skeleton'
+import FilterChip from '../ui/FilterChip'
+import Dropdown, { DropdownButton, type MenuItem } from '../ui/Dropdown'
+import { useConfirm, useToast } from '../ui/Feedback'
+import Page from '../Layout/Page'
+import ImportYAMLCard from './ImportYAMLCard'
 
 interface Props {
   onSelect: (workspace: Workspace) => void
@@ -38,12 +41,26 @@ interface Props {
 }
 
 type DashboardItem = {
-  kind: 'workspace' | 'environment' | 'service' | 'resource'
+  kind: EntityKind
   name: string
   description: string
   data: Workspace | StandaloneEnvironment | StandaloneService | AdminResource
 }
 
+type KindFilter = EntityKind | 'all'
+
+const KIND_ORDER: EntityKind[] = ['workspace', 'environment', 'service', 'resource']
+const ACTION_LABEL: Record<EntityKind, string> = { workspace: 'Open', environment: 'Open', service: 'View logs', resource: 'Explore' }
+const DEFAULT_CONFIG: AppConfig = { enable_workspaces: true, enable_environments: false, enable_services: false, log_buffer_lines: 10000 }
+
+const itemKey = (item: DashboardItem) => `${item.kind}-${item.name}`
+
+/** Provider (services) or resource type; null for workspaces and environments. */
+function itemProvider(item: DashboardItem): string | null {
+  if (item.kind === 'service') return (item.data as StandaloneService).provider
+  if (item.kind === 'resource') return (item.data as AdminResource).type
+  return null
+}
 
 export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService, onSelectResource, userRole, userScope, serverMode, onCreateWorkspace, onCreateEnvironment, onCreateService, onEditWorkspace, onEditService, onEditEnvironment }: Props) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -51,13 +68,18 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
   const [standaloneServices, setStandaloneServices] = useState<StandaloneService[]>([])
   const [resources, setResources] = useState<AdminResource[]>([])
   const [stats, setStats] = useState<GroupedStats | null>(null)
-  const [config, setConfig] = useState<AppConfig>({ enable_workspaces: true, enable_environments: true, enable_services: true, log_buffer_lines: 10000 })
+  const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
-
-  const { layout, changeLayout } = useLayoutToggle('avalok-home-layout')
+  const [kindFilter, setKindFilter] = useState<KindFilter>('all')
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const confirm = useConfirm()
+  const toast = useToast()
 
   function loadData() {
+    setRefreshing(true)
     const hasResourceScope = userRole === 'admin' || (userScope || []).some(s => s.startsWith('res:'))
     const fetchResources = (serverMode && hasResourceScope)
       ? adminListResources().catch(() => [])
@@ -65,7 +87,7 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
     Promise.all([
       listWorkspaces(),
       fetchStats().catch(() => null),
-      fetchConfig().catch(() => ({ enable_workspaces: true, enable_environments: true, enable_services: true, log_buffer_lines: 10000 })),
+      fetchConfig().catch(() => DEFAULT_CONFIG),
       listStandaloneEnvs().catch(() => []),
       listStandaloneServices().catch(() => []),
       fetchResources,
@@ -76,117 +98,21 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
       setStandaloneEnvs(envs || [])
       setStandaloneServices(svcs || [])
       setResources(res || [])
+      setError(null)
     }).catch(err => {
-      console.error('Failed to load dashboard:', err)
-    }).finally(() => setLoading(false))
+      setError(err instanceof Error ? err.message : 'Failed to load the dashboard')
+    }).finally(() => { setLoading(false); setRefreshing(false) })
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadData() }, [])
-
-  async function handleDeleteWs(e: React.MouseEvent, name: string) {
-    e.stopPropagation()
-    if (!confirm(`Delete workspace "${name}"? This cannot be undone.`)) return
-    try { await adminDeleteWorkspace(name); loadData() } catch (err) { console.error('Failed to delete workspace:', err) }
-  }
-
-  async function handleDeleteEnv(e: React.MouseEvent, name: string) {
-    e.stopPropagation()
-    if (!confirm(`Delete environment "${name}"? This cannot be undone.`)) return
-    try { await adminDeleteStandaloneEnv(name); loadData() } catch (err) { console.error('Failed to delete environment:', err) }
-  }
-
-  async function handleDeleteSvc(e: React.MouseEvent, name: string) {
-    e.stopPropagation()
-    if (!confirm(`Delete service "${name}"? This cannot be undone.`)) return
-    try { await adminDeleteStandaloneService(name); loadData() } catch (err) { console.error('Failed to delete service:', err) }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex-1 overflow-auto">
-        <div className="px-8 lg:px-16 py-8">
-          <div className="grid gap-4 mb-6 grid-cols-2 sm:grid-cols-4">
-            {[1,2,3,4].map(i => <div key={i} className="skeleton h-24" />)}
-          </div>
-          <div className="skeleton h-6 w-40 mb-6 !rounded-lg" />
-          <div className="grid gap-4">
-            {[1,2,3].map(i => <div key={i} className="skeleton h-16" />)}
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   const showWs = config.enable_workspaces
   const showEnv = config.enable_environments
   const showSvc = config.enable_services
   const isAdmin = userRole === 'admin'
 
-  /* ── Stats ── */
-  const statsItems = []
-  if (stats) {
-    if (showWs) {
-      statsItems.push({
-        label: 'Workspaces',
-        value: stats.workspace_stats.count,
-        icon: <EntityIconRaw kind="workspace" className="w-4 h-4" />,
-        accent: entityStyle('workspace').color,
-        bg: entityStyle('workspace').bg,
-        sub: [
-          { label: 'Environments', value: stats.workspace_stats.environments ?? 0 },
-          { label: 'Services', value: stats.workspace_stats.services },
-          { label: 'Up', value: stats.workspace_stats.up, color: 'text-emerald-400' },
-          ...(stats.workspace_stats.down > 0 ? [{ label: 'Down', value: stats.workspace_stats.down, color: 'text-red-400' }] : []),
-        ],
-      })
-    }
-    if (showEnv) {
-      statsItems.push({
-        label: 'Environments',
-        value: stats.environment_stats.count,
-        icon: <EntityIconRaw kind="environment" className="w-4 h-4" />,
-        accent: entityStyle('environment').color,
-        bg: entityStyle('environment').bg,
-        sub: [
-          { label: 'Services', value: stats.environment_stats.services },
-          { label: 'Up', value: stats.environment_stats.up, color: 'text-emerald-400' },
-          ...(stats.environment_stats.down > 0 ? [{ label: 'Down', value: stats.environment_stats.down, color: 'text-red-400' }] : []),
-        ],
-      })
-    }
-    if (showSvc) {
-      statsItems.push({
-        label: 'Services',
-        value: stats.service_stats.count,
-        icon: <EntityIconRaw kind="service" className="w-4 h-4" />,
-        accent: entityStyle('service').color,
-        bg: entityStyle('service').bg,
-        sub: [
-          { label: 'Up', value: stats.service_stats.up, color: 'text-emerald-400' },
-          ...(stats.service_stats.down > 0 ? [{ label: 'Down', value: stats.service_stats.down, color: 'text-red-400' }] : []),
-        ],
-      })
-    }
-  }
-  if (resources.length > 0) {
-    statsItems.push({
-      label: 'Resources',
-      value: resources.length,
-      icon: <EntityIconRaw kind="resource" className="w-4 h-4" />,
-      accent: entityStyle('resource').color,
-      bg: entityStyle('resource').bg,
-      sub: [],
-    })
-  }
-
-  /* ── Create-menu items ── */
-  const createMenuItems = [
-    ...(showWs && onCreateWorkspace ? [{ label: 'Workspace', icon: <EntityIconRaw kind="workspace" className={cn('w-4 h-4', entityStyle('workspace').color)} />, onClick: onCreateWorkspace }] : []),
-    ...(showEnv && onCreateEnvironment ? [{ label: 'Environment', icon: <EntityIconRaw kind="environment" className={cn('w-4 h-4', entityStyle('environment').color)} />, onClick: onCreateEnvironment }] : []),
-    ...(showSvc && onCreateService ? [{ label: 'Service', icon: <EntityIconRaw kind="service" className={cn('w-4 h-4', entityStyle('service').color)} />, onClick: onCreateService }] : []),
-  ]
-
-  /* ── Build unified items list ── */
+  /* ── Items and counts ── */
   const allItems: DashboardItem[] = [
     ...(showWs ? workspaces.map(ws => ({ kind: 'workspace' as const, name: ws.name, description: ws.description || '', data: ws })) : []),
     ...(showEnv ? standaloneEnvs.map(env => ({ kind: 'environment' as const, name: env.name, description: env.description || '', data: env })) : []),
@@ -194,368 +120,260 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
     ...resources.map(res => ({ kind: 'resource' as const, name: res.name, description: res.description || '', data: res })),
   ]
 
-  function handleItemClick(item: DashboardItem) {
+  const counts = Object.fromEntries(KIND_ORDER.map(k => [k, allItems.filter(i => i.kind === k).length])) as Record<EntityKind, number>
+
+  function toggleKind(kind: EntityKind) {
+    setKindFilter(f => (f === kind ? 'all' : kind))
+  }
+
+  /* ── Actions ── */
+  function openHandler(item: DashboardItem): (() => void) | undefined {
     switch (item.kind) {
-      case 'workspace': onSelect(item.data as Workspace); break
-      case 'environment': onSelectEnv?.(item.data as StandaloneEnvironment); break
-      case 'service': onSelectService?.(item.data as StandaloneService); break
+      case 'workspace': return () => onSelect(item.data as Workspace)
+      case 'environment': return onSelectEnv && (() => onSelectEnv(item.data as StandaloneEnvironment))
+      case 'service': return onSelectService && (() => onSelectService(item.data as StandaloneService))
       case 'resource': {
         const r = item.data as AdminResource
-        onSelectResource?.(r.name, r.description || '', r.type)
-        break
+        return onSelectResource && (() => onSelectResource(r.name, r.description || '', r.type))
       }
     }
   }
 
-  function handleItemEdit(e: React.MouseEvent, item: DashboardItem) {
-    e.stopPropagation()
+  function editHandler(item: DashboardItem): (() => void) | undefined {
     switch (item.kind) {
-      case 'workspace': onEditWorkspace?.(item.name); break
-      case 'environment': onEditEnvironment?.(item.name); break
-      case 'service': onEditService?.(item.name); break
+      case 'workspace': return onEditWorkspace && (() => onEditWorkspace(item.name))
+      case 'environment': return onEditEnvironment && (() => onEditEnvironment(item.name))
+      case 'service': return onEditService && (() => onEditService(item.name))
+      default: return undefined
     }
   }
 
-  function handleItemDelete(e: React.MouseEvent, item: DashboardItem) {
-    switch (item.kind) {
-      case 'workspace': handleDeleteWs(e, item.name); break
-      case 'environment': handleDeleteEnv(e, item.name); break
-      case 'service': handleDeleteSvc(e, item.name); break
+  async function handleDelete(item: DashboardItem) {
+    const remove = item.kind === 'workspace' ? adminDeleteWorkspace
+      : item.kind === 'environment' ? adminDeleteStandaloneEnv
+        : item.kind === 'service' ? adminDeleteStandaloneService
+          : null
+    if (!remove) return
+    const label = entityLabel(item.kind).toLowerCase()
+    const ok = await confirm({
+      title: `Delete ${label} "${item.name}"?`,
+      description: 'Its configuration will be removed from Avalok. This cannot be undone.',
+      confirmLabel: `Delete ${label}`,
+      danger: true,
+    })
+    if (!ok) return
+    setBusyKey(itemKey(item))
+    try {
+      await remove(item.name)
+      toast.success(`Deleted ${item.name}`)
+      loadData()
+    } catch (err) {
+      toast.error(`Couldn't delete ${item.name}`, err instanceof Error ? err.message : undefined)
+    } finally {
+      setBusyKey(null)
     }
   }
 
-  function renderDetails(item: DashboardItem) {
+  function menuItems(item: DashboardItem): MenuItem[] | undefined {
+    if (!isAdmin) return undefined
+    const items: MenuItem[] = []
+    const open = openHandler(item)
+    const edit = editHandler(item)
+    if (open) items.push({ label: ACTION_LABEL[item.kind], icon: <ArrowRight />, onClick: open })
+    if (edit) items.push({ label: 'Edit', icon: <Pencil />, onClick: edit })
+    if (item.kind !== 'resource') {
+      if (items.length > 0) items.push({ separator: true })
+      items.push({ label: 'Delete', icon: <Trash2 />, danger: true, onClick: () => handleDelete(item) })
+    }
+    // A menu holding only the primary action adds nothing: the card/row already does that.
+    return items.length > 1 ? items : undefined
+  }
+
+  /* ── Stats (click to filter) ── */
+  const statsItems: StatItem[] = []
+  const statFor = (kind: EntityKind, value: number, sub: StatItem['sub']): StatItem => ({
+    label: `${entityLabel(kind)}s`,
+    value,
+    icon: <EntityIconRaw kind={kind} />,
+    tone: entityStyle(kind).tone,
+    sub,
+    onClick: () => toggleKind(kind),
+    active: kindFilter === kind,
+  })
+  if (stats) {
+    if (showWs) {
+      statsItems.push(statFor('workspace', stats.workspace_stats.count, [
+        { label: 'Environments', value: stats.workspace_stats.environments ?? 0 },
+        { label: 'Services', value: stats.workspace_stats.services },
+        { label: 'Up', value: stats.workspace_stats.up, tone: 'success' },
+        ...(stats.workspace_stats.down > 0 ? [{ label: 'Down', value: stats.workspace_stats.down, tone: 'danger' as const }] : []),
+      ]))
+    }
+    if (showEnv) {
+      statsItems.push(statFor('environment', stats.environment_stats.count, [
+        { label: 'Services', value: stats.environment_stats.services },
+        { label: 'Up', value: stats.environment_stats.up, tone: 'success' },
+        ...(stats.environment_stats.down > 0 ? [{ label: 'Down', value: stats.environment_stats.down, tone: 'danger' as const }] : []),
+      ]))
+    }
+    if (showSvc) {
+      statsItems.push(statFor('service', stats.service_stats.count, [
+        { label: 'Up', value: stats.service_stats.up, tone: 'success' },
+        ...(stats.service_stats.down > 0 ? [{ label: 'Down', value: stats.service_stats.down, tone: 'danger' as const }] : []),
+      ]))
+    }
+  }
+  if (resources.length > 0) statsItems.push(statFor('resource', resources.length, []))
+
+  /* ── Create menu ── */
+  const createMenuItems: MenuItem[] = [
+    ...(showWs && onCreateWorkspace ? [{ label: 'Workspace', icon: <EntityIconRaw kind="workspace" className={entityStyle('workspace').color} />, onClick: onCreateWorkspace }] : []),
+    ...(showEnv && onCreateEnvironment ? [{ label: 'Environment', icon: <EntityIconRaw kind="environment" className={entityStyle('environment').color} />, onClick: onCreateEnvironment }] : []),
+    ...(showSvc && onCreateService ? [{ label: 'Service', icon: <EntityIconRaw kind="service" className={entityStyle('service').color} />, onClick: onCreateService }] : []),
+  ]
+
+  /* ── Renderers ── */
+  function renderMeta(item: DashboardItem) {
     switch (item.kind) {
       case 'workspace': {
         const ws = item.data as Workspace
         return (
-          <div className="flex items-center justify-end gap-3 text-xs text-[var(--text-secondary)]">
-            <span>{ws.environments} env{ws.environments !== 1 ? 's' : ''}</span>
-            <span className="flex items-center gap-1"><Server className="w-3 h-3" />{ws.services} svc{ws.services !== 1 ? 's' : ''}</span>
-          </div>
+          <>
+            <span className="flex items-center gap-1.5"><EntityIconRaw kind="environment" className="size-3.5" />{plural(ws.environments, 'env')}</span>
+            <span className="flex items-center gap-1.5"><Server className="size-3.5" />{plural(ws.services, 'service')}</span>
+          </>
         )
       }
       case 'environment': {
         const env = item.data as StandaloneEnvironment
-        return (
-          <div className="flex items-center justify-end gap-1 text-xs text-[var(--text-secondary)]">
-            <Server className="w-3 h-3" />{env.services} service{env.services !== 1 ? 's' : ''}
-          </div>
-        )
+        return <span className="flex items-center gap-1.5"><Server className="size-3.5" />{plural(env.services, 'service')}</span>
       }
-      case 'service': {
-        const svc = item.data as StandaloneService
+      default: {
+        const provider = itemProvider(item) || ''
         return (
-          <Badge variant={providerVariant(svc.provider)}>
-            <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-            {providerDisplayName(svc.provider)}
-          </Badge>
-        )
-      }
-      case 'resource': {
-        const res = item.data as AdminResource
-        return (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
-            {providerDisplayName(res.type) || res.type}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ProviderIcon provider={provider} className="size-3.5 shrink-0" />
+            <span className="truncate">{providerDisplayName(provider) || provider}</span>
           </span>
         )
       }
     }
   }
 
-  /* ── Unified columns ── */
-  const columns = [
-    {
-      key: 'name',
-      header: 'Name',
-      render: (item: DashboardItem) => {
-        const style = entityStyle(item.kind)
-        const ws = item.kind === 'workspace' ? item.data as Workspace : null
-        return (
-          <div className="flex items-center gap-3">
-            {item.kind === 'service' || item.kind === 'resource'
-              ? <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0', style.bg, style.color)}>
-                  <ProviderIcon provider={item.kind === 'service' ? (item.data as StandaloneService).provider : (item.data as AdminResource).type} className="w-5 h-5" />
-                </div>
-              : <EntityIcon kind={item.kind} />}
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-[var(--text-primary)]">{item.name}</span>
-                {ws?.hierarchy?.name === 'service-first' && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">service-first</span>
-                )}
-              </div>
-              {item.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{item.description}</div>}
-            </div>
-          </div>
-        )
-      },
-    },
-    {
-      key: 'type',
-      header: 'Type',
-      render: (item: DashboardItem) => {
-        const style = entityStyle(item.kind)
-        return (
-          <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', style.badge)}>
-            {style.label}
-          </span>
-        )
-      },
-    },
-    {
-      key: 'details',
-      header: 'Details',
-      align: 'right' as const,
-      render: (item: DashboardItem) => renderDetails(item),
-    },
-    ...(isAdmin ? [{
-      key: 'actions',
-      header: '',
-      className: 'w-24',
-      render: (item: DashboardItem) => {
-        if (item.kind === 'resource') return null
-        return (
-          <div className="flex items-center gap-0.5 justify-end">
-            <IconButton variant={'accent' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleItemEdit(e, item)} title={`Edit ${item.kind}`}>
-              <Pencil className="w-4 h-4" />
-            </IconButton>
-            <IconButton variant={'danger' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleItemDelete(e, item)} title="Delete">
-              <Trash2 className="w-4 h-4" />
-            </IconButton>
-          </div>
-        )
-      },
-    }] : []),
-    {
-      key: 'arrow',
-      header: '',
-      className: 'w-8',
-      render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-    },
-  ]
+  function renderBadges(item: DashboardItem) {
+    const ws = item.kind === 'workspace' ? item.data as Workspace : null
+    return ws?.hierarchy?.name === 'service-first' ? <Badge size="sm" tone="info">service-first</Badge> : null
+  }
+
+  const typeColumn: Column<DashboardItem> = {
+    key: 'type',
+    header: 'Type',
+    className: 'w-36',
+    sortValue: item => KIND_ORDER.indexOf(item.kind),
+    render: item => <Badge tone={entityStyle(item.kind).tone}>{entityLabel(item.kind)}</Badge>,
+  }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
-        {/* Top bar: actions + layout toggle */}
-        <div className="flex items-center justify-between mb-6">
-          <div />
-          <div className="flex items-center gap-2">
-            <IconButton onClick={loadData} title="Refresh">
-              <RefreshCw className="w-4 h-4" />
+    <Page>
+      <PageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        description="Everything Avalok can stream logs from. Pick one to dive in."
+        actions={
+          <>
+            <IconButton label="Refresh" size="md" onClick={loadData} disabled={refreshing}>
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
             </IconButton>
+            {isAdmin && (
+              <Button variant="secondary" leftIcon={showImport ? <X /> : <Upload />} onClick={() => setShowImport(s => !s)}>
+                {showImport ? 'Cancel import' : 'Import YAML'}
+              </Button>
+            )}
             {isAdmin && createMenuItems.length > 0 && (
               <Dropdown
-                trigger={
-                  <DropdownButton>
-                    <Plus className="w-3.5 h-3.5" />
-                    Create
-                  </DropdownButton>
-                }
+                trigger={<DropdownButton><Plus className="size-3.5" />Create</DropdownButton>}
                 items={createMenuItems}
               />
             )}
-            {isAdmin && (
-              <Button
-                variant={showImport ? 'primary' : 'secondary'}
-                size="md"
-                onClick={() => setShowImport(!showImport)}
-              >
-                {showImport ? <X className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />}
-                {showImport ? 'Cancel' : 'Import YAML'}
-              </Button>
-            )}
-            <LayoutToggle layout={layout} onChange={changeLayout} />
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        {showImport && (
-          <ImportYAMLInline onDone={() => { setShowImport(false); loadData() }} />
-        )}
+      {showImport && (
+        <ImportYAMLCard onDone={() => { setShowImport(false); toast.success('Import complete'); loadData() }} />
+      )}
 
-        {/* Stats */}
-        {statsItems.length > 0 && <StatsGrid items={statsItems} />}
-
-        {/* Unified table / grid */}
-        {allItems.length > 0 ? (
-          layout === 'list' ? (
-            <DataTable columns={columns} data={allItems} keyFn={item => `${item.kind}-${item.name}`} onRowClick={handleItemClick} />
-          ) : (
-            <CollectionGrid>
-              {allItems.map(item => {
-                const style = entityStyle(item.kind)
-                const ws = item.kind === 'workspace' ? item.data as Workspace : null
-                return (
-                  <Card key={`${item.kind}-${item.name}`} hover padding="lg" onClick={() => handleItemClick(item)} className="cursor-pointer text-left group">
-                    <div className="flex items-center gap-2 mb-3 w-full">
-                      {item.kind === 'service' || item.kind === 'resource'
-                        ? <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', style.bg, style.color)}>
-                            <ProviderIcon provider={item.kind === 'service' ? (item.data as StandaloneService).provider : (item.data as AdminResource).type} className="w-5 h-5" />
-                          </div>
-                        : <EntityIcon kind={item.kind} />}
-                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded border font-medium', style.badge)}>
-                        {style.label}
-                      </span>
-                      {ws?.hierarchy?.name === 'service-first' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20 font-medium">service-first</span>
-                      )}
-                    </div>
-                    <div className="text-base text-[var(--text-primary)]">{item.name}</div>
-                    {item.description && <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{item.description}</div>}
-                    <div className="flex items-center gap-3 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                      {renderDetails(item)}
-                      {isAdmin && item.kind !== 'resource' && (
-                        <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                          <IconButton variant="accent" onClick={e => handleItemEdit(e, item)} title="Edit">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </IconButton>
-                          <IconButton variant="danger" onClick={e => handleItemDelete(e, item)} title="Delete">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </IconButton>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                )
-              })}
-            </CollectionGrid>
-          )
-        ) : (
-          <EmptyState
-            icon={<EntityIconRaw kind="workspace" className="w-7 h-7 text-[var(--text-accent)] opacity-60" />}
-            iconBg="bg-accent-500/10"
-            title="Nothing here yet"
-            description="Create a workspace, environment, or service to get started."
-            action={isAdmin && onCreateWorkspace ? (
-              <Button onClick={onCreateWorkspace}><Plus className="w-3.5 h-3.5" />Create Workspace</Button>
-            ) : undefined}
-          />
-        )}
-      </div>
-    </div>
-  )
-}
-
-/* ── Import YAML ── */
-
-function ImportYAMLInline({ onDone }: { onDone: () => void }) {
-  const [yaml, setYaml] = useState('')
-  const [error, setError] = useState('')
-  const [importing, setImporting] = useState(false)
-  const [detectedType, setDetectedType] = useState<'workspace' | 'environment' | 'service' | null>(null)
-  const [confirmType, setConfirmType] = useState(false)
-
-  function detectType(content: string): 'workspace' | 'environment' | 'service' {
-    const hasEnvironments = /^environments:/m.test(content)
-    const hasServices = /^services:/m.test(content)
-    const hasProvider = /^provider:/m.test(content)
-    if (hasEnvironments) return 'workspace'
-    if (hasServices) return 'environment'
-    if (hasProvider) return 'service'
-    return 'workspace'
-  }
-
-  function handleYamlChange(content: string) {
-    setYaml(content)
-    if (content.trim()) {
-      const type = detectType(content)
-      setDetectedType(type)
-      setConfirmType(type !== 'workspace')
-    } else {
-      setDetectedType(null)
-      setConfirmType(false)
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!detectedType) return
-    if (confirmType) return
-    setImporting(true)
-    setError('')
-    try {
-      await adminImportWorkspace(yaml)
-      onDone()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to import')
-    } finally { setImporting(false) }
-  }
-
-  async function handleConfirmedImport() {
-    setImporting(true)
-    setError('')
-    try {
-      await adminImportWorkspace(yaml)
-      onDone()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to import')
-    } finally { setImporting(false) }
-  }
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => handleYamlChange(reader.result as string)
-    reader.readAsText(file)
-  }
-
-  const typeLabel = detectedType === 'workspace' ? 'Workspace' : detectedType === 'environment' ? 'Environment' : 'Service'
-  const typeColor = detectedType === 'workspace' ? 'text-[var(--text-accent)]' : detectedType === 'environment' ? 'text-blue-400' : 'text-emerald-400'
-
-  return (
-    <Card padding="lg" className="mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-medium text-[var(--text-primary)]">Import YAML</h3>
-          {detectedType && yaml.trim() && (
-            <span className={cn('text-xs font-medium', typeColor)}>
-              Detected: {typeLabel}
-            </span>
-          )}
-        </div>
-        <label className="flex items-center gap-1.5 text-xs text-[var(--text-accent)] hover:underline cursor-pointer">
-          <Upload className="w-3.5 h-3.5" />
-          Upload file
-          <input type="file" accept=".yaml,.yml" onChange={handleFile} className="hidden" />
-        </label>
-      </div>
-
-      {error && <Alert variant="error" className="mb-3">{error}</Alert>}
-
-      {confirmType && detectedType && detectedType !== 'workspace' && (
-        <Alert variant="warning" className="mb-3">
-          This looks like a standalone <strong>{typeLabel.toLowerCase()}</strong> (no {detectedType === 'environment' ? 'environments' : 'services/provider'} block found).
-          <div className="flex items-center gap-2 mt-2">
-            <Button variant="ghost" size="sm" className="bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 hover:text-amber-300"
-              onClick={() => { setConfirmType(false); handleConfirmedImport() }}>
-              Import as {typeLabel}
-            </Button>
-            <Button variant="ghost" size="sm"
-              onClick={() => { setConfirmType(false); setDetectedType('workspace') }}>
-              Import as Workspace instead
-            </Button>
-          </div>
+      {error && (
+        <Alert
+          tone="danger"
+          title="Couldn't load the dashboard"
+          action={<Button size="sm" variant="secondary" onClick={loadData} loading={refreshing}>Retry</Button>}
+          className="mb-6"
+        >
+          {error}
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit}>
-        <Textarea
-          value={yaml}
-          onChange={e => handleYamlChange(e.target.value)}
-          className="h-48 font-mono"
-          placeholder="Paste YAML here or upload a file..."
-          required
-        />
-        <div className="flex justify-end mt-3">
-          {(!confirmType || detectedType === 'workspace') && (
-            <Button type="submit" loading={importing} disabled={!yaml.trim()}>
-              Import {detectedType ? typeLabel : ''}
-            </Button>
-          )}
+      {/* Stats: each card filters the list to its kind */}
+      {loading ? (
+        <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-32" />)}
         </div>
-      </form>
-    </Card>
+      ) : statsItems.length > 0 && <StatsGrid items={statsItems} />}
+
+      <EntityCollection
+        items={allItems}
+        keyFn={itemKey}
+        kind={item => item.kind}
+        name={item => item.name}
+        description={item => item.description}
+        icon={item => {
+          const provider = itemProvider(item)
+          return provider ? <ProviderIcon provider={provider} /> : undefined
+        }}
+        badges={renderBadges}
+        meta={renderMeta}
+        columns={[typeColumn]}
+        searchText={item => {
+          const provider = itemProvider(item)
+          return [item.name, item.description, entityLabel(item.kind), provider, provider && providerDisplayName(provider)]
+        }}
+        searchPlaceholder="Filter by name, description or provider…"
+        actionLabel={item => ACTION_LABEL[item.kind]}
+        onOpen={openHandler}
+        menuItems={menuItems}
+        busyKey={busyKey}
+        layoutKey="avalok-home-layout"
+        loading={loading}
+        filters={
+          <>
+            <FilterChip label="All" count={allItems.length} active={kindFilter === 'all'} onToggle={() => setKindFilter('all')} />
+            {KIND_ORDER.filter(k => counts[k] > 0).map(k => (
+              <FilterChip
+                key={k}
+                label={`${entityLabel(k)}s`}
+                count={counts[k]}
+                active={kindFilter === k}
+                onToggle={() => toggleKind(k)}
+                leading={<EntityIconRaw kind={k} className={cn('size-3.5 shrink-0', entityStyle(k).color)} />}
+              />
+            ))}
+          </>
+        }
+        filter={item => kindFilter === 'all' || item.kind === kindFilter}
+        filterActive={kindFilter !== 'all'}
+        onClearFilters={() => setKindFilter('all')}
+        empty={!error && (
+          <EmptyState
+            icon={<EntityIconRaw kind="workspace" />}
+            title="Nothing here yet"
+            description="Create a workspace, environment or service to start streaming logs."
+            action={isAdmin && onCreateWorkspace ? (
+              <Button leftIcon={<Plus />} onClick={onCreateWorkspace}>Create workspace</Button>
+            ) : undefined}
+          />
+        )}
+      />
+    </Page>
   )
 }

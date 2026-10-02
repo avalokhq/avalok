@@ -191,7 +191,31 @@ Content-Type: application/json
 Authorization: Bearer <token>
 ```
 
-Send the full updated credential object. Fields not included are cleared.
+Updates are a key-level merge into the stored `config`. Send only what changes:
+
+| Value sent for a config key | Result |
+|-----------------------------|--------|
+| omitted, `""`, or `"***redacted***"` | Existing value is kept (secrets never need to be re-entered) |
+| `null` | Key is removed (e.g. drop a saved `host`, or a password when switching to key auth) |
+| any other value | Key is set to the new value |
+
+```json
+{
+  "description": "App servers (rotated key)",
+  "config": {
+    "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
+    "password": null
+  }
+}
+```
+
+- `name` cannot be changed — resources and targets reference credentials by name.
+- `target_type` cannot be changed; sending a different type returns `400`.
+- `port`, if present, must be a number between 1 and 65535.
+- The audit log records which keys were changed or cleared, never their values.
+- Changes apply to every resource and target using the profile on their next connection.
+
+The `GET /api/admin/credentials` list response includes a non-secret `host` field for credentials that have one saved. The admin UI uses this to test those credentials without prompting for a host.
 
 ## Deleting Credentials
 
@@ -249,23 +273,65 @@ POST /api/admin/credentials/{name}/test
 Authorization: Bearer <token>
 ```
 
+For SSH and WinRM the test uses the credential's saved `host`. To test against a different host without saving it, send a one-off override:
+
+```json
+{ "host": "10.0.1.51" }
+```
+
+If there is neither a saved host nor an override, the test returns `host is required to test this credential`. The whole test times out after 15 seconds.
+
+The test runs from the Avalok server and returns a step-by-step report, so you can see exactly what was reached:
+
+| Type | Steps |
+|------|-------|
+| **ssh** | DNS lookup → TCP connect → SSH handshake (server version, host key fingerprint) → authenticate → run `whoami && hostname` |
+| **winrm** | DNS lookup → TCP connect → authenticate and run PowerShell (user, hostname, OS version) |
+| **kubernetes** | Load credentials → reach API server (version) → identity (Kubernetes 1.28+) → `list pods` / `get pods/log` permission check |
+| **s3** | Load credentials → verify identity via STS (AWS only) → list buckets |
+| **gcs** | Load credentials (service account, project) → authenticate and list buckets |
+| **azure-storage** | Load credentials → authenticate and list containers |
+
 **Response (200):**
 
 ```json
 {
   "status": "ok",
-  "message": "Connection successful"
+  "message": "connection successful",
+  "target": "deploy@10.0.1.50:22",
+  "duration_ms": 412,
+  "steps": [
+    { "name": "DNS lookup", "status": "skipped", "detail": "10.0.1.50 is an IP address" },
+    { "name": "Load credentials", "status": "ok", "detail": "private key (ssh-ed25519)" },
+    { "name": "TCP connect", "status": "ok", "detail": "connected to 10.0.1.50:22", "duration_ms": 3 },
+    { "name": "SSH handshake", "status": "ok", "detail": "SSH-2.0-OpenSSH_9.6 · host key ssh-ed25519 SHA256:…", "duration_ms": 180 },
+    { "name": "Authenticate", "status": "ok", "detail": "logged in as deploy" },
+    { "name": "Run command", "status": "ok", "detail": "`whoami && hostname` → deploy / app01", "duration_ms": 95 }
+  ],
+  "facts": [
+    { "label": "Host key", "value": "ssh-ed25519 SHA256:…" },
+    { "label": "Remote hostname", "value": "app01" }
+  ]
 }
 ```
+
+Step `status` is `ok`, `failed`, `warning` (e.g. credentials are valid but cannot list pods or buckets), or `skipped`. When any step has a warning, `message` is `connected with warnings`.
 
 **Response (failure):**
 
 ```json
 {
   "status": "error",
-  "message": "dial tcp 10.0.1.50:22: connection refused"
+  "error": "authentication failed",
+  "target": "deploy@10.0.1.50:22",
+  "steps": [
+    { "name": "SSH handshake", "status": "ok", "detail": "host key ssh-ed25519 SHA256:…" },
+    { "name": "Authenticate", "status": "failed", "detail": "server rejected login as deploy (attempted methods [none publickey]) — …" }
+  ]
 }
 ```
+
+The `error` value is one of `timeout`, `DNS lookup failed`, `host unreachable`, `connection refused`, `authentication failed`, `invalid credentials`, `TLS certificate error`, `protocol mismatch`, `command failed`, or `connection failed`. Step details never include secret values or raw provider errors. Every test is recorded in the audit log (`test_credential`) with the target and the result.
 
 ## Operator Resolver (Serve Mode)
 

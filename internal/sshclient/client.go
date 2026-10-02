@@ -51,8 +51,33 @@ func ConfigFromMap(m map[string]any) Config {
 		cfg.Port = v
 	case int:
 		cfg.Port = fmt.Sprintf("%d", v)
+	case float64: // JSON numbers (e.g. credentials stored in Postgres)
+		cfg.Port = fmt.Sprintf("%d", int(v))
 	}
 	return cfg
+}
+
+// Stages reached by Connect, in order.
+const (
+	StageAuthConfig = "auth-config"
+	StageDial       = "dial"
+	StageHandshake  = "handshake"
+	StageConnected  = "connected"
+)
+
+// ConnInfo describes what happened during Connect. Populated even when Connect
+// fails, up to the stage that was reached. Contains no secrets.
+type ConnInfo struct {
+	Stage              string
+	User               string
+	Addr               string // host:port as configured
+	RemoteAddr         string // ip:port actually connected to
+	AuthMethods        []string
+	DialTime           time.Duration
+	HandshakeTime      time.Duration
+	ServerVersion      string
+	HostKeyType        string
+	HostKeyFingerprint string
 }
 
 type Client struct {
@@ -61,6 +86,7 @@ type Client struct {
 	conn      *ssh.Client
 	done      chan struct{}
 	closeOnce sync.Once
+	info      ConnInfo
 }
 
 func New(config Config) *Client {
@@ -79,31 +105,50 @@ func New(config Config) *Client {
 }
 
 func (c *Client) Connect(ctx context.Context) error {
+	addr := net.JoinHostPort(c.config.Host, c.config.Port)
+	c.info = ConnInfo{Stage: StageAuthConfig, User: c.config.User, Addr: addr}
+
 	auth, err := c.authMethods()
 	if err != nil {
 		return err
 	}
 
 	cfg := &ssh.ClientConfig{
-		User:            c.config.User,
-		Auth:            auth,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         10 * time.Second,
+		User: c.config.User,
+		Auth: auth,
+		// Host keys are not verified; record the key so callers can display it.
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			c.info.HostKeyType = key.Type()
+			c.info.HostKeyFingerprint = ssh.FingerprintSHA256(key)
+			return nil
+		},
+		Timeout: 10 * time.Second,
 	}
 
-	addr := net.JoinHostPort(c.config.Host, c.config.Port)
-
+	c.info.Stage = StageDial
 	var d net.Dialer
+	start := time.Now()
 	netConn, err := d.DialContext(ctx, "tcp", addr)
+	c.info.DialTime = time.Since(start)
 	if err != nil {
 		return fmt.Errorf("ssh dial %s: %w", addr, err)
 	}
+	c.info.RemoteAddr = netConn.RemoteAddr().String()
 
+	c.info.Stage = StageHandshake
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = netConn.SetDeadline(deadline)
+	}
+	start = time.Now()
 	sshConn, chans, reqs, err := ssh.NewClientConn(netConn, addr, cfg)
+	c.info.HandshakeTime = time.Since(start)
 	if err != nil {
 		netConn.Close()
 		return fmt.Errorf("ssh handshake %s: %w", addr, err)
 	}
+	_ = netConn.SetDeadline(time.Time{})
+	c.info.ServerVersion = string(sshConn.ServerVersion())
+	c.info.Stage = StageConnected
 
 	c.mu.Lock()
 	c.conn = ssh.NewClient(sshConn, chans, reqs)
@@ -111,6 +156,11 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	go c.keepAlive()
 	return nil
+}
+
+// Info returns details about the last Connect attempt.
+func (c *Client) Info() ConnInfo {
+	return c.info
 }
 
 // Run executes a command and returns its combined stdout+stderr output.
@@ -238,6 +288,7 @@ func (c *Client) authMethods() ([]ssh.AuthMethod, error) {
 			return nil, fmt.Errorf("parse inline private key: %w", err)
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
+		c.info.AuthMethods = append(c.info.AuthMethods, "private key ("+signer.PublicKey().Type()+")")
 	}
 
 	if c.config.KeyPath != "" {
@@ -255,10 +306,12 @@ func (c *Client) authMethods() ([]ssh.AuthMethod, error) {
 			return nil, fmt.Errorf("parse key %s: %w", c.config.KeyPath, err)
 		}
 		methods = append(methods, ssh.PublicKeys(signer))
+		c.info.AuthMethods = append(c.info.AuthMethods, "key file "+c.config.KeyPath)
 	}
 
 	if c.config.Password != "" {
 		methods = append(methods, ssh.Password(c.config.Password))
+		c.info.AuthMethods = append(c.info.AuthMethods, "password")
 	}
 
 	if len(methods) == 0 {
@@ -280,6 +333,7 @@ func (c *Client) authMethods() ([]ssh.AuthMethod, error) {
 					continue
 				}
 				methods = append(methods, ssh.PublicKeys(signer))
+				c.info.AuthMethods = append(c.info.AuthMethods, "server default key ~/.ssh/"+name)
 			}
 		}
 	}

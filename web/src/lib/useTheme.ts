@@ -38,6 +38,7 @@ export function useTheme() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', resolved === 'dark')
     document.documentElement.classList.toggle('light', resolved === 'light')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#0b0f0e' : '#f6f7f7')
   }, [resolved])
 
   return { theme, resolved, setTheme }

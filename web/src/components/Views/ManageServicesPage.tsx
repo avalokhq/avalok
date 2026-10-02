@@ -1,20 +1,19 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Pencil, ChevronRight } from 'lucide-react'
-import { EntityIconRaw } from '../ui/EntityIcon'
-import PageHeader from '../ui/PageHeader'
-import Card from '../ui/Card'
-import CollectionGrid from '../ui/CollectionGrid'
-import DataTable from '../ui/DataTable'
-import LayoutToggle from '../ui/LayoutToggle'
-import { useLayoutToggle } from '../../lib/useLayoutToggle'
-import Button from '../ui/Button'
-import Alert from '../ui/Alert'
-import Spinner from '../ui/Spinner'
-import EmptyState from '../ui/EmptyState'
-import IconButton from '../ui/IconButton'
-import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
+import { ArrowRight, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { cn } from '../../lib/cn'
+import { useDeleteEntity } from '../../lib/useDeleteEntity'
 import { adminListStandaloneServices, adminDeleteStandaloneService } from '../../lib/api'
 import type { StandaloneService } from '../../lib/types'
+import { EntityIconRaw } from '../ui/EntityIcon'
+import EntityCollection from '../ui/EntityCollection'
+import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
+import PageHeader from '../ui/PageHeader'
+import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
+import Alert from '../ui/Alert'
+import EmptyState from '../ui/EmptyState'
+import type { MenuItem } from '../ui/Dropdown'
+import Page from '../Layout/Page'
 
 interface Props {
   onSelect?: (svc: StandaloneService) => void
@@ -25,132 +24,87 @@ interface Props {
 export default function ManageServicesPage({ onSelect, onCreateService, onEditService }: Props) {
   const [services, setServices] = useState<StandaloneService[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const { layout, changeLayout } = useLayoutToggle('avalok-manage-svc-layout')
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  async function load() {
-    setLoading(true)
-    try { setServices(await adminListStandaloneServices() || []) } catch { setError('Failed to load services') }
-    finally { setLoading(false) }
+  function load() {
+    setRefreshing(true)
+    adminListStandaloneServices()
+      .then(svcs => { setServices(svcs || []); setError(null) })
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load services'))
+      .finally(() => { setLoading(false); setRefreshing(false) })
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [])
 
-  async function handleDelete(e: React.MouseEvent, name: string) {
-    e.stopPropagation()
-    if (!confirm(`Delete service "${name}"?`)) return
-    try { await adminDeleteStandaloneService(name); load() } catch { setError('Failed to delete service') }
+  const { busyName, deleteEntity } = useDeleteEntity({ noun: 'service', remove: adminDeleteStandaloneService, onDeleted: load })
+
+  function menuItems(svc: StandaloneService): MenuItem[] {
+    return [
+      ...(onSelect ? [{ label: 'View logs', icon: <ArrowRight />, onClick: () => onSelect(svc) }] : []),
+      ...(onEditService ? [{ label: 'Edit', icon: <Pencil />, onClick: () => onEditService(svc.name) }] : []),
+      { separator: true as const },
+      { label: 'Delete', icon: <Trash2 />, danger: true, onClick: () => deleteEntity(svc.name) },
+    ]
   }
 
-  const columns = [
-    {
-      key: 'name',
-      header: 'Name',
-      render: (svc: StandaloneService) => (
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-            <ProviderIcon provider={svc.provider} className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-[var(--text-primary)]">{svc.name}</div>
-            {svc.description && <div className="text-xs text-[var(--text-secondary)] mt-0.5 line-clamp-1">{svc.description}</div>}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'provider',
-      header: 'Provider',
-      align: 'right' as const,
-      render: (svc: StandaloneService) => (
-        <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-          <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-          {providerDisplayName(svc.provider)}
-        </span>
-      ),
-    },
-    {
-      key: 'actions',
-      header: '',
-      className: 'w-24',
-      render: (svc: StandaloneService) => (
-        <div className="flex items-center gap-0.5 justify-end">
-          <IconButton variant={'accent' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); onEditService?.(svc.name) }} title="Edit service">
-            <Pencil className="w-4 h-4" />
-          </IconButton>
-          <IconButton variant={'danger' as const} onClick={(e: React.MouseEvent<HTMLButtonElement>) => handleDelete(e, svc.name)} title="Delete">
-            <Trash2 className="w-4 h-4" />
-          </IconButton>
-        </div>
-      ),
-    },
-    {
-      key: 'arrow',
-      header: '',
-      className: 'w-8',
-      render: () => <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />,
-    },
-  ]
-
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
-        <PageHeader
-          title="Services"
-          actions={
-            <div className="flex items-center gap-2">
-              {onCreateService && (
-                <Button onClick={onCreateService}>
-                  <Plus className="w-4 h-4" /> Create Service
-                </Button>
-              )}
-              <LayoutToggle layout={layout} onChange={changeLayout} />
-            </div>
-          }
-        />
+    <Page>
+      <PageHeader
+        eyebrow="Manage"
+        title="Services"
+        description="Standalone log sources: a single host, container or file you stream directly."
+        actions={
+          <>
+            <IconButton label="Refresh" size="md" onClick={load} disabled={refreshing}>
+              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+            </IconButton>
+            {onCreateService && <Button leftIcon={<Plus />} onClick={onCreateService}>Create service</Button>}
+          </>
+        }
+      />
 
-        {error && <Alert variant="error" className="mb-4">{error}</Alert>}
+      {error && (
+        <Alert tone="danger" title="Couldn't load services" className="mb-6"
+          action={<Button size="sm" variant="secondary" onClick={load} loading={refreshing}>Retry</Button>}>
+          {error}
+        </Alert>
+      )}
 
-        {loading ? <Spinner label="Loading services..." /> : (
-          services.length > 0 ? (
-            layout === 'list' ? (
-              <DataTable columns={columns} data={services} keyFn={svc => svc.name} onRowClick={onSelect} />
-            ) : (
-              <CollectionGrid>
-                {services.map(svc => (
-                  <Card key={svc.name} hover padding="lg" onClick={() => onSelect?.(svc)} className="cursor-pointer text-left group">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-3">
-                      <ProviderIcon provider={svc.provider} className="w-5 h-5" />
-                    </div>
-                    <div className="text-sm font-medium text-[var(--text-primary)] truncate">{svc.name}</div>
-                    <div className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-2">{svc.description || providerDisplayName(svc.provider)}</div>
-                    <div className="flex items-center gap-3 mt-4 pt-3 border-t border-[var(--border-subtle)] w-full text-xs text-[var(--text-secondary)]">
-                      <span className="flex items-center gap-1">
-                        <ProviderIcon provider={svc.provider} className="w-3 h-3" />
-                        {providerDisplayName(svc.provider)}
-                      </span>
-                      <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                        <IconButton variant="accent" onClick={e => { e.stopPropagation(); onEditService?.(svc.name) }} title="Edit">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </IconButton>
-                        <IconButton variant="danger" onClick={e => handleDelete(e, svc.name)} title="Delete">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </IconButton>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </CollectionGrid>
-            )
-          ) : (
-            <EmptyState
-              icon={<EntityIconRaw kind="service" className="w-6 h-6 text-emerald-400 opacity-60" />}
-              title="No standalone services yet"
-              description="Create a service to get started."
-            />
-          )
+      <EntityCollection
+        items={services}
+        keyFn={svc => svc.name}
+        kind="service"
+        name={svc => svc.name}
+        description={svc => svc.description || ''}
+        icon={svc => <ProviderIcon provider={svc.provider} />}
+        meta={svc => (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <ProviderIcon provider={svc.provider} className="size-3.5 shrink-0" />
+            <span className="truncate">{providerDisplayName(svc.provider)}</span>
+          </span>
         )}
-      </div>
-    </div>
+        metaHeader="Provider"
+        searchText={svc => [svc.name, svc.description, svc.provider, providerDisplayName(svc.provider)]}
+        searchPlaceholder="Filter by name, description or provider…"
+        actionLabel="View logs"
+        onOpen={onSelect && (svc => () => onSelect(svc))}
+        menuItems={menuItems}
+        busyKey={busyName}
+        layoutKey="avalok-manage-svc-layout"
+        loading={loading}
+        noun="services"
+        empty={!error && (
+          <EmptyState
+            icon={<EntityIconRaw kind="service" />}
+            tone="success"
+            title="No standalone services yet"
+            description="Create a service to stream logs from a single host, container or file."
+            action={onCreateService && <Button leftIcon={<Plus />} onClick={onCreateService}>Create service</Button>}
+          />
+        )}
+      />
+    </Page>
   )
 }

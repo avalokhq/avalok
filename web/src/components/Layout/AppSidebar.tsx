@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { LayoutDashboard, Monitor, Settings, PanelLeftClose, PanelLeft } from 'lucide-react'
+import { LayoutDashboard, ScrollText, Settings, PanelLeftClose, PanelLeft } from 'lucide-react'
 import { entityStyle } from '../ui/EntityIcon'
+import Tooltip from '../ui/Tooltip'
+import StatusIndicator from './StatusIndicator'
 import { cn } from '../../lib/cn'
 
 interface NavItem {
@@ -16,12 +18,12 @@ interface Props {
   showAdmin?: boolean
 }
 
-const NAV_ITEMS: NavItem[] = [
+const OBSERVE: NavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, page: 'workspaces' },
-  { id: 'logs', label: 'Log Dashboard', icon: Monitor, page: 'logs' },
+  { id: 'logs', label: 'Log Dashboard', icon: ScrollText, page: 'logs' },
 ]
 
-const ADMIN_ITEMS: NavItem[] = [
+const MANAGE: NavItem[] = [
   { id: 'manage-workspaces', label: 'Workspaces', icon: entityStyle('workspace').Icon, page: 'manage-workspaces' },
   { id: 'manage-services', label: 'Services', icon: entityStyle('service').Icon, page: 'manage-services' },
   { id: 'manage-environments', label: 'Environments', icon: entityStyle('environment').Icon, page: 'manage-environments' },
@@ -29,12 +31,22 @@ const ADMIN_ITEMS: NavItem[] = [
   { id: 'admin', label: 'Administration', icon: Settings, page: 'admin' },
 ]
 
+/** Which nav item a page belongs to (drill-down and edit pages highlight their parent). */
+function activeId(page: string): string {
+  if (page === 'logs') return 'logs'
+  if (page === 'admin') return 'admin'
+  const m = page.match(/^(manage|edit|create)-(workspace|service|environment|resource)s?$/)
+  if (m) return `manage-${m[2]}s`
+  return 'dashboard'
+}
+
 function getCollapsed(): boolean {
   return localStorage.getItem('avalok-sidebar-collapsed') === 'true'
 }
 
 export default function AppSidebar({ currentPage, onNavigate, showAdmin }: Props) {
   const [collapsed, setCollapsed] = useState(getCollapsed)
+  const current = activeId(currentPage)
 
   function toggleCollapse() {
     const next = !collapsed
@@ -42,63 +54,79 @@ export default function AppSidebar({ currentPage, onNavigate, showAdmin }: Props
     localStorage.setItem('avalok-sidebar-collapsed', String(next))
   }
 
-  const items = showAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS
+  function renderItem(item: NavItem) {
+    const Icon = item.icon
+    const active = item.id === current
+    const button = (
+      <button
+        type="button"
+        onClick={() => onNavigate(item.page)}
+        aria-current={active ? 'page' : undefined}
+        aria-label={collapsed ? item.label : undefined}
+        className={cn(
+          'relative flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-control text-sm font-medium transition-colors',
+          collapsed ? 'justify-center' : 'px-2.5',
+          active ? 'bg-selected text-fg' : 'text-fg-secondary hover:bg-hover hover:text-fg',
+        )}
+      >
+        {active && <span aria-hidden className="absolute inset-y-1.5 -left-2 w-0.5 rounded-full bg-accent" />}
+        <Icon className={cn('size-4 shrink-0', active ? 'text-accent' : 'text-fg-muted')} />
+        {!collapsed && <span className="truncate">{item.label}</span>}
+      </button>
+    )
+    return (
+      <li key={item.id}>
+        {collapsed ? <Tooltip content={item.label} side="right">{button}</Tooltip> : button}
+      </li>
+    )
+  }
 
-  function isActive(item: NavItem) {
-    if (item.id === 'dashboard') return currentPage === 'workspaces'
-    return currentPage === item.page
+  function renderGroup(label: string, items: NavItem[]) {
+    return (
+      <div>
+        {collapsed ? (
+          <div aria-hidden className="mx-2 mb-2 h-px bg-line" />
+        ) : (
+          <div className="mb-1 px-2.5 text-2xs font-semibold uppercase tracking-wider text-fg-faint">{label}</div>
+        )}
+        <ul className="flex flex-col gap-0.5 [&>li>span]:w-full">{items.map(renderItem)}</ul>
+      </div>
+    )
   }
 
   return (
-    <div
+    <aside
+      aria-label="Main navigation"
       className={cn(
-        'flex flex-col shrink-0 h-full border-r border-[var(--border-default)] bg-[var(--bg-surface)] transition-[width] duration-200 ease-in-out',
-        collapsed ? 'w-12' : 'w-[220px]'
+        'flex h-full shrink-0 flex-col border-r border-line bg-surface transition-[width] duration-200 ease-out',
+        collapsed ? 'w-14' : 'w-[232px]',
       )}
     >
-      <nav className="flex-1 flex flex-col gap-0.5 py-2 px-1.5 overflow-hidden">
-        {items.map((item, index) => {
-          const Icon = item.icon
-          const active = isActive(item)
-          const showSeparator = showAdmin && index === NAV_ITEMS.length
-
-          return (
-            <div key={item.id}>
-              {showSeparator && (
-                <div className="h-px bg-[var(--border-subtle)] my-1.5 mx-2" />
-              )}
-              <button
-                onClick={() => onNavigate(item.page)}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  'flex items-center gap-2.5 rounded-md transition-colors text-[13px] font-medium w-full',
-                  collapsed ? 'justify-center px-0 py-2' : 'px-2.5 py-2',
-                  active
-                    ? 'bg-[var(--bg-active)] text-[var(--text-accent)]'
-                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
-                )}
-              >
-                <Icon className={cn('w-4 h-4 shrink-0', active ? 'text-[var(--text-accent)]' : '')} />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            </div>
-          )
-        })}
+      <nav className="flex flex-1 flex-col gap-5 overflow-y-auto overflow-x-hidden px-2 py-4">
+        {renderGroup('Observe', OBSERVE)}
+        {showAdmin && renderGroup('Manage', MANAGE)}
       </nav>
 
-      <div className="shrink-0 px-1.5 py-2 border-t border-[var(--border-subtle)]">
-        <button
-          onClick={toggleCollapse}
-          className={cn(
-            'flex items-center gap-2.5 rounded-md py-2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] transition-colors text-[13px] w-full',
-            collapsed ? 'justify-center px-0' : 'px-2.5'
-          )}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-          {!collapsed && <span>Collapse</span>}
-        </button>
+      <div className="flex shrink-0 flex-col gap-0.5 border-t border-line px-2 py-2 [&>span]:w-full">
+        <StatusIndicator collapsed={collapsed} />
+        {(() => {
+          const btn = (
+            <button
+              type="button"
+              onClick={toggleCollapse}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className={cn(
+                'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-control text-xs text-fg-muted transition-colors hover:bg-hover hover:text-fg',
+                collapsed ? 'justify-center' : 'px-2.5',
+              )}
+            >
+              {collapsed ? <PanelLeft className="size-4" /> : <PanelLeftClose className="size-4" />}
+              {!collapsed && <span>Collapse</span>}
+            </button>
+          )
+          return collapsed ? <Tooltip content="Expand sidebar" side="right">{btn}</Tooltip> : btn
+        })()}
       </div>
-    </div>
+    </aside>
   )
 }

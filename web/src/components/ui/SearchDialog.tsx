@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, Server, Monitor, Settings, Folders, Users, KeyRound, CornerDownLeft, SlidersHorizontal } from 'lucide-react'
 import { EntityIconRaw, entityStyle } from './EntityIcon'
+import type { EntityKind } from './EntityIcon'
+import Kbd from './Kbd'
 import { cn } from '../../lib/cn'
 import { listWorkspaces, listStandaloneEnvs, listStandaloneServices, adminListResources } from '../../lib/api'
 import type { AdminResource } from '../../lib/api'
@@ -133,8 +135,8 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
 
       pages.push(
         { kind: 'setting', id: 'setting-ws-toggle', name: 'Enable Workspaces', description: 'Show Workspaces section on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_workspaces' },
-        { kind: 'setting', id: 'setting-env-toggle', name: 'Enable Environments', description: 'Show standalone Environments on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_environments' },
-        { kind: 'setting', id: 'setting-svc-toggle', name: 'Enable Services', description: 'Show standalone Services on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_services' },
+        { kind: 'setting', id: 'setting-env-toggle', name: 'Enable Environments', description: 'Show standalone Environments on the dashboard and in Logs', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_environments' },
+        { kind: 'setting', id: 'setting-svc-toggle', name: 'Enable Services', description: 'Show standalone Services on the dashboard and in Logs', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_services' },
         { kind: 'setting', id: 'setting-redact', name: 'Redact Credentials', description: 'Hide passwords in YAML preview', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:redact_credentials' },
         { kind: 'setting', id: 'setting-filebrowser', name: 'File Browser Page Size', description: 'Lines per page when viewing log files', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:file_browser_page_size' },
         { kind: 'setting', id: 'setting-tail', name: 'Initial Log Tail Lines', description: 'Historical lines loaded when opening a stream', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:stream_tail_lines' },
@@ -226,95 +228,83 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
     el?.scrollIntoView({ block: 'nearest' })
   }, [activeIndex])
 
-  const [visible, setVisible] = useState(false)
-
-  useEffect(() => {
-    if (open) {
-      requestAnimationFrame(() => setVisible(true))
-    } else {
-      setVisible(false)
-    }
-  }, [open])
-
   if (!open) return null
 
   let itemIdx = -1
 
   return createPortal(
     <div
-      className={cn(
-        'fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-xl transition-all duration-200',
-        visible ? 'opacity-100' : 'opacity-0'
-      )}
-      onClick={onClose}
+      className="fixed inset-0 z-[95] flex items-start justify-center bg-overlay px-4 pt-[14vh] backdrop-blur-xl animate-fade-in"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className={cn(
-          'bg-[var(--bg-surface)] border border-[var(--color-accent-400)]/40 rounded-xl w-full max-w-lg mx-4 overflow-hidden transition-all duration-200',
-          'shadow-[0_0_20px_rgba(61,154,116,0.15),0_0_40px_rgba(61,154,116,0.08),0_4px_16px_rgba(0,0,0,0.5)]',
-          visible ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.97] -translate-y-2'
-        )}
-        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search"
+        className="w-full max-w-xl overflow-hidden rounded-overlay border border-line bg-surface-raised shadow-lg animate-scale-in"
         onKeyDown={handleKeyDown}
       >
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
-          <Search className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
+        <div className="flex items-center gap-3 border-b border-line px-4">
+          <Search className="size-4 shrink-0 text-fg-muted" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search workspaces, services, settings..."
-            className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none"
+            placeholder="Search workspaces, services, settings…"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="search-results"
+            aria-activedescendant={flatFiltered[activeIndex] ? `search-${flatFiltered[activeIndex].id}` : undefined}
+            className="h-12 flex-1 bg-transparent text-base text-fg placeholder:text-fg-faint focus-visible:outline-none"
           />
-          <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)] font-mono">
-            ESC
-          </kbd>
+          <Kbd>Esc</Kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[50vh] overflow-auto py-2">
+        <div ref={listRef} id="search-results" role="listbox" className="max-h-[52vh] overflow-auto p-2">
           {flatFiltered.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-[var(--text-muted)]">
-              No results for &ldquo;{query}&rdquo;
+            <div className="px-4 py-10 text-center text-sm text-fg-muted">
+              No results for &ldquo;<span className="text-fg">{query}</span>&rdquo;
             </div>
           ) : (
             grouped.map(group => (
-              <div key={group.kind}>
-                <div className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              <div key={group.kind} className="mb-1 last:mb-0">
+                <div className="px-2 pb-1 pt-2 text-2xs font-semibold uppercase tracking-wider text-fg-faint">
                   {KIND_LABELS[group.kind]}
                 </div>
                 {group.items.map(item => {
                   itemIdx++
                   const idx = itemIdx
                   const active = idx === activeIndex
+                  const entity = item.kind === 'workspace' || item.kind === 'environment' || item.kind === 'service' || item.kind === 'resource'
                   return (
                     <button
                       key={item.id}
+                      id={`search-${item.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
                       data-active={active}
+                      tabIndex={-1}
                       onClick={() => select(item)}
-                      onMouseEnter={() => setActiveIndex(idx)}
+                      onMouseMove={() => { if (!active) setActiveIndex(idx) }}
                       className={cn(
-                        'flex items-center gap-3 w-full px-4 py-2 text-left transition-colors',
-                        active ? 'bg-[var(--bg-active)]' : 'hover:bg-[var(--bg-hover)]'
+                        'flex w-full cursor-pointer items-center gap-3 rounded-control px-2 py-2 text-left transition-colors',
+                        active ? 'bg-selected' : 'hover:bg-hover',
                       )}
                     >
                       <div className={cn(
-                        'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
-                        item.kind === 'workspace' || item.kind === 'environment' || item.kind === 'service' || item.kind === 'resource'
-                          ? `${entityStyle(item.kind).bg} ${entityStyle(item.kind).color}`
-                          : item.kind === 'setting' ? 'bg-purple-500/10 text-purple-400'
-                            : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)]'
+                        'flex size-7 shrink-0 items-center justify-center rounded-control [&_svg]:size-4',
+                        entity ? cn(entityStyle(item.kind as EntityKind).bg, entityStyle(item.kind as EntityKind).color) : 'border border-line bg-surface-sunken text-fg-muted',
                       )}>
                         {item.icon}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-[var(--text-primary)] truncate">{item.name}</div>
-                        {item.description && <div className="text-xs text-[var(--text-muted)] truncate">{item.description}</div>}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm text-fg">{item.name}</div>
+                        {item.description && <div className="truncate text-xs text-fg-muted">{item.description}</div>}
                       </div>
-                      {item.meta && (
-                        <span className="text-xs text-[var(--text-muted)] shrink-0">{item.meta}</span>
-                      )}
-                      {active && <CornerDownLeft className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />}
+                      {item.meta && <span className="shrink-0 text-xs text-fg-muted">{item.meta}</span>}
+                      <CornerDownLeft className={cn('size-3.5 shrink-0 text-fg-muted', !active && 'invisible')} />
                     </button>
                   )
                 })}
@@ -323,13 +313,13 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
           )}
         </div>
 
-        <div className="flex items-center gap-4 px-4 py-2 border-t border-[var(--border-subtle)] text-[10px] text-[var(--text-muted)]">
-          <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] font-mono">&uarr;&darr;</kbd> Navigate</span>
-          <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] font-mono">&crarr;</kbd> Open</span>
-          <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-[var(--bg-elevated)] border border-[var(--border-subtle)] font-mono">Esc</kbd> Close</span>
+        <div className="flex items-center gap-4 border-t border-line bg-surface-sunken px-4 py-2 text-xs text-fg-muted">
+          <span className="flex items-center gap-1.5"><Kbd>↑</Kbd><Kbd>↓</Kbd> Navigate</span>
+          <span className="flex items-center gap-1.5"><Kbd>↵</Kbd> Open</span>
+          <span className="flex items-center gap-1.5"><Kbd>Esc</Kbd> Close</span>
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   )
 }

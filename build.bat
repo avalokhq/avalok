@@ -183,15 +183,15 @@ if !ERRORLEVEL! neq 0 (
 
 if not exist bin mkdir bin
 
-echo   - Linux amd64...
-set "GOOS=linux"
-set "GOARCH=amd64"
-go build -ldflags "-X github.com/avalokhq/avalok/internal/cli.Version=!VERSION!" -o bin/avalok ./cmd/avalok
-if !ERRORLEVEL! neq 0 (
-    echo [X] Linux build failed
-    exit /b 1
-)
-echo [OK] bin/avalok
+@REM echo   - Linux amd64...
+@REM set "GOOS=linux"
+@REM set "GOARCH=amd64"
+@REM go build -ldflags "-X github.com/avalokhq/avalok/internal/cli.Version=!VERSION!" -o bin/avalok ./cmd/avalok
+@REM if !ERRORLEVEL! neq 0 (
+@REM     echo [X] Linux build failed
+@REM     exit /b 1
+@REM )
+@REM echo [OK] bin/avalok
 
 echo   - Windows amd64...
 set "GOOS=windows"

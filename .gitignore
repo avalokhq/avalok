@@ -1,7 +1,6 @@
 .claude
 .codex
 .tokensave
-CLAUDE.md
 sample/
 
 # Build output
@@ -27,6 +26,7 @@ Thumbs.db
 # Node (frontend)
 web/node_modules/
 web/dist/
+web/mock/
 
 # Environment
 .env

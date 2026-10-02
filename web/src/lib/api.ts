@@ -196,23 +196,51 @@ export interface AdminCredential {
   name: string
   target_type: string
   description: string
+  host?: string
   config?: Record<string, unknown>
   created_at?: string
+  updated_at?: string
 }
 
 export async function adminListCredentials(): Promise<AdminCredential[]> {
   return fetchAPI('/admin/credentials')
 }
 
+export async function adminGetCredential(name: string): Promise<AdminCredential> {
+  return fetchAPI(`/admin/credentials/${name}`)
+}
+
 export async function adminCreateCredential(data: { name: string; target_type: string; config: Record<string, unknown>; description?: string }): Promise<AdminCredential> {
   return fetchAPI('/admin/credentials', { method: 'POST', body: JSON.stringify(data) })
+}
+
+// Config values: '' keeps the stored value, null removes the key.
+export async function adminUpdateCredential(name: string, data: { config?: Record<string, unknown>; description?: string }): Promise<AdminCredential> {
+  return fetchAPI(`/admin/credentials/${name}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
 export async function adminDeleteCredential(name: string): Promise<void> {
   await fetchAPI(`/admin/credentials/${name}`, { method: 'DELETE' })
 }
 
-export async function adminTestCredential(name: string, host?: string): Promise<{ status: string; error?: string; message?: string }> {
+export interface CredentialTestStep {
+  name: string
+  status: 'ok' | 'failed' | 'warning' | 'skipped'
+  detail?: string
+  duration_ms?: number
+}
+
+export interface CredentialTestResult {
+  status: string
+  error?: string
+  message?: string
+  target?: string
+  duration_ms?: number
+  steps?: CredentialTestStep[]
+  facts?: { label: string; value: string }[]
+}
+
+export async function adminTestCredential(name: string, host?: string): Promise<CredentialTestResult> {
   return fetchAPI(`/admin/credentials/${name}/test`, {
     method: 'POST',
     body: host ? JSON.stringify({ host }) : undefined,
