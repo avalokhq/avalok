@@ -37,6 +37,8 @@ func ConfigFromMap(m map[string]any) Config {
 		cfg.Port = v
 	case int:
 		cfg.Port = fmt.Sprintf("%d", v)
+	case float64: // JSON numbers (e.g. credentials stored in Postgres)
+		cfg.Port = fmt.Sprintf("%d", int(v))
 	}
 	if v, ok := m["use_https"].(bool); ok {
 		cfg.UseHTTPS = v
@@ -69,6 +71,21 @@ func New(config Config) *Client {
 	}
 }
 
+// Endpoint returns the scheme, host and port this client talks to.
+func (c *Client) Endpoint() (scheme, host, port string) {
+	scheme = "http"
+	if c.config.UseHTTPS {
+		scheme = "https"
+	}
+	return scheme, c.config.Host, c.config.Port
+}
+
+// User returns the configured username.
+func (c *Client) User() string {
+	return c.config.User
+}
+
+// Connect only builds the client; no network traffic happens until Run.
 func (c *Client) Connect(_ context.Context) error {
 	port, err := strconv.Atoi(c.config.Port)
 	if err != nil {

@@ -279,27 +279,59 @@ For SSH and WinRM the test uses the credential's saved `host`. To test against a
 { "host": "10.0.1.51" }
 ```
 
-If there is neither a saved host nor an override, the test returns `host is required to test this credential`. The test times out after 5 seconds.
+If there is neither a saved host nor an override, the test returns `host is required to test this credential`. The whole test times out after 15 seconds.
+
+The test runs from the Avalok server and returns a step-by-step report, so you can see exactly what was reached:
+
+| Type | Steps |
+|------|-------|
+| **ssh** | DNS lookup → TCP connect → SSH handshake (server version, host key fingerprint) → authenticate → run `whoami && hostname` |
+| **winrm** | DNS lookup → TCP connect → authenticate and run PowerShell (user, hostname, OS version) |
+| **kubernetes** | Load credentials → reach API server (version) → identity (Kubernetes 1.28+) → `list pods` / `get pods/log` permission check |
+| **s3** | Load credentials → verify identity via STS (AWS only) → list buckets |
+| **gcs** | Load credentials (service account, project) → authenticate and list buckets |
+| **azure-storage** | Load credentials → authenticate and list containers |
 
 **Response (200):**
 
 ```json
 {
   "status": "ok",
-  "message": "connection successful"
+  "message": "connection successful",
+  "target": "deploy@10.0.1.50:22",
+  "duration_ms": 412,
+  "steps": [
+    { "name": "DNS lookup", "status": "skipped", "detail": "10.0.1.50 is an IP address" },
+    { "name": "Load credentials", "status": "ok", "detail": "private key (ssh-ed25519)" },
+    { "name": "TCP connect", "status": "ok", "detail": "connected to 10.0.1.50:22", "duration_ms": 3 },
+    { "name": "SSH handshake", "status": "ok", "detail": "SSH-2.0-OpenSSH_9.6 · host key ssh-ed25519 SHA256:…", "duration_ms": 180 },
+    { "name": "Authenticate", "status": "ok", "detail": "logged in as deploy" },
+    { "name": "Run command", "status": "ok", "detail": "`whoami && hostname` → deploy / app01", "duration_ms": 95 }
+  ],
+  "facts": [
+    { "label": "Host key", "value": "ssh-ed25519 SHA256:…" },
+    { "label": "Remote hostname", "value": "app01" }
+  ]
 }
 ```
+
+Step `status` is `ok`, `failed`, `warning` (e.g. credentials are valid but cannot list pods or buckets), or `skipped`. When any step has a warning, `message` is `connected with warnings`.
 
 **Response (failure):**
 
 ```json
 {
   "status": "error",
-  "error": "authentication failed"
+  "error": "authentication failed",
+  "target": "deploy@10.0.1.50:22",
+  "steps": [
+    { "name": "SSH handshake", "status": "ok", "detail": "host key ssh-ed25519 SHA256:…" },
+    { "name": "Authenticate", "status": "failed", "detail": "server rejected login as deploy (attempted methods [none publickey]) — …" }
+  ]
 }
 ```
 
-The `error` value is one of `timeout`, `host unreachable`, `connection refused`, `authentication failed`, or `connection failed`. The raw error is written only to the server log. Every test is recorded in the audit log (`test_credential`) with the host tested and the result.
+The `error` value is one of `timeout`, `DNS lookup failed`, `host unreachable`, `connection refused`, `authentication failed`, `invalid credentials`, `TLS certificate error`, `protocol mismatch`, `command failed`, or `connection failed`. Step details never include secret values or raw provider errors. Every test is recorded in the audit log (`test_credential`) with the target and the result.
 
 ## Operator Resolver (Serve Mode)
 

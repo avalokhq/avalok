@@ -3,9 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/avalokhq/avalok/internal/provider"
 	"github.com/avalokhq/avalok/internal/store"
 )
 
@@ -271,136 +268,70 @@ func (s *Server) handleTestCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	var testProvider string
-	switch cred.TargetType {
-	case "ssh":
-		testProvider = "ssh"
-	case "winrm":
-		testProvider = "winrm"
-	case "kubernetes":
-		testProvider = "kubernetes"
-	case "s3":
-		testProvider = "s3"
-	case "azure-storage":
-		accountName, _ := cred.Config["account_name"].(string)
-		connStr, _ := cred.Config["connection_string"].(string)
-		if accountName == "" && connStr == "" {
-			writeJSON(w, http.StatusOK, map[string]any{
-				"status": "error",
-				"error":  "account_name or connection_string is required",
-			})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status":  "ok",
-			"message": "credential configuration looks valid",
-		})
-		return
-	case "gcs":
-		testProvider = "gcs"
-	default:
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("cannot test target type: %s", cred.TargetType))
-		return
-	}
-
-	p, ok := provider.Get(testProvider)
-	if !ok {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "error",
-			"error":  fmt.Sprintf("provider %s not available", testProvider),
-		})
-		return
-	}
-
-	testConfig := make(map[string]any)
+	testConfig := make(map[string]any, len(cred.Config)+1)
 	for k, v := range cred.Config {
 		testConfig[k] = v
 	}
 	if body.Host != "" {
 		testConfig["host"] = body.Host
 	}
-	if testProvider == "ssh" {
-		if _, ok := testConfig["command"]; !ok {
-			testConfig["command"] = "echo ok"
-		}
-	}
 
-	host, _ := testConfig["host"].(string)
-	if host == "" && (testProvider == "ssh" || testProvider == "winrm") {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "error",
-			"error":  "host is required to test this credential",
-		})
+	var probe func(context.Context, *probeReport, map[string]any)
+	switch cred.TargetType {
+	case "ssh":
+		probe = probeSSH
+	case "winrm":
+		probe = probeWinRM
+	case "kubernetes":
+		probe = probeKubernetes
+	case "s3":
+		probe = probeS3
+	case "gcs":
+		probe = probeGCS
+	case "azure-storage":
+		probe = probeAzure
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("cannot test target type: %s", cred.TargetType))
 		return
 	}
 
-	audit := &store.AuditEntry{
+	report := &probeReport{Steps: []probeStep{}}
+	if host, _ := testConfig["host"].(string); host == "" && (cred.TargetType == "ssh" || cred.TargetType == "winrm") {
+		report.Status = "error"
+		report.Error = "host is required to test this credential"
+		writeJSON(w, http.StatusOK, report)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
+	defer cancel()
+	start := time.Now()
+	probe(ctx, report, testConfig)
+	report.finish(start)
+
+	if report.Status == "error" {
+		logger.Info("credential test failed", "credential", cred.Name, "target", report.Target, "reason", report.Error)
+	}
+
+	result := report.Error
+	if result == "" {
+		result = report.Message
+	}
+	details := map[string]string{"result": result}
+	if report.Target != "" {
+		details["target"] = report.Target
+	}
+	if body.Host != "" {
+		details["host_override"] = "true"
+	}
+	s.store.RecordAudit(r.Context(), &store.AuditEntry{
 		UserID:   userFromContext(r).ID,
 		Action:   "test_credential",
 		Resource: "credential/" + cred.Name,
-		Details:  map[string]string{},
-	}
-	if host != "" {
-		audit.Details["host"] = host
-	}
-	if body.Host != "" {
-		audit.Details["host_override"] = "true"
-	}
-
-	if err := p.Connect(ctx, testConfig); err != nil {
-		logger.Error("credential test connection failed", "credential", cred.Name, "host", host, "error", err)
-		reason := classifyConnectError(ctx, err)
-		audit.Details["result"] = reason
-		s.store.RecordAudit(r.Context(), audit)
-		writeJSON(w, http.StatusOK, map[string]any{
-			"status": "error",
-			"error":  reason,
-		})
-		return
-	}
-	defer p.Close()
-
-	audit.Details["result"] = "ok"
-	s.store.RecordAudit(r.Context(), audit)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"message": "connection successful",
+		Details:  details,
 	})
-}
 
-// classifyConnectError maps a provider connect error to a short, non-sensitive
-// category. The raw error is only written to the server log.
-func classifyConnectError(ctx context.Context, err error) string {
-	var netErr net.Error
-	if errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded ||
-		(errors.As(err, &netErr) && netErr.Timeout()) {
-		return "timeout"
-	}
-	msg := strings.ToLower(err.Error())
-	switch {
-	case strings.Contains(msg, "unable to authenticate"),
-		strings.Contains(msg, "authentication failed"),
-		strings.Contains(msg, "permission denied"),
-		strings.Contains(msg, "unauthorized"),
-		strings.Contains(msg, "401"),
-		strings.Contains(msg, "403"),
-		strings.Contains(msg, "invalid credentials"),
-		strings.Contains(msg, "access denied"):
-		return "authentication failed"
-	case strings.Contains(msg, "connection refused"):
-		return "connection refused"
-	case strings.Contains(msg, "no such host"),
-		strings.Contains(msg, "no route to host"),
-		strings.Contains(msg, "network is unreachable"),
-		strings.Contains(msg, "host is down"):
-		return "host unreachable"
-	case strings.Contains(msg, "timeout"), strings.Contains(msg, "timed out"):
-		return "timeout"
-	}
-	return "connection failed"
+	writeJSON(w, http.StatusOK, report)
 }
 
 func validPort(v any) bool {

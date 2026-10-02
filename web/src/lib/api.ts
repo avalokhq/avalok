@@ -223,7 +223,24 @@ export async function adminDeleteCredential(name: string): Promise<void> {
   await fetchAPI(`/admin/credentials/${name}`, { method: 'DELETE' })
 }
 
-export async function adminTestCredential(name: string, host?: string): Promise<{ status: string; error?: string; message?: string }> {
+export interface CredentialTestStep {
+  name: string
+  status: 'ok' | 'failed' | 'warning' | 'skipped'
+  detail?: string
+  duration_ms?: number
+}
+
+export interface CredentialTestResult {
+  status: string
+  error?: string
+  message?: string
+  target?: string
+  duration_ms?: number
+  steps?: CredentialTestStep[]
+  facts?: { label: string; value: string }[]
+}
+
+export async function adminTestCredential(name: string, host?: string): Promise<CredentialTestResult> {
   return fetchAPI(`/admin/credentials/${name}/test`, {
     method: 'POST',
     body: host ? JSON.stringify({ host }) : undefined,

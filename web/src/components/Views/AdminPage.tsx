@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Users, KeyRound, CheckCircle, XCircle, Clock, Shield, UserCheck, Trash2, Plus, Pencil, KeySquare, Settings } from 'lucide-react'
+import { Users, KeyRound, CheckCircle, XCircle, Clock, Shield, UserCheck, Trash2, Plus, Pencil, KeySquare, Settings, AlertTriangle, MinusCircle } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import PageHeader from '../ui/PageHeader'
 import Tabs from '../ui/Tabs'
@@ -29,7 +29,7 @@ import {
   listWorkspaces, listEnvironments, listServices,
   listStandaloneEnvs, listStandaloneEnvServices, listStandaloneServices,
 } from '../../lib/api'
-import type { AdminUser, AdminCredential, AdminResource, NamespaceInfo } from '../../lib/api'
+import type { AdminUser, AdminCredential, AdminResource, NamespaceInfo, CredentialTestResult, CredentialTestStep } from '../../lib/api'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from '../../lib/types'
 import {
   type StorageField, type AzureAuthMethod,
@@ -672,7 +672,8 @@ function CredentialsPanel() {
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [editing, setEditing] = useState<AdminCredential | null>(null)
-  const [testResults, setTestResults] = useState<Record<string, { status: string; error?: string; host?: string }>>({})
+  const [testResults, setTestResults] = useState<Record<string, CredentialTestResult & { host?: string; testedAt?: number }>>({})
+  const [hiddenReports, setHiddenReports] = useState<Record<string, boolean>>({})
   const [testHostInputs, setTestHostInputs] = useState<Record<string, string>>({})
   const [testingName, setTestingName] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -738,11 +739,12 @@ function CredentialsPanel() {
 
   async function runTest(name: string, hostOverride?: string, displayHost?: string) {
     setTestResults(prev => ({ ...prev, [name]: { status: 'testing', host: displayHost } }))
+    setHiddenReports(prev => ({ ...prev, [name]: false }))
     try {
       const result = await adminTestCredential(name, hostOverride)
-      setTestResults(prev => ({ ...prev, [name]: { ...result, host: displayHost } }))
+      setTestResults(prev => ({ ...prev, [name]: { ...result, host: displayHost, testedAt: Date.now() } }))
     } catch (err: unknown) {
-      setTestResults(prev => ({ ...prev, [name]: { status: 'error', error: err instanceof Error ? err.message : 'Test failed', host: displayHost } }))
+      setTestResults(prev => ({ ...prev, [name]: { status: 'error', error: err instanceof Error ? err.message : 'Test failed', host: displayHost, testedAt: Date.now() } }))
     }
   }
 
@@ -793,12 +795,22 @@ function CredentialsPanel() {
                     )}
                   </div>
                   {result && (
-                    <div className={cn('text-xs mt-1', result.status === 'ok' ? 'text-emerald-400' : result.status === 'testing' ? 'text-[var(--text-muted)]' : 'text-red-400')}>
-                      {result.status === 'ok'
-                        ? `Connection OK${result.host ? ` — ${result.host}` : ''}`
-                        : result.status === 'testing'
-                          ? `Testing${result.host ? ` ${result.host}` : ''}...`
-                          : `${result.error}${result.host ? ` — ${result.host}` : ''}`}
+                    <div className={cn('flex items-center gap-1.5 text-xs mt-1', result.status === 'ok' ? 'text-emerald-400' : result.status === 'testing' ? 'text-[var(--text-muted)]' : 'text-red-400')}>
+                      {result.status === 'testing' ? (
+                        <span>Testing{result.host ? ` ${result.host}` : ''}...</span>
+                      ) : (
+                        <>
+                          {result.status === 'ok' ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                          <span>{result.status === 'ok' ? (result.message === 'connected with warnings' ? 'Connected with warnings' : 'Connected') : result.error}</span>
+                          {result.target && <span className="text-[var(--text-muted)] font-mono">{result.target}</span>}
+                          {result.duration_ms !== undefined && <span className="text-[var(--text-muted)]">· {formatMs(result.duration_ms)}</span>}
+                          {!!result.steps?.length && (
+                            <Button variant="link" onClick={() => setHiddenReports(prev => ({ ...prev, [c.name]: !prev[c.name] }))} className="text-xs ml-1">
+                              {hiddenReports[c.name] ? 'show details' : 'hide details'}
+                            </Button>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                   </div>
@@ -832,6 +844,9 @@ function CredentialsPanel() {
                   </Button>
                 </div>
               )}
+              {result && result.status !== 'testing' && !!result.steps?.length && !hiddenReports[c.name] && (
+                <CredentialTestReport result={result} />
+              )}
             </Card>
           )
         })}
@@ -842,6 +857,57 @@ function CredentialsPanel() {
           />
         )}
       </div>
+    </div>
+  )
+}
+
+function formatMs(ms: number) {
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
+}
+
+const STEP_ICONS: Record<CredentialTestStep['status'], { icon: typeof CheckCircle; className: string }> = {
+  ok: { icon: CheckCircle, className: 'text-emerald-400' },
+  failed: { icon: XCircle, className: 'text-red-400' },
+  warning: { icon: AlertTriangle, className: 'text-amber-400' },
+  skipped: { icon: MinusCircle, className: 'text-[var(--text-muted)]' },
+}
+
+// Step-by-step record of what the credential test actually connected to.
+function CredentialTestReport({ result }: { result: CredentialTestResult & { testedAt?: number } }) {
+  return (
+    <div className="mt-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] shadow-[var(--shadow-sm)] px-3 py-2.5 text-xs">
+      <div className="flex flex-col gap-1.5">
+        {result.steps!.map((s, i) => {
+          const { icon: Icon, className } = STEP_ICONS[s.status] || STEP_ICONS.skipped
+          return (
+            <div key={i} className="flex items-start gap-2">
+              <Icon className={cn('w-3.5 h-3.5 mt-px shrink-0', className)} />
+              <span className="w-32 shrink-0 text-[var(--text-secondary)]">{s.name}</span>
+              <span className={cn('flex-1 break-words', s.status === 'failed' ? 'text-red-400' : s.status === 'warning' ? 'text-amber-300' : 'text-[var(--text-muted)]')}>
+                {s.detail}
+              </span>
+              {!!s.duration_ms && <span className="shrink-0 text-[var(--text-muted)] tabular-nums">{formatMs(s.duration_ms)}</span>}
+            </div>
+          )
+        })}
+      </div>
+
+      {!!result.facts?.length && (
+        <div className="mt-2.5 pt-2.5 border-t border-[var(--border-subtle)] grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+          {result.facts.map(f => (
+            <div key={f.label} className="contents">
+              <span className="text-[var(--text-muted)]">{f.label}</span>
+              <span className="font-mono text-[var(--text-primary)] break-all select-all">{f.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {result.testedAt && (
+        <div className="mt-2 text-[10px] text-[var(--text-muted)]">
+          Tested from the Avalok server at {new Date(result.testedAt).toLocaleTimeString()}
+        </div>
+      )}
     </div>
   )
 }
