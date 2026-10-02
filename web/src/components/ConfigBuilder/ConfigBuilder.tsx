@@ -569,18 +569,13 @@ function EnvironmentDetailForm({ env, services, expandedTargetId, onToggleTarget
 
 // ── YAML Preview ──
 
-function YamlPreview({ yaml, redactedYaml, filename, onImportToServer, importing, importError, saveLabel, defaultRedact = true, onCollapse }: {
+/** Read-only YAML of the current form, shown on demand. Saving lives in the page header. */
+function YamlPreview({ yaml, redactedYaml, defaultRedact = true, onCollapse }: {
   yaml: string
   redactedYaml?: string
-  filename: string
-  onImportToServer?: (yaml: string) => Promise<void>
-  importing?: boolean
-  importError?: string
-  saveLabel?: string
   defaultRedact?: boolean
-  onCollapse?: () => void
+  onCollapse: () => void
 }) {
-  const toast = useToast()
   const [copied, setCopied] = useState(false)
   const [showSecrets, setShowSecrets] = useState(!defaultRedact)
   const hasSensitive = redactedYaml != null && redactedYaml !== yaml
@@ -592,32 +587,6 @@ function YamlPreview({ yaml, redactedYaml, filename, onImportToServer, importing
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [displayYaml])
-
-  const download = useCallback(() => {
-    const blob = new Blob([yaml], { type: 'text/yaml' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename || 'workspace.yaml'
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [yaml, filename])
-
-  const save = useCallback(async () => {
-    try {
-      const res = await fetch('/api/config/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ yaml, filename }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        toast.success('Saved', data.path)
-      }
-    } catch {
-      download()
-    }
-  }, [yaml, filename, download, toast])
 
   const lines = displayYaml.split('\n')
 
@@ -639,29 +608,10 @@ function YamlPreview({ yaml, redactedYaml, filename, onImportToServer, importing
         <IconButton onClick={copyToClipboard} label={copied ? 'Copied' : 'Copy to clipboard'} tooltipSide="bottom">
           {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
         </IconButton>
-        <IconButton onClick={save} label="Save to disk" tooltipSide="bottom">
-          <Save className="size-3.5" />
+        <IconButton onClick={onCollapse} label="Hide YAML" tooltipSide="bottom" className="-mr-1.5">
+          <X className="size-3.5" />
         </IconButton>
-        {onImportToServer ? (
-          <Button size="sm" onClick={() => onImportToServer(yaml)} loading={importing} leftIcon={<ArrowDownToLine />} className="ml-1">
-            {importing ? 'Saving...' : (saveLabel || 'Import to Server')}
-          </Button>
-        ) : (
-          <Button size="sm" onClick={download} leftIcon={<ArrowDownToLine />} className="ml-1">
-            Download
-          </Button>
-        )}
-        {onCollapse && (
-          <IconButton onClick={onCollapse} label="Collapse panel" tooltipSide="bottom" className="-mr-1.5">
-            <ChevronRight className="size-3.5" />
-          </IconButton>
-        )}
       </div>
-      {importError && (
-        <Alert tone="danger" className="m-3 shrink-0">
-          {importError}
-        </Alert>
-      )}
       <div className="flex-1 overflow-auto py-2 font-mono text-xs leading-5" style={{ background: 'var(--log-bg)' }}>
         {lines.map((line, i) => {
           let cls = 'text-fg'
@@ -908,12 +858,61 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
   const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [resourceConnectTarget, setResourceConnectTarget] = useState<{ envId: string; targetId: string } | null>(null)
-  const [yamlOpen, setYamlOpen] = useState(true)
+  // YAML is a reference view, so it starts hidden; the choice sticks for people who like it open.
+  const [yamlOpen, setYamlOpenState] = useState(() => localStorage.getItem('avalok-config-yaml-open') === 'true')
+  const setYamlOpen = (open: boolean) => {
+    setYamlOpenState(open)
+    localStorage.setItem('avalok-config-yaml-open', String(open))
+  }
+  const toast = useToast()
 
   const yaml = useMemo(() => generateYaml(config, { mode }), [config, mode])
   const redactedYaml = useMemo(() => generateYaml(config, { redact: true, mode }), [config, mode])
   const defaultFilename = mode === 'service' ? 'service' : mode === 'environment' ? 'environment' : 'workspace'
   const filename = `${config.name || defaultFilename}.yaml`
+  const isEdit = !!(editWorkspace || editService || editEnvironment)
+  const entityNoun = mode === 'service' ? 'Service' : mode === 'environment' ? 'Environment' : 'Workspace'
+
+  async function saveToServer() {
+    if (!onImportToServer) return
+    setServerError('')
+    setServerImporting(true)
+    try {
+      await onImportToServer(yaml, config)
+    } catch (err: unknown) {
+      setServerError(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setServerImporting(false)
+    }
+  }
+
+  function downloadYaml() {
+    const url = URL.createObjectURL(new Blob([yaml], { type: 'text/yaml' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function saveToDisk() {
+    try {
+      const res = await fetch('/api/config/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ yaml, filename }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        toast.success('Saved', data.path)
+      } else {
+        toast.error('Couldn\x27t save to disk', 'Downloading the file instead.')
+        downloadYaml()
+      }
+    } catch {
+      downloadYaml()
+    }
+  }
 
   function cfg(fn: (d: WorkspaceConfig) => void) {
     setConfig(prev => update(prev, fn))
@@ -1062,12 +1061,20 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
         ) : (
           <AvalokWordmark height={22} />
         )}
-        <span className="hidden text-2xs italic text-fg-muted sm:inline">observe with clarity</span>
         <div className="h-5 w-px bg-line" />
         <span className="truncate text-sm font-medium text-fg">
-          {editWorkspace ? 'Edit Workspace' : editService ? 'Edit Service' : editEnvironment ? 'Edit Environment' : onImportToServer ? (mode === 'service' ? 'Create Service' : mode === 'environment' ? 'Create Environment' : 'Create Workspace') : 'Config Builder'}
+          {isEdit ? `Edit ${entityNoun}` : onImportToServer ? `Create ${entityNoun}` : 'Config Builder'}
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant={yamlOpen ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setYamlOpen(!yamlOpen)}
+            leftIcon={<FileText />}
+            aria-pressed={yamlOpen}
+          >
+            {yamlOpen ? 'Hide YAML' : 'Show YAML'}
+          </Button>
           <Button variant="secondary" size="sm" onClick={() => setShowImport(true)} leftIcon={<Upload />}>
             Import
           </Button>
@@ -1082,6 +1089,21 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
               return { value: opt.value, icon: <Icon />, title: THEME_LABELS[opt.value] }
             })}
           />
+          <div className="h-5 w-px bg-line" />
+          {onImportToServer ? (
+            <Button size="sm" onClick={saveToServer} loading={serverImporting} leftIcon={isEdit ? <Save /> : <Plus />}>
+              {serverImporting ? 'Saving…' : isEdit ? 'Save Changes' : `Create ${entityNoun}`}
+            </Button>
+          ) : (
+            <>
+              <Button variant="secondary" size="sm" onClick={saveToDisk} leftIcon={<Save />}>
+                Save to disk
+              </Button>
+              <Button size="sm" onClick={downloadYaml} leftIcon={<ArrowDownToLine />}>
+                Download YAML
+              </Button>
+            </>
+          )}
         </div>
       </header>
 
@@ -1090,6 +1112,11 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
         {/* Left: Form */}
         <div className="min-w-0 flex-1 overflow-y-auto">
           <div className="space-y-4 px-6 py-6">
+            {serverError && (
+              <Alert tone="danger" title={isEdit ? 'Couldn\x27t save changes' : 'Couldn\x27t save'}>
+                {serverError}
+              </Alert>
+            )}
 
             {mode === 'service' ? (
               <>
@@ -1476,46 +1503,17 @@ export default function ConfigBuilder({ onImportToServer, onBack, editWorkspace,
           </div>
         </div>
 
-        {/* Right: YAML Preview (collapsible) */}
-        <div className={cn(
-          'flex min-w-0 shrink-0 flex-col border-l border-line bg-surface transition-[width] duration-200',
-          yamlOpen ? 'w-[480px]' : 'w-10'
-        )}>
-          {yamlOpen ? (
+        {/* Right: read-only YAML, shown on demand */}
+        {yamlOpen && (
+          <div className="flex w-[480px] min-w-0 shrink-0 flex-col border-l border-line bg-surface animate-fade-in">
             <YamlPreview
               yaml={yaml}
               redactedYaml={redactedYaml}
-              filename={filename}
               defaultRedact={adminRedact}
-              onImportToServer={onImportToServer ? async (y) => {
-                setServerError('')
-                setServerImporting(true)
-                try {
-                  await onImportToServer(y, config)
-                } catch (err: unknown) {
-                  setServerError(err instanceof Error ? err.message : 'Failed to save')
-                } finally {
-                  setServerImporting(false)
-                }
-              } : undefined}
-              importing={serverImporting}
-              importError={serverError}
-              saveLabel={(editWorkspace || editService || editEnvironment) ? 'Save Changes' : undefined}
               onCollapse={() => setYamlOpen(false)}
             />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setYamlOpen(true)}
-              className="flex w-full cursor-pointer flex-col items-center gap-2 py-4 text-fg-muted transition-colors hover:bg-hover hover:text-fg"
-              title="Show YAML preview"
-              aria-label="Show YAML preview"
-            >
-              <ChevronLeft className="size-4" />
-              <span className="rotate-180 text-2xs font-medium [writing-mode:vertical-lr]">YAML</span>
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {showImport && (
