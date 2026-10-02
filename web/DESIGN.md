@@ -75,7 +75,7 @@ The fonts are Inter (UI) and JetBrains Mono (logs, code, IDs, timestamps). Both 
 
 | Context | Value |
 |---|---|
-| Page container | `px-6 lg:px-10 py-8 max-w-[1440px] mx-auto` |
+| Page container | `<Page>` from `Layout/Page.tsx` (full width, left-aligned, `px-6 lg:px-10 py-8`). Never add `max-w-*` / `mx-auto` to a page |
 | Between page sections | `gap-8` / `mb-8` |
 | Card grids | `gap-4` |
 | Card padding | `p-5` (dense: `p-4`) |
@@ -123,14 +123,16 @@ Everything lives in [`src/components/ui/`](src/components/ui/). **If a pattern a
 | Any list of records | `DataTable`: column `sortValue`, `numeric`; props `density`, `loading`, `error` + `onRetry`, `empty`, `stickyHeader`, `isRowSelected`, `onRowClick` (keyboard-accessible) | stacked Cards as rows, hand-built `<table>` |
 | Browsable collection with visuals | `CollectionGrid` of `Card` with `onClick` | — |
 | Container | `Card` (`padding`, `interactive`, `selected`) + `CardHeader` (`icon`, `title`, `description`, `actions`) / `CardFooter` | `div` with border + rounded + bg |
+| Workspace / environment / service / resource in a grid | `EntityCard` (`kind`, `icon`, `badges`, `meta`, `actionLabel`, `onOpen`, `menuItems`, `index` for stagger, `busy`): hover hairline, tile scale, arrow nudge | hand-built entity Cards |
 | Settings form layout | `Section` + `SettingsRow` | — |
 | Labels, types, statuses | `Badge` with `tone` (`neutral` / `accent` / `success` / `warning` / `danger` / `info`), optional `dot`; providers: neutral tone + `<ProviderIcon>` inside | inline `<span>` pills, hex provider colors |
 | Live / connection / health state | `StatusDot` (`live` pings, `ok`, `warn`, `error`, `idle`) with a `label` | bare colored dot |
-| KPI numbers | `StatCard` / `StatsGrid` (`tone`, optional `onClick`) | — |
+| KPI numbers | `StatCard` / `StatsGrid` (`tone`, optional `onClick` + `active` to act as a filter) | — |
 | Dialog or form overlay | `Modal` (`title`, `description`, `footer`, `size` `sm`/`md`/`lg`/`xl`, `dismissible`); portal, frosted backdrop, Esc, focus trap + restore | `fixed inset-0` divs |
 | Destructive confirm | `const confirm = useConfirm(); if (!(await confirm({ title, description, confirmLabel: 'Delete', danger: true }))) return` | `window.confirm()` |
 | Success / error feedback after an action | `const toast = useToast(); toast.success('Saved')` / `toast.error(title, detail)` | `alert()`, silent `console.error` |
 | Inline error or notice | `Alert` (`tone`, `title`, `action` e.g. Retry button) | bare `text-red-*` div |
+| Row / card "⋯" actions | `ActionMenu` (`items`, `label`); stops clicks reaching the clickable row or card | hover-only icon buttons |
 | Contextual actions menu | `Dropdown` (`trigger`, `items` with `icon` / `danger` / `shortcut` / `disabled` / `{ separator: true }`, `align`, `header` slot for e.g. the user card); portal + arrow keys / type-ahead | `fixed inset-0` click-catcher menus |
 | Hint on hover | `Tooltip` (`content`, `side`) | `title=` only |
 | Shortcut hint | `Kbd` | inline styled `<kbd>` |
@@ -151,13 +153,13 @@ All overlays (modals, menus, popovers, palettes) render with `createPortal(…, 
 Every page follows the same skeleton:
 
 ```tsx
-<div className="px-6 lg:px-10 py-8 max-w-[1440px] mx-auto animate-fade-up">
+<Page>
   <PageHeader eyebrow="WORKSPACE" title="Services" description="…" actions={<Button>…</Button>} />
   {error ? <Alert tone="danger" action={retry}>…</Alert>
    : loading ? <Skeleton … />          // same shape as the loaded content; header always visible
    : items.length === 0 ? <EmptyState … action={<Button>Create…</Button>} />
    : <DataTable … /> /* or CollectionGrid, toggled by SegmentedControl */}
-</div>
+</Page>
 ```
 
 - **Every fetch has three visible states:** loading, error and empty. A failed fetch must never look like "no data".

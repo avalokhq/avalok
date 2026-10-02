@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import Kbd from './Kbd'
+import IconButton from './IconButton'
 
 export type MenuItem =
   | {
@@ -150,5 +151,21 @@ export function DropdownButton({ children, className, ...props }: React.ButtonHT
       {children}
       <ChevronDown className="size-3.5 opacity-80" />
     </button>
+  )
+}
+
+/**
+ * "⋯" row/card actions menu. Safe inside clickable rows and cards: clicks (including on the
+ * portaled menu, which bubble through React) don't reach the parent's onClick.
+ */
+export function ActionMenu({ items, label = 'More actions', className }: { items: MenuItem[]; label?: string; className?: string }) {
+  return (
+    <div className={cn('inline-flex', className)} onClick={e => e.stopPropagation()}>
+      <Dropdown
+        width={180}
+        items={items}
+        trigger={<IconButton label={label} size="sm"><MoreHorizontal className="size-4" /></IconButton>}
+      />
+    </div>
   )
 }

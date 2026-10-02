@@ -11,6 +11,7 @@ import IconButton from '../ui/IconButton'
 import LayoutToggle from '../ui/LayoutToggle'
 import CollectionGrid from '../ui/CollectionGrid'
 import { useLayoutToggle } from '../../lib/useLayoutToggle'
+import Page from '../Layout/Page'
 
 const K8S_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 
@@ -99,20 +100,17 @@ export default function ResourceNamespacesView({ resourceName, onSelect }: Props
 
   if (loading) {
     return (
-      <div className="flex-1 overflow-auto">
-        <div className="px-8 lg:px-16 py-8">
+      <Page>
           <div className="skeleton h-12 rounded-xl mb-6" />
           <div className="grid gap-1.5">
             {Array.from({ length: 12 }).map((_, i) => <div key={i} className="skeleton h-10 rounded-xl" />)}
           </div>
-        </div>
-      </div>
+      </Page>
     )
   }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title={resourceName}
           description={`${namespaces.length} namespace${namespaces.length !== 1 ? 's' : ''}`}
@@ -171,7 +169,6 @@ export default function ResourceNamespacesView({ resourceName, onSelect }: Props
             ))}
           </CollectionGrid>
         )}
-      </div>
-    </div>
+    </Page>
   )
 }

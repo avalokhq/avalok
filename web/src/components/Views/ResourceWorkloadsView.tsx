@@ -12,6 +12,7 @@ import Alert from '../ui/Alert'
 import EmptyState from '../ui/EmptyState'
 import Card from '../ui/Card'
 import DataTable from '../ui/DataTable'
+import Page from '../Layout/Page'
 
 interface Workload {
   name: string
@@ -56,8 +57,7 @@ export default function ResourceWorkloadsView({ resourceName, namespace, onViewL
   if (loading) return <Spinner label="Loading workloads..." />
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title={`${resourceName} / ${namespace}`}
           description="Click a workload to stream its logs."
@@ -128,7 +128,6 @@ export default function ResourceWorkloadsView({ resourceName, namespace, onViewL
             ))}
           </CollectionGrid>
         )}
-      </div>
-    </div>
+    </Page>
   )
 }

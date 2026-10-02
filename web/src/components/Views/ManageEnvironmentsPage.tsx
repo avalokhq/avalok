@@ -14,6 +14,7 @@ import EmptyState from '../ui/EmptyState'
 import IconButton from '../ui/IconButton'
 import { adminListStandaloneEnvs, adminDeleteStandaloneEnv } from '../../lib/api'
 import type { StandaloneEnvironment } from '../../lib/types'
+import Page from '../Layout/Page'
 
 interface Props {
   onSelect?: (env: StandaloneEnvironment) => void
@@ -89,8 +90,7 @@ export default function ManageEnvironmentsPage({ onSelect, onCreateEnvironment, 
   ]
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title="Environments"
           actions={
@@ -141,7 +141,6 @@ export default function ManageEnvironmentsPage({ onSelect, onCreateEnvironment, 
             />
           )
         )}
-      </div>
-    </div>
+    </Page>
   )
 }

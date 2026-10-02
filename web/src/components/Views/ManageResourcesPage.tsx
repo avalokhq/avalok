@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import Page from '../Layout/Page'
 import { Plus, Trash2, Pencil, ChevronDown, ChevronRight, Copy, Check } from 'lucide-react'
 import { EntityIconRaw } from '../ui/EntityIcon'
 import { cn } from '../../lib/cn'
@@ -77,8 +78,7 @@ export default function ManageResourcesPage({ onNavigateResource }: Props) {
   }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title="Resources"
           actions={
@@ -196,8 +196,7 @@ export default function ManageResourcesPage({ onNavigateResource }: Props) {
             />
           )
         )}
-      </div>
-    </div>
+    </Page>
   )
 }
 

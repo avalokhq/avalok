@@ -12,6 +12,7 @@ import IconButton from '../ui/IconButton'
 import LayoutToggle from '../ui/LayoutToggle'
 import CollectionGrid from '../ui/CollectionGrid'
 import { useLayoutToggle } from '../../lib/useLayoutToggle'
+import Page from '../Layout/Page'
 
 interface Props {
   resourceName: string
@@ -175,22 +176,19 @@ export default function StorageObjectsView({ resourceName, resourceType, onViewO
 
   if (loading && !listing && !overview) {
     return (
-      <div className="flex-1 overflow-auto">
-        <div className="px-8 lg:px-16 py-8">
+      <Page>
           <div className="skeleton h-12 rounded-xl mb-6" />
           <div className="grid gap-1.5">
             {Array.from({ length: 12 }).map((_, i) => <div key={i} className="skeleton h-10 rounded-xl" />)}
           </div>
-        </div>
-      </div>
+      </Page>
     )
   }
 
   const navigating = loading && !!listing
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title={resourceName}
           description={`${directories.length} folder${directories.length !== 1 ? 's' : ''}, ${objects.length} file${objects.length !== 1 ? 's' : ''}`}
@@ -281,7 +279,6 @@ export default function StorageObjectsView({ resourceName, resourceType, onViewO
             ))}
           </CollectionGrid>
         )}
-      </div>
-    </div>
+    </Page>
   )
 }

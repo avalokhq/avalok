@@ -15,6 +15,7 @@ import EmptyState from '../ui/EmptyState'
 import Card from '../ui/Card'
 import DataTable from '../ui/DataTable'
 import IconButton from '../ui/IconButton'
+import Page from '../Layout/Page'
 
 const CLOUD_STORAGE_PROVIDERS = new Set(['s3', 'azure-blob', 'azure-file', 'gcs'])
 
@@ -61,8 +62,7 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
   if (loading) return <Spinner label="Loading services..." />
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title={workspace.name}
           description={`${workspace.description} — ${environment.name}`}
@@ -194,8 +194,7 @@ export default function ServicesView({ workspace, environment, onViewLogs, onBro
             })}
           </CollectionGrid>
         )}
-      </div>
-    </div>
+    </Page>
   )
 }
 

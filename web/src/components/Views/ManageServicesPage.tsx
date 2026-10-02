@@ -15,6 +15,7 @@ import IconButton from '../ui/IconButton'
 import ProviderIcon, { providerDisplayName } from '../ui/ProviderIcon'
 import { adminListStandaloneServices, adminDeleteStandaloneService } from '../../lib/api'
 import type { StandaloneService } from '../../lib/types'
+import Page from '../Layout/Page'
 
 interface Props {
   onSelect?: (svc: StandaloneService) => void
@@ -93,8 +94,7 @@ export default function ManageServicesPage({ onSelect, onCreateService, onEditSe
   ]
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title="Services"
           actions={
@@ -150,7 +150,6 @@ export default function ManageServicesPage({ onSelect, onCreateService, onEditSe
             />
           )
         )}
-      </div>
-    </div>
+    </Page>
   )
 }

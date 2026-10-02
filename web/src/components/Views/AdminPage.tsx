@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Page from '../Layout/Page'
 import { Users, KeyRound, CheckCircle, XCircle, Clock, Shield, UserCheck, Trash2, Plus, Pencil, KeySquare, Settings, AlertTriangle, MinusCircle } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import PageHeader from '../ui/PageHeader'
@@ -64,8 +65,7 @@ export default function AdminPage({ userRole, initialTab, highlightSetting, onSe
   ]
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader title="Administration" />
 
         <div className="mb-6">
@@ -75,8 +75,7 @@ export default function AdminPage({ userRole, initialTab, highlightSetting, onSe
         {tab === 'users' && <UsersPanel userRole={userRole} />}
         {tab === 'credentials' && <CredentialsPanel />}
         {tab === 'settings' && <SettingsPanel onSettingsChange={onSettingsChange} highlightSetting={highlightSetting} onHighlightConsumed={onHighlightConsumed} />}
-      </div>
-    </div>
+    </Page>
   )
 }
 

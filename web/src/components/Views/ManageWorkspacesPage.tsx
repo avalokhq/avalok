@@ -16,6 +16,7 @@ import IconButton from '../ui/IconButton'
 import { Textarea } from '../ui/Input'
 import { adminListWorkspaces, adminImportWorkspace, adminDeleteWorkspace } from '../../lib/api'
 import type { Workspace } from '../../lib/types'
+import Page from '../Layout/Page'
 
 interface Props {
   onSelect?: (ws: Workspace) => void
@@ -95,8 +96,7 @@ export default function ManageWorkspacesPage({ onSelect, onCreateWorkspace, onEd
   ]
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title="Workspaces"
           actions={
@@ -155,8 +155,7 @@ export default function ManageWorkspacesPage({ onSelect, onCreateWorkspace, onEd
             />
           )
         )}
-      </div>
-    </div>
+    </Page>
   )
 }
 

@@ -15,6 +15,7 @@ import EmptyState from '../ui/EmptyState'
 import Card from '../ui/Card'
 import DataTable from '../ui/DataTable'
 import IconButton from '../ui/IconButton'
+import Page from '../Layout/Page'
 
 interface Props {
   envName: string
@@ -58,8 +59,7 @@ export default function StandaloneEnvServicesView({ envName, envDescription, onV
   if (loading) return <Spinner label="Loading services..." />
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title={envName}
           description={envDescription}
@@ -188,8 +188,7 @@ export default function StandaloneEnvServicesView({ envName, envDescription, onV
             })}
           </CollectionGrid>
         )}
-      </div>
-    </div>
+    </Page>
   )
 }
 

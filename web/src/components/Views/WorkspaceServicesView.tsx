@@ -13,6 +13,7 @@ import Spinner from '../ui/Spinner'
 import EmptyState from '../ui/EmptyState'
 import Card from '../ui/Card'
 import DataTable from '../ui/DataTable'
+import Page from '../Layout/Page'
 
 interface Props {
   workspace: Workspace
@@ -34,8 +35,7 @@ export default function WorkspaceServicesView({ workspace, onSelectService }: Pr
   if (loading) return <Spinner label="Loading services..." />
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-8 lg:px-16 py-8">
+    <Page>
         <PageHeader
           title={workspace.name}
           description={workspace.description}
@@ -123,7 +123,6 @@ export default function WorkspaceServicesView({ workspace, onSelectService }: Pr
             ))}
           </CollectionGrid>
         )}
-      </div>
-    </div>
+    </Page>
   )
 }

@@ -12,16 +12,20 @@ export interface StatItem {
   bg?: string
   sub?: { label: string; value: number; color?: string; tone?: Tone }[]
   onClick?: () => void
+  /** Pressed state when the card acts as a filter. */
+  active?: boolean
 }
 
-export function StatCard({ label, value, icon, tone = 'accent', sub, onClick }: StatItem) {
+export function StatCard({ label, value, icon, tone = 'accent', sub, onClick, active }: StatItem) {
   const Comp = onClick ? 'button' : 'div'
   return (
     <Comp
       type={onClick ? 'button' : undefined}
       onClick={onClick}
+      aria-pressed={onClick ? !!active : undefined}
       className={cn(
-        'rounded-card border border-line bg-surface p-5 text-left shadow-sm',
+        'rounded-card border bg-surface p-5 text-left shadow-sm',
+        active ? 'border-accent-line bg-selected ring-3 ring-accent-soft' : 'border-line',
         onClick && 'cursor-pointer transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-accent-line hover:shadow-md',
       )}
     >

@@ -162,7 +162,7 @@ export default function DataTable<T>({
                     className={cn(
                       'border-t border-line',
                       selected && 'bg-selected',
-                      onRowClick && 'cursor-pointer transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:-outline-offset-2',
+                      onRowClick && 'group cursor-pointer transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:-outline-offset-2',
                     )}
                   >
                     {columns.map(col => (
