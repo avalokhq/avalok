@@ -14,6 +14,7 @@ import (
 
 	"github.com/avalokhq/avalok/internal/provider"
 	"github.com/avalokhq/avalok/internal/provider/cloudutil"
+	"github.com/avalokhq/avalok/internal/store"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -225,9 +226,7 @@ func (s *Server) handleServiceStorageStream(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: s.originPatterns(),
-	})
+	conn, err := s.acceptStreamSocket(w, r)
 	if err != nil {
 		logger.Error("websocket accept error", "error", err)
 		return
@@ -240,6 +239,10 @@ func (s *Server) handleServiceStorageStream(w http.ResponseWriter, r *http.Reque
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	r = withAccessCheck(r, func(_ context.Context, u *store.User) bool {
+		return u.HasWorkspaceServiceAccess(wsName, svcName)
+	})
+	s.watchAccess(ctx, r, revokeSocket(conn, cancel))
 
 	p, err := s.buildServiceCloudProvider(ctx, wsName, svcName)
 	if err != nil {

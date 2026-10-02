@@ -80,7 +80,7 @@ export default function WorkspacesView({ onSelect, onSelectEnv, onSelectService,
 
   function loadData() {
     setRefreshing(true)
-    const hasResourceScope = userRole === 'admin' || (userScope || []).some(s => s.startsWith('res:'))
+    const hasResourceScope = userRole === 'admin' || (userScope || []).some(s => s === '*' || s.startsWith('res:'))
     const fetchResources = (serverMode && hasResourceScope)
       ? adminListResources().catch(() => [])
       : Promise.resolve([])

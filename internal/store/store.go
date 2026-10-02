@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/avalokhq/avalok/internal/workspace"
@@ -16,7 +17,7 @@ type User struct {
 	Status    string // "active", "pending", "disabled" — empty treated as "active" for backward compat
 	Token     string
 	ExpiresAt time.Time
-	Scope     []string // e.g. ["payments/development/api", "payments/development/worker"]. Empty = full access.
+	Scope     []string // e.g. ["payments/development/api", "env:prod", "svc:billing", "res:cluster/ns"]. "*" = full access; empty = no access.
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -25,8 +26,38 @@ func (u *User) IsActive() bool {
 	return u.Status == "" || u.Status == "active"
 }
 
+// FullAccessScope is the scope entry that grants access to every workspace, environment, service and resource.
+const FullAccessScope = "*"
+
+// HasFullAccess reports whether scope checks are bypassed: admins and users holding the "*" scope.
+// Any other user only sees what their scope lists, so an empty scope grants nothing.
+func (u *User) HasFullAccess() bool {
+	if u.Role == "admin" {
+		return true
+	}
+	for _, s := range u.Scope {
+		if s == FullAccessScope {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAnyResourceAccess reports whether the user can reach at least one infrastructure resource.
+func (u *User) HasAnyResourceAccess() bool {
+	if u.HasFullAccess() {
+		return true
+	}
+	for _, s := range u.Scope {
+		if strings.HasPrefix(s, "res:") {
+			return true
+		}
+	}
+	return false
+}
+
 func (u *User) HasAccess(workspace, env, service string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	path := workspace + "/" + env + "/" + service
@@ -41,7 +72,7 @@ func (u *User) HasAccess(workspace, env, service string) bool {
 }
 
 func (u *User) HasWorkspaceAccess(workspace string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	for _, s := range u.Scope {
@@ -55,7 +86,7 @@ func (u *User) HasWorkspaceAccess(workspace string) bool {
 }
 
 func (u *User) HasEnvAccess(workspace, env string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	prefix := workspace + "/" + env
@@ -70,7 +101,7 @@ func (u *User) HasEnvAccess(workspace, env string) bool {
 }
 
 func (u *User) HasWorkspaceServiceAccess(ws, service string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	wsPrefix := ws + "/"
@@ -99,7 +130,7 @@ func (u *User) HasWorkspaceServiceAccess(ws, service string) bool {
 }
 
 func (u *User) HasStandaloneEnvAccess(envName string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	prefix := "env:" + envName
@@ -114,7 +145,7 @@ func (u *User) HasStandaloneEnvAccess(envName string) bool {
 }
 
 func (u *User) HasStandaloneEnvServiceAccess(envName, serviceName string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	full := "env:" + envName + "/" + serviceName
@@ -128,7 +159,7 @@ func (u *User) HasStandaloneEnvServiceAccess(envName, serviceName string) bool {
 }
 
 func (u *User) HasStandaloneServiceAccess(serviceName string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	target := "svc:" + serviceName
@@ -141,7 +172,7 @@ func (u *User) HasStandaloneServiceAccess(serviceName string) bool {
 }
 
 func (u *User) HasResourceAccess(resourceName string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	prefix := "res:" + resourceName
@@ -156,7 +187,7 @@ func (u *User) HasResourceAccess(resourceName string) bool {
 }
 
 func (u *User) HasResourceNamespaceAccess(resourceName, namespace string) bool {
-	if len(u.Scope) == 0 {
+	if u.HasFullAccess() {
 		return true
 	}
 	full := "res:" + resourceName + "/" + namespace

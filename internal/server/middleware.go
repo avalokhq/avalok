@@ -30,16 +30,10 @@ func (s *Server) adminOrResourceScoped(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
-		if user.Role == "admin" {
-			next(w, r)
+		if !user.HasAnyResourceAccess() {
+			writeError(w, http.StatusForbidden, "insufficient permissions")
 			return
 		}
-		for _, sc := range user.Scope {
-			if len(sc) >= 4 && sc[:4] == "res:" {
-				next(w, r)
-				return
-			}
-		}
-		writeError(w, http.StatusForbidden, "insufficient permissions")
+		next(w, r)
 	})
 }

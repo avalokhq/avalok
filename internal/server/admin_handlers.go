@@ -18,6 +18,25 @@ import (
 
 // --- User Management ---
 
+// normalizeScope trims, de-duplicates and drops blank scope entries, and collapses
+// anything containing "*" to just "*". A nil or empty result means no access.
+func normalizeScope(scope []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, s := range scope {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		if s == store.FullAccessScope {
+			return []string{store.FullAccessScope}
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	users, err := s.store.ListUsers(r.Context())
 	if err != nil {
@@ -112,10 +131,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scope := req.Scope
-	if scope == nil {
-		scope = []string{}
-	}
+	scope := normalizeScope(req.Scope)
 
 	user := &store.User{
 		ID:       uuid.New().String(),
@@ -195,7 +211,7 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Scope != nil {
-		user.Scope = req.Scope
+		user.Scope = normalizeScope(req.Scope)
 	}
 
 	if req.ExpiresAt != nil {
@@ -287,7 +303,7 @@ func (s *Server) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 
 	user.Status = "active"
 	if req.Scope != nil {
-		user.Scope = req.Scope
+		user.Scope = normalizeScope(req.Scope)
 	}
 	if req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, req.ExpiresAt)
@@ -455,8 +471,8 @@ func (s *Server) handleImportWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if ws.Name == "" {
-		writeError(w, http.StatusBadRequest, "workspace name is required")
+	if err := ws.ValidateNames(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -512,6 +528,10 @@ func (s *Server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	if ws.Name != name {
 		writeError(w, http.StatusBadRequest, "workspace name in body must match URL")
+		return
+	}
+	if err := ws.ValidateNames(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

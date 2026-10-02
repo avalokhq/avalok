@@ -216,7 +216,7 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
     return stored ? parseInt(stored, 10) : 260
   })
   const isAdmin = serverMode && userRole === 'admin'
-  const hasResourceScope = isAdmin || (userScope || []).some(s => s.startsWith('res:'))
+  const hasResourceScope = isAdmin || (userScope || []).some(s => s === '*' || s.startsWith('res:'))
 
   useEffect(() => {
     loadTree()

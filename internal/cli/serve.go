@@ -144,6 +144,12 @@ func runServe(ctx context.Context, yamlPaths []string, host string, port int, to
 
 	displayHost := displayHostname(host)
 
+	// Sharing without --allow/--scope shares everything; an empty scope would grant nothing.
+	tokenScope := scopePaths
+	if len(tokenScope) == 0 {
+		tokenScope = []string{store.FullAccessScope}
+	}
+
 	fmt.Println("Access tokens:")
 	for i := range tokenCount {
 		token := generateToken()
@@ -152,7 +158,7 @@ func runServe(ctx context.Context, yamlPaths []string, host string, port int, to
 			Username: fmt.Sprintf("user-%d", i+1),
 			Role:     "viewer",
 			Token:    token,
-			Scope:    scopePaths,
+			Scope:    tokenScope,
 		}
 		if err := memStore.CreateUser(ctx, user); err != nil {
 			return fmt.Errorf("creating token user: %w", err)

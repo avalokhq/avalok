@@ -51,8 +51,8 @@ func Parse(data []byte) (*Workspace, error) {
 }
 
 func validate(w *Workspace) error {
-	if w.Name == "" {
-		return fmt.Errorf("workspace name is required")
+	if err := w.ValidateNames(); err != nil {
+		return err
 	}
 	if len(w.Services) == 0 {
 		return fmt.Errorf("at least one service must be defined")

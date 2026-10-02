@@ -127,14 +127,21 @@ Authorization: Bearer <token>
 
 ## Token Delivery
 
-Include the JWT in requests using one of two methods:
+Include the JWT in requests using one of these methods:
 
 | Method | Example |
 |--------|---------|
 | **Authorization header** (preferred) | `Authorization: Bearer eyJhbG...` |
-| **Query parameter** | `GET /api/workspaces?token=eyJhbG...` |
+| **WebSocket subprotocol** | `Sec-WebSocket-Protocol: avalok, avalok.token.<base64url(token)>` |
+| **Query parameter** (legacy) | `GET /api/workspaces?token=eyJhbG...` |
 
-The query parameter method is useful for WebSocket connections or situations where setting headers is not possible.
+Browsers can't set headers on a WebSocket, so the web UI sends the token as a subprotocol, base64url-encoded without padding. The server answers with the `avalok` subprotocol. This keeps tokens out of URLs, where they would end up in proxy logs, access logs and browser history.
+
+The query parameter still works for scripts and non-browser clients, but avoid it where you can.
+
+### Download Links
+
+Full-file downloads use a single-use ticket instead of the token. The UI calls `POST /api/download-tickets` with `{"path": "/api/..."}` and then opens the path with `?dl=<ticket>`. A ticket is only valid for that path, works once, and expires after one minute.
 
 ## Password Security
 

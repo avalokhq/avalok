@@ -1,4 +1,4 @@
-import type { Workspace, Environment, Service, Instance, LogFile, FilePage, FileSearchResult, StandaloneEnvironment, StandaloneService, AppConfig, GroupedStats } from './types'
+import type { LogEntry, Workspace, Environment, Service, Instance, LogFile, FilePage, FileSearchResult, StandaloneEnvironment, StandaloneService, AppConfig, GroupedStats } from './types'
 
 function getToken(): string {
   const params = new URLSearchParams(window.location.search)
@@ -11,6 +11,34 @@ export function setToken(token: string) {
 
 export function clearToken() {
   localStorage.removeItem('avalok_token')
+}
+
+/** Authorization header for requests that can't go through fetchAPI (streamed bodies, downloads). */
+export function authHeaders(): Record<string, string> {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+const WS_PROTOCOL = 'avalok'
+
+/**
+ * Opens a log stream socket. Browsers can't set headers on a WebSocket, so the token rides in
+ * the subprotocol list (base64url-encoded) instead of the URL, keeping it out of proxy and access logs.
+ */
+export function openLogSocket(url: string): WebSocket {
+  const token = getToken()
+  if (!token) return new WebSocket(url)
+  const encoded = btoa(String.fromCharCode(...new TextEncoder().encode(token)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return new WebSocket(url, [WS_PROTOCOL, `${WS_PROTOCOL}.token.${encoded}`])
+}
+
+/** WebSocket close code the server uses when it revokes a stream (sign-out, disabled account, lost access). */
+export const WS_ACCESS_REVOKED = 1008
+
+/** Log line shown when the server closes a stream with WS_ACCESS_REVOKED. */
+export function revokedEntry(): LogEntry {
+  return { type: 'error', timestamp: '', source: '', instance: '', line: 'ERROR: Stream closed because your access to this source was revoked', error: 'access revoked' }
 }
 
 async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
@@ -342,9 +370,8 @@ export async function adminListResourceWorkloads(name: string, namespace: string
 }
 
 export function resourceStreamURL(name: string, namespace: string, kind: string, workload: string): string {
-  const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/admin/resources/${name}/namespaces/${namespace}/workloads/${kind}/${workload}/stream?token=${token}`
+  return `${protocol}//${window.location.host}/api/admin/resources/${name}/namespaces/${namespace}/workloads/${kind}/${workload}/stream`
 }
 
 // --- Admin: Storage Resources ---
@@ -389,21 +416,19 @@ export async function adminListStorageDirectory(name: string, path?: string): Pr
 }
 
 export function storageObjectStreamURL(name: string, key: string): string {
-  const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/admin/resources/${name}/storage/stream/${encodeURIComponent(key)}?token=${token}`
+  return `${protocol}//${window.location.host}/api/admin/resources/${name}/storage/stream/${encodeURIComponent(key)}`
 }
 
 export type LogViewMode = 'stream' | 'file' | 'live'
 
 export function appendLiveMode(url: string, mode: LogViewMode): string {
-  if (mode === 'live') return `${url}&mode=live`
+  if (mode === 'live') return `${url}${url.includes('?') ? '&' : '?'}mode=live`
   return url
 }
 
 export function storageObjectContentURL(name: string, key: string): string {
-  const token = getToken()
-  return `/api/admin/resources/${name}/storage/content/${encodeURIComponent(key)}?token=${token}`
+  return `/api/admin/resources/${name}/storage/content/${encodeURIComponent(key)}`
 }
 
 // --- Workspace Service Storage ---
@@ -414,14 +439,12 @@ export async function listServiceStorageObjects(workspace: string, service: stri
 }
 
 export function serviceStorageStreamURL(workspace: string, service: string, key: string): string {
-  const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/ws/${workspace}/svc/${service}/storage/stream?key=${encodeURIComponent(key)}&token=${token}`
+  return `${protocol}//${window.location.host}/api/ws/${workspace}/svc/${service}/storage/stream?key=${encodeURIComponent(key)}`
 }
 
 export function serviceStorageContentURL(workspace: string, service: string, key: string): string {
-  const token = getToken()
-  return `/api/ws/${workspace}/svc/${service}/storage/content/${encodeURIComponent(key)}?token=${token}`
+  return `/api/ws/${workspace}/svc/${service}/storage/content/${encodeURIComponent(key)}`
 }
 
 // --- Admin: Settings ---
@@ -467,9 +490,8 @@ export async function checkStandaloneEnvService(envName: string, svcName: string
 }
 
 export function standaloneEnvStreamURL(envName: string, svcName: string): string {
-  const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/env/${envName}/svc/${svcName}/stream?token=${token}`
+  return `${protocol}//${window.location.host}/api/env/${envName}/svc/${svcName}/stream`
 }
 
 // --- Standalone Services ---
@@ -483,9 +505,8 @@ export async function checkStandaloneService(svcName: string): Promise<CheckResu
 }
 
 export function standaloneServiceStreamURL(svcName: string): string {
-  const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/svc/${svcName}/stream?token=${token}`
+  return `${protocol}//${window.location.host}/api/svc/${svcName}/stream`
 }
 
 // --- Admin: Standalone Environments ---
@@ -553,9 +574,8 @@ export async function checkService(workspace: string, env: string, service: stri
 }
 
 export function streamURL(workspace: string, env: string, service: string): string {
-  const token = getToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/api/ws/${workspace}/env/${env}/svc/${service}/stream?token=${token}`
+  return `${protocol}//${window.location.host}/api/ws/${workspace}/env/${env}/svc/${service}/stream`
 }
 
 // --- File Browser ---
@@ -580,6 +600,23 @@ export async function searchFiles(ws: string, env: string, svc: string, req: { p
 }
 
 export function fileDownloadURL(ws: string, env: string, svc: string, filename: string): string {
-  const token = getToken()
-  return `/api/ws/${ws}/env/${env}/svc/${svc}/files/${encodeURIComponent(filename)}/download?token=${token}`
+  return `/api/ws/${ws}/env/${env}/svc/${svc}/files/${encodeURIComponent(filename)}/download`
+}
+
+/**
+ * Starts a native browser download of an authenticated API URL. The server swaps the session
+ * for a single-use, one-minute ticket bound to this path, so the token never appears in the URL
+ * and large files still stream straight to disk.
+ */
+export async function startDownload(url: string): Promise<void> {
+  const { ticket } = await fetchAPI<{ ticket: string }>('/download-tickets', {
+    method: 'POST',
+    body: JSON.stringify({ path: url }),
+  })
+  const a = document.createElement('a')
+  a.href = `${url}${url.includes('?') ? '&' : '?'}dl=${encodeURIComponent(ticket)}`
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
 }

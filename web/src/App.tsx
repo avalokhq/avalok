@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminUpdateStandaloneEnv, adminUpdateStandaloneService, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, storageObjectStreamURL, serviceStorageStreamURL, adminGetResource, fetchConfig } from './lib/api'
+import { setToken, clearToken, fetchHealth, getMe, logout, adminImportWorkspace, adminUpdateWorkspace, adminUpdateStandaloneEnv, adminUpdateStandaloneService, adminCreateStandaloneEnv, adminCreateStandaloneService, listWorkspaces, listEnvironments, listServices, listStandaloneEnvs, listStandaloneEnvServices, listStandaloneServices, standaloneEnvStreamURL, standaloneServiceStreamURL, resourceStreamURL, storageObjectStreamURL, serviceStorageStreamURL, adminGetResource, fetchConfig } from './lib/api'
 import type { AuthUser } from './lib/api'
 import { useTheme } from './lib/useTheme'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from './lib/types'
@@ -209,7 +209,12 @@ async function resolveHash(hash: string): Promise<View> {
     }
     case 'svc': {
       if (parts.length < 2) return { page: 'workspaces' }
-      return { page: 'standalone-svc-console', service: { name: parts[1], description: '', provider: '' } }
+      try {
+        const svc = (await listStandaloneServices() || []).find(s => s.name === parts[1])
+        return svc ? { page: 'standalone-svc-console', service: svc } : { page: 'workspaces' }
+      } catch {
+        return { page: 'workspaces' }
+      }
     }
     case 'resources': {
       if (parts.length < 2) return { page: 'workspaces' }
@@ -749,7 +754,7 @@ export default function App() {
               onSelect={handleSelectWorkspace}
               onSelectEnv={env => navigate({ page: 'standalone-env-services', env })}
               onSelectService={svc => navigate({ page: 'standalone-svc-console', service: svc })}
-              onSelectResource={serverMode && (currentUser?.role === 'admin' || (currentUser?.scope || []).some(s => s.startsWith('res:')))
+              onSelectResource={serverMode && (currentUser?.role === 'admin' || (currentUser?.scope || []).some(s => s === '*' || s.startsWith('res:')))
                 ? (name, desc, type) => navigate({ page: 'resource-namespaces', resourceName: name, resourceDescription: desc, resourceType: type })
                 : undefined}
               userRole={currentUser?.role}
@@ -1004,7 +1009,7 @@ export default function App() {
         onSelectWorkspace={handleSelectWorkspace}
         onSelectEnvironment={env => navigate({ page: 'standalone-env-services', env })}
         onSelectService={svc => navigate({ page: 'standalone-svc-console', service: svc })}
-        onSelectResource={serverMode && (currentUser?.role === 'admin' || (currentUser?.scope || []).some(s => s.startsWith('res:')))
+        onSelectResource={serverMode && (currentUser?.role === 'admin' || (currentUser?.scope || []).some(s => s === '*' || s.startsWith('res:')))
           ? (name, desc, type) => navigate({ page: 'resource-namespaces', resourceName: name, resourceDescription: desc, resourceType: type })
           : undefined}
         onNavigate={page => {

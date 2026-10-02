@@ -8,6 +8,7 @@ import (
 	gojwt "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
+	"github.com/avalokhq/avalok/internal/auth"
 	"github.com/avalokhq/avalok/internal/store"
 )
 
@@ -123,12 +124,5 @@ func (m *Manager) Expiration() time.Duration {
 }
 
 func extractToken(r *http.Request) string {
-	if token := r.URL.Query().Get("token"); token != "" {
-		return token
-	}
-	auth := r.Header.Get("Authorization")
-	if len(auth) > 7 && auth[:7] == "Bearer " {
-		return auth[7:]
-	}
-	return ""
+	return auth.TokenFromRequest(r)
 }
