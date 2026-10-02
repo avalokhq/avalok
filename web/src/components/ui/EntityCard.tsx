@@ -1,6 +1,5 @@
 import { ArrowRight } from 'lucide-react'
 import { cn } from '../../lib/cn'
-import { toneDot } from '../../lib/statusTone'
 import Card from './Card'
 import { entityStyle, type EntityKind } from './EntityIcon'
 import { ActionMenu, type MenuItem } from './Dropdown'
@@ -53,16 +52,6 @@ export default function EntityCard({
           className,
         )}
       >
-        {/* Kind-colored hairline that draws in on hover / focus */}
-        <span
-          aria-hidden
-          className={cn(
-            'absolute inset-x-0 top-0 h-0.5 origin-left scale-x-0 transition-transform duration-200 ease-out',
-            onOpen && 'group-hover:scale-x-100 group-focus-visible:scale-x-100',
-            toneDot[style.tone],
-          )}
-        />
-
         <div className="flex items-start gap-3 px-5 pt-5">
           <div
             className={cn(

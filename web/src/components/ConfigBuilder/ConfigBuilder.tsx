@@ -746,7 +746,7 @@ function ImportModal({ onImport, onClose }: {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="flex w-full cursor-pointer flex-col items-center gap-2 rounded-card border-2 border-dashed border-line py-6 transition-colors hover:border-accent-line hover:bg-hover"
+            className="flex w-full cursor-pointer flex-col items-center gap-2 rounded-card border-2 border-dashed border-line py-6 transition-colors hover:border-line-strong hover:bg-hover"
           >
             <Upload className="size-6 text-fg-muted" />
             <span className="text-xs text-fg-secondary">Click to upload a <span className="font-medium text-fg">.yaml</span> file</span>

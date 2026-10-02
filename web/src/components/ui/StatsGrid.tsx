@@ -26,7 +26,7 @@ export function StatCard({ label, value, icon, tone = 'accent', sub, onClick, ac
       className={cn(
         'rounded-card border bg-surface p-5 text-left shadow-sm',
         active ? 'border-accent-line bg-selected ring-3 ring-accent-soft' : 'border-line',
-        onClick && 'cursor-pointer transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-accent-line hover:shadow-md',
+        onClick && 'cursor-pointer transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-line-strong hover:shadow-md',
       )}
     >
       <div className="flex items-center justify-between gap-3">

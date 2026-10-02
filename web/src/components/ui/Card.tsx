@@ -43,7 +43,7 @@ export default function Card({
       className={cn(
         'rounded-card border bg-surface shadow-sm',
         selected ? 'border-accent-line bg-selected' : 'border-line',
-        isInteractive && 'cursor-pointer transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-accent-line hover:shadow-md',
+        isInteractive && 'cursor-pointer transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-line-strong hover:shadow-md',
         paddings[padding],
         className,
       )}
