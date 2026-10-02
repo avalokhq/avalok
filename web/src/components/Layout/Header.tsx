@@ -28,7 +28,7 @@ export default function Header({ theme, onThemeChange, breadcrumbs, connected, o
       {/* Logo + tagline */}
       <div className="flex items-center gap-3 shrink-0">
         <button onClick={onNavigateHome} className="cursor-pointer hover:opacity-70 transition-opacity">
-          <AvalokWordmark height={22} forceInvert />
+          <AvalokWordmark height={22} onDark />
         </button>
         <span className="text-[11px] text-white/40 italic hidden sm:inline">observe with clarity</span>
       </div>

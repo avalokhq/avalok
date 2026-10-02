@@ -199,4 +199,5 @@ Every page follows the same skeleton:
 - **Layout gotchas:**
   - `#root` must never get `display:flex` (it breaks the full-width layout).
   - Wordmark sizes are 22px in the sidebar and 18px in the header.
+  - The logo is always `AvalokWordmark`. It swaps `avalok-light-mode.png` and `avalok-dark-mode.png` (both 1184×270, transparent, same framing) by theme. Use `onDark` for dark-only surfaces. Never CSS-`invert` the logo: that turns the blue dot orange.
 - **When server-facing behavior changes,** also update `docs/content/docs/server/*.md`.
