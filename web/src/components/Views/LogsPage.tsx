@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Terminal, LayoutGrid, Rows3, Merge, X, Loader2, Folder, FileText } from 'lucide-react'
 
 import { cn } from '../../lib/cn'
-import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageDirectory, storageObjectStreamURL, listServiceStorageObjects, serviceStorageStreamURL } from '../../lib/api'
+import { listWorkspaces, listEnvironments, listServices, listWorkspaceServices, listServiceEnvironments, adminListResources, adminListResourceNamespaces, adminListResourceWorkloads, resourceStreamURL, adminListStorageDirectory, storageObjectStreamURL, listServiceStorageObjects, serviceStorageStreamURL, fetchConfig, listStandaloneEnvs, listStandaloneEnvServices, standaloneEnvStreamURL, listStandaloneServices, standaloneServiceStreamURL } from '../../lib/api'
 import type { ResourceWorkloads } from '../../lib/api'
-import type { Workspace, Environment, Service } from '../../lib/types'
+import type { Workspace, Environment, Service, StandaloneService } from '../../lib/types'
 import ProviderIcon from '../ui/ProviderIcon'
 import SourceDot from '../ui/SourceDot'
 import TreeItem from '../ui/TreeItem'
@@ -53,6 +53,14 @@ interface TreeSfService {
 interface TreeSfEnv {
   name: string
   targets: number
+}
+
+/** Standalone environment (outside any workspace); services load on first expand. */
+interface TreeStandaloneEnv {
+  name: string
+  expanded: boolean
+  loading: boolean
+  services: Service[] | null
 }
 
 interface TreeStorageNode {
@@ -196,6 +204,9 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
   const [resourceTree, setResourceTree] = useState<TreeResource[]>([])
   const [svcStorageTrees, setSvcStorageTrees] = useState<Record<string, { expanded: boolean; loading: boolean; tree: TreeStorageNode[] }>>({})
   const [loading, setLoading] = useState(true)
+  // Standalone environments and services appear only when enabled in Settings (off by default).
+  const [standaloneEnvs, setStandaloneEnvs] = useState<TreeStandaloneEnv[]>([])
+  const [standaloneSvcs, setStandaloneSvcs] = useState<StandaloneService[]>([])
   const [layout, setLayout] = useState<LayoutMode>(() =>
     (localStorage.getItem('avalok-logs-layout') as LayoutMode) || 'grid'
   )
@@ -209,6 +220,7 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
 
   useEffect(() => {
     loadTree()
+    loadStandalone()
     if (hasResourceScope) loadResources()
   }, [])
 
@@ -285,6 +297,34 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
         )
       } : node
     ))
+  }
+
+  async function loadStandalone() {
+    try {
+      const config = await fetchConfig()
+      const [envs, svcs] = await Promise.all([
+        config.enable_environments ? listStandaloneEnvs().catch(() => []) : [],
+        config.enable_services ? listStandaloneServices().catch(() => []) : [],
+      ])
+      setStandaloneEnvs((envs || []).map(e => ({ name: e.name, expanded: false, loading: false, services: null })))
+      setStandaloneSvcs(svcs || [])
+    } catch { /* config unavailable: keep workspaces only */ }
+  }
+
+  async function toggleStandaloneEnv(name: string) {
+    const node = standaloneEnvs.find(e => e.name === name)
+    if (!node) return
+    const patch = (p: Partial<TreeStandaloneEnv>) => setStandaloneEnvs(prev => prev.map(e => e.name === name ? { ...e, ...p } : e))
+    if (node.expanded || node.services) {
+      patch({ expanded: !node.expanded })
+      return
+    }
+    patch({ expanded: true, loading: true })
+    try {
+      patch({ loading: false, services: await listStandaloneEnvServices(name) })
+    } catch {
+      patch({ loading: false, services: [] })
+    }
   }
 
   async function loadResources() {
@@ -632,11 +672,13 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
             </div>
           )}
 
-          {!loading && tree.length === 0 && resourceTree.length === 0 && (
+          {!loading && tree.length === 0 && standaloneEnvs.length === 0 && standaloneSvcs.length === 0 && resourceTree.length === 0 && (
             <p className="px-2 py-3 text-xs text-fg-muted">No sources yet. Create a workspace to stream its logs here.</p>
           )}
 
-          {tree.length > 0 && hasResourceScope && resourceTree.length > 0 && <div className={sectionLabel}>Workspaces</div>}
+          {tree.length > 0 && (standaloneEnvs.length > 0 || standaloneSvcs.length > 0 || (hasResourceScope && resourceTree.length > 0)) && (
+            <div className={sectionLabel}>Workspaces</div>
+          )}
 
           {tree.map((wsNode, wsIdx) => {
             const wsName = wsNode.data.name
@@ -740,6 +782,65 @@ export default function LogsPage({ onBack: _onBack, userRole, userScope, serverM
               </div>
             )
           })}
+
+          {standaloneEnvs.length > 0 && (
+            <>
+              <div className={sectionLabel}>Environments</div>
+              {standaloneEnvs.map(env => (
+                <div key={env.name}>
+                  <TreeItem
+                    label={<span className="font-medium text-fg">{env.name}</span>}
+                    expanded={env.expanded}
+                    onToggle={() => toggleStandaloneEnv(env.name)}
+                    status={env.loading ? spinner : undefined}
+                  />
+                  {env.expanded && env.services?.length === 0 && (
+                    <p className="py-1 pl-10 text-xs text-fg-muted">No services</p>
+                  )}
+                  {env.expanded && env.services?.map(svc => {
+                    const svcLabel = svc.friendly_name || svc.name
+                    const scope = `env:${env.name}`
+                    const id = `res:${scope}/${env.name}/${svc.name}`
+                    return (
+                      <SourceRow
+                        key={svc.name}
+                        id={id}
+                        label={svcLabel}
+                        depth={1}
+                        icon={<ProviderIcon provider={svc.provider} />}
+                        active={activeIds.has(id)}
+                        full={isFull}
+                        onToggle={() => toggleSession(id, () =>
+                          addSession(scope, env.name, svc.name, svcLabel, standaloneEnvStreamURL(env.name, svc.name)))}
+                      />
+                    )
+                  })}
+                </div>
+              ))}
+            </>
+          )}
+
+          {standaloneSvcs.length > 0 && (
+            <>
+              <div className={sectionLabel}>Services</div>
+              {standaloneSvcs.map(svc => {
+                const id = `res:svc:${svc.name}/standalone/${svc.name}`
+                return (
+                  <SourceRow
+                    key={svc.name}
+                    id={id}
+                    label={svc.name}
+                    depth={0}
+                    icon={<ProviderIcon provider={svc.provider} />}
+                    active={activeIds.has(id)}
+                    full={isFull}
+                    onToggle={() => toggleSession(id, () =>
+                      addSession(`svc:${svc.name}`, 'standalone', svc.name, svc.name, standaloneServiceStreamURL(svc.name)))}
+                  />
+                )
+              })}
+            </>
+          )}
 
           {hasResourceScope && resourceTree.length > 0 && (
             <>

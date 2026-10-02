@@ -1443,8 +1443,8 @@ function SettingsPanel({ onSettingsChange, highlightSetting, onHighlightConsumed
   const redactCreds = settings['redact_credentials'] ?? 'true'
   const fileBrowserPageSize = settings['file_browser_page_size'] ?? '10000'
   const enableWorkspaces = settings['enable_workspaces'] ?? 'true'
-  const enableEnvironments = settings['enable_environments'] ?? 'true'
-  const enableServices = settings['enable_services'] ?? 'true'
+  const enableEnvironments = settings['enable_environments'] ?? 'false'
+  const enableServices = settings['enable_services'] ?? 'false'
   const wsMaxConns = settings['ws_max_connections'] ?? '100'
   const wsMaxMsgKB = settings['ws_max_message_kb'] ?? '4'
   const streamTailLines = settings['stream_tail_lines'] ?? '0'
@@ -1460,10 +1460,10 @@ function SettingsPanel({ onSettingsChange, highlightSetting, onHighlightConsumed
             <SettingsRow label="Enable Workspaces" description="Show the Workspaces section on the homepage." settingId="enable_workspaces" highlight={blinkKey === 'enable_workspaces'}>
               <Toggle checked={enableWorkspaces === 'true'} onChange={() => toggle('enable_workspaces', enableWorkspaces)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="Enable Environments" description="Show standalone Environments section on the homepage." settingId="enable_environments" highlight={blinkKey === 'enable_environments'}>
+            <SettingsRow label="Enable Environments" description="Show standalone Environments on the dashboard and in Logs. Off by default." settingId="enable_environments" highlight={blinkKey === 'enable_environments'}>
               <Toggle checked={enableEnvironments === 'true'} onChange={() => toggle('enable_environments', enableEnvironments)} disabled={saving} />
             </SettingsRow>
-            <SettingsRow label="Enable Services" description="Show standalone Services section on the homepage." settingId="enable_services" highlight={blinkKey === 'enable_services'}>
+            <SettingsRow label="Enable Services" description="Show standalone Services on the dashboard and in Logs. Off by default." settingId="enable_services" highlight={blinkKey === 'enable_services'}>
               <Toggle checked={enableServices === 'true'} onChange={() => toggle('enable_services', enableServices)} disabled={saving} />
             </SettingsRow>
           </div>

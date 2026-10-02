@@ -51,7 +51,7 @@ type KindFilter = EntityKind | 'all'
 
 const KIND_ORDER: EntityKind[] = ['workspace', 'environment', 'service', 'resource']
 const ACTION_LABEL: Record<EntityKind, string> = { workspace: 'Open', environment: 'Open', service: 'View logs', resource: 'Explore' }
-const DEFAULT_CONFIG: AppConfig = { enable_workspaces: true, enable_environments: true, enable_services: true, log_buffer_lines: 10000 }
+const DEFAULT_CONFIG: AppConfig = { enable_workspaces: true, enable_environments: false, enable_services: false, log_buffer_lines: 10000 }
 
 const itemKey = (item: DashboardItem) => `${item.kind}-${item.name}`
 

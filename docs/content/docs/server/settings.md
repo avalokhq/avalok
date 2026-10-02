@@ -35,8 +35,8 @@ Only the fields included in the PUT request are updated; omitted fields retain t
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `enable_workspaces` | bool | `true` | Show the Workspaces section in the UI |
-| `enable_environments` | bool | `true` | Show standalone Environments in the UI |
-| `enable_services` | bool | `true` | Show standalone Services in the UI |
+| `enable_environments` | bool | `false` | Show standalone Environments on the dashboard and in the Logs page |
+| `enable_services` | bool | `false` | Show standalone Services on the dashboard and in the Logs page |
 | `company_name` | string | `""` | Display name shown in the UI header and login page |
 | `log_buffer_lines` | int | `10000` | Maximum log lines the browser keeps per stream (max `10000000`). Trimming occurs at 2× this value. |
 | `self_registration` | bool | `false` | Allow new users to register via the registration page. Registered users start as `pending` and require admin approval. |
@@ -48,7 +48,7 @@ Only the fields included in the PUT request are updated; omitted fields retain t
 
 ## Feature Toggles
 
-The `enable_workspaces`, `enable_environments`, and `enable_services` settings control which navigation sections appear in the UI. Disabling a section hides it from all users, regardless of role.
+The `enable_workspaces`, `enable_environments`, and `enable_services` settings control which sections appear on the dashboard and in the Logs page source tree. Workspaces are on by default; standalone Environments and Services are opt-in and stay hidden until an admin enables them under **Settings**. Disabling a section hides it from all users, regardless of role.
 
 This is useful when you want to focus the UI on a specific workflow. For example, if you only use Kubernetes Resources, you can disable all three to declutter the interface.
 

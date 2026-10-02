@@ -135,8 +135,8 @@ export default function SearchDialog({ open, onClose, onSelectWorkspace, onSelec
 
       pages.push(
         { kind: 'setting', id: 'setting-ws-toggle', name: 'Enable Workspaces', description: 'Show Workspaces section on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_workspaces' },
-        { kind: 'setting', id: 'setting-env-toggle', name: 'Enable Environments', description: 'Show standalone Environments on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_environments' },
-        { kind: 'setting', id: 'setting-svc-toggle', name: 'Enable Services', description: 'Show standalone Services on homepage', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_services' },
+        { kind: 'setting', id: 'setting-env-toggle', name: 'Enable Environments', description: 'Show standalone Environments on the dashboard and in Logs', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_environments' },
+        { kind: 'setting', id: 'setting-svc-toggle', name: 'Enable Services', description: 'Show standalone Services on the dashboard and in Logs', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:enable_services' },
         { kind: 'setting', id: 'setting-redact', name: 'Redact Credentials', description: 'Hide passwords in YAML preview', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:redact_credentials' },
         { kind: 'setting', id: 'setting-filebrowser', name: 'File Browser Page Size', description: 'Lines per page when viewing log files', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:file_browser_page_size' },
         { kind: 'setting', id: 'setting-tail', name: 'Initial Log Tail Lines', description: 'Historical lines loaded when opening a stream', icon: <SlidersHorizontal className="w-4 h-4" />, data: 'admin:settings:stream_tail_lines' },
