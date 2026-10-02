@@ -412,6 +412,10 @@ body {
 .log-level-info { color: var(--fg); }
 .log-level-debug { color: var(--fg-muted); }
 
+.log-surface {
+  background: var(--log-bg);
+}
+
 .log-scroll::-webkit-scrollbar {
   width: 12px;
 }

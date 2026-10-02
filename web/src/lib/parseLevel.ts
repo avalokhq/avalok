@@ -24,3 +24,12 @@ export function parseLevel(line: string | undefined): string {
 
   return 'info'
 }
+
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug'
+
+export const LOG_LEVELS: LogLevel[] = ['error', 'warn', 'info', 'debug']
+
+/** Level of an entry, parsed once and cached on the entry (log lines are immutable once ingested). */
+export function levelOf(entry: { line?: string; _level?: string }): LogLevel {
+  return (entry._level ??= parseLevel(entry.line)) as LogLevel
+}

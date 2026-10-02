@@ -1,35 +1,33 @@
 import { useRef, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { ArrowDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
+import { formatLogTime } from '../../lib/format'
+import { levelOf, type LogLevel } from '../../lib/parseLevel'
+import { toneSoft, toneText, type Tone } from '../../lib/statusTone'
 import SourceDot from '../ui/SourceDot'
 import type { LogEntry } from '../../lib/types'
-import { parseLevel } from '../../lib/parseLevel'
+import type { LogViewState } from './useLogViewState'
 
-interface Props {
-  logs: LogEntry[]
-  follow: boolean
-  showTimestamp: boolean
-  showSource: boolean
-  search: string
-  fontSize: number
-  wrap: boolean
-  totalCount?: number
-  connected?: boolean
-  relativeLineNumbers?: boolean
-  historyEndIndex?: number
+interface Props<T extends LogEntry> {
+  view: LogViewState<T>
+  /** Data source state, used for the empty message and to hold follow while paused. */
+  connected: boolean
+  paused: boolean
+  /** Key for the source color dot; defaults to the displayed source name. */
+  sourceKey?: (e: T) => string
 }
 
 const BLINK_DURATION = 2000
+const HEADER_HEIGHT = 28
+/** Distance from the bottom (px) that still counts as "at the bottom". */
+const BOTTOM_SLACK = 8
 
-function formatTimestamp(ts: string): string {
-  if (!ts) return ''
-  try {
-    const d = new Date(ts)
-    return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-      + '.' + String(d.getMilliseconds()).padStart(3, '0')
-  } catch {
-    return ts.substring(11, 23)
-  }
+const LEVEL_BADGE: Record<LogLevel, { label: string; tone: Tone }> = {
+  error: { label: 'ERR', tone: 'danger' },
+  warn: { label: 'WRN', tone: 'warning' },
+  info: { label: 'INF', tone: 'info' },
+  debug: { label: 'DBG', tone: 'neutral' },
 }
 
 function highlightSearch(text: string | undefined, query: string): React.ReactNode {
@@ -40,133 +38,169 @@ function highlightSearch(text: string | undefined, query: string): React.ReactNo
   return (
     <>
       {text.substring(0, idx)}
-      <mark className="bg-amber-500/30 text-inherit rounded-sm px-0.5">{text.substring(idx, idx + query.length)}</mark>
+      <mark className="rounded-sm bg-warning-soft px-0.5 text-fg">{text.substring(idx, idx + query.length)}</mark>
       {text.substring(idx + query.length)}
     </>
   )
 }
 
-function estimateRowHeight(fontSize: number): number {
-  return fontSize + 10
-}
+/** Fixed-width cells keep every row aligned with the header, whatever the font size. */
+const CELL = { time: '13ch', level: '5ch', source: '18ch' }
 
-export default function LogLines({ logs, follow, showTimestamp, showSource, search, fontSize, wrap, totalCount = 0, connected, relativeLineNumbers, historyEndIndex = -1 }: Props) {
+/** Virtualized log table shared by the console, split panes and merged view. */
+export default function LogLines<T extends LogEntry>({ view, connected, paused, sourceKey }: Props<T>) {
+  const { filtered: logs, total, columns, fontSize, wrap, relativeLineNumbers, follow, setFollow, jumpToken, debouncedSearch, sourceOf } = view
   const parentRef = useRef<HTMLDivElement>(null)
-  const rowHeight = estimateRowHeight(fontSize)
+  const lastInputRef = useRef(0)
+  const unseenFromRef = useRef(logs.length)
+  const rowHeight = fontSize + 10
+  const following = follow && !paused
 
-  const maxAbsNum = relativeLineNumbers && historyEndIndex > 0
-    ? Math.max(historyEndIndex, (totalCount || logs.length) - historyEndIndex)
-    : (totalCount || logs.length)
-  const lineNumWidth = `${Math.max(4, String(maxAbsNum).length + (relativeLineNumbers ? 1 : 0)) + 1}ch`
+  const showTime = columns.has('timestamp')
+  const showLevel = columns.has('level')
+  const showSource = columns.has('source')
+
+  const maxNum = Math.max(...[logs[0]?._lineNum ?? 0, logs[logs.length - 1]?._lineNum ?? 0].map(Math.abs), logs.length)
+  const lineNumWidth = `${Math.max(4, String(maxNum).length + (relativeLineNumbers ? 1 : 0)) + 1}ch`
 
   const virtualizer = useVirtualizer({
     count: logs.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => rowHeight,
     overscan: 30,
+    paddingStart: HEADER_HEIGHT,
+    scrollPaddingStart: HEADER_HEIGHT,
   })
 
   useEffect(() => {
-    if (follow && logs.length > 0) {
+    if (following && logs.length > 0) {
       virtualizer.scrollToIndex(logs.length - 1, { align: 'end' })
     }
-  }, [logs.length, follow, virtualizer])
+  }, [logs.length, following, jumpToken, virtualizer])
+
+  // Lines that arrived since follow was switched off, for the "N new lines" pill.
+  useEffect(() => {
+    if (!follow) unseenFromRef.current = logs.length
+  // Only re-baseline when follow flips, not on every new line.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [follow])
+  const unseen = follow ? 0 : Math.max(0, logs.length - unseenFromRef.current)
+
+  // Follow tracks the user: scrolling up releases it, scrolling back to the bottom resumes it.
+  // Only scrolls shortly after real input count, so programmatic scrolls never toggle it.
+  const markInput = () => { lastInputRef.current = Date.now() }
+  const onScroll = () => {
+    const el = parentRef.current
+    if (!el || paused || Date.now() - lastInputRef.current > 600) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLACK
+    if (atBottom !== follow) setFollow(atBottom)
+  }
 
   if (logs.length === 0) {
-    const message = totalCount > 0
-      ? 'No matching logs found'
-      : connected
-        ? 'Loading logs...'
-        : 'Connecting...'
     return (
-      <div className="h-full flex items-center justify-center text-sm text-[var(--text-muted)]">
-        {message}
+      <div className="log-surface flex h-full items-center justify-center text-sm text-fg-muted">
+        {total > 0 ? 'No lines match the current filters' : connected ? 'Waiting for log lines…' : 'Connecting…'}
       </div>
     )
   }
 
   const now = Date.now()
+  const cellStyle = (width: string) => ({ width, minWidth: width })
 
   return (
-    <div
-      ref={parentRef}
-      className="h-full overflow-auto log-scroll"
-      style={{ background: 'var(--log-bg)' }}
-    >
+    <div className="relative h-full">
       <div
-        style={{
-          height: virtualizer.getTotalSize(),
-          width: '100%',
-          position: 'relative',
-        }}
+        ref={parentRef}
+        role="region"
+        aria-label="Log lines"
+        tabIndex={0}
+        onScroll={onScroll}
+        onWheel={markInput}
+        onPointerDown={markInput}
+        onKeyDown={markInput}
+        onTouchMove={markInput}
+        className="log-surface log-scroll h-full overflow-auto font-mono focus-visible:outline-none"
+        style={{ fontSize: `${fontSize}px` }}
       >
-        {virtualizer.getVirtualItems().map(vRow => {
-          const entry = logs[vRow.index]
-          const level = parseLevel(entry.line)
-          const shouldBlink = entry._blinkAt != null && now - entry._blinkAt < BLINK_DURATION
+        <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+          {/* Column header */}
+          <div
+            className="sticky top-0 z-10 flex min-w-full items-center border-b border-line bg-surface-sunken px-3 font-sans text-2xs font-medium uppercase tracking-wide text-fg-muted"
+            style={{ height: HEADER_HEIGHT }}
+          >
+            <span className="shrink-0 pr-3 text-right" style={cellStyle(lineNumWidth)}>#</span>
+            {showTime && <span className="shrink-0 pr-3" style={cellStyle(CELL.time)}>Time</span>}
+            {showLevel && <span className="shrink-0 pr-3" style={cellStyle(CELL.level)}>Level</span>}
+            {showSource && <span className="shrink-0 pr-3" style={cellStyle(CELL.source)}>Source</span>}
+            <span className="flex-1">Message</span>
+          </div>
 
-          const lineNum = entry._lineNum ?? vRow.index + 1
-          const isBoundaryLine = relativeLineNumbers && lineNum === 0
+          {virtualizer.getVirtualItems().map(vRow => {
+            const entry = logs[vRow.index]
+            const level = levelOf(entry)
+            const badge = LEVEL_BADGE[level]
+            const lineNum = entry._lineNum ?? vRow.index + 1
+            const source = sourceOf(entry)
 
-          return (
-            <div
-              key={vRow.index}
-              data-index={vRow.index}
-              ref={virtualizer.measureElement}
-              className={cn(
-                'absolute top-0 left-0 w-full flex items-start font-mono px-3 hover:bg-[var(--log-line-hover)] cursor-default transition-colors',
-                level === 'error' && 'log-level-error',
-                level === 'warn' && 'log-level-warn',
-                level === 'debug' && 'log-level-debug',
-                level === 'info' && 'log-level-info',
-                vRow.index % 2 === 1 && 'log-row-alt',
-                shouldBlink && 'log-new-line',
-                isBoundaryLine && 'border-b border-dashed border-cyan-500/30',
-              )}
-              style={{
-                transform: `translateY(${vRow.start}px)`,
-                fontSize: `${fontSize}px`,
-                lineHeight: `${rowHeight}px`,
-              }}
-            >
-              {/* Line number */}
-              <span
+            return (
+              <div
+                key={vRow.index}
+                data-index={vRow.index}
+                ref={virtualizer.measureElement}
                 className={cn(
-                  'shrink-0 pr-3 text-right select-none tabular-nums',
-                  relativeLineNumbers && lineNum <= 0
-                    ? 'text-cyan-700 dark:text-cyan-600'
-                    : 'text-[var(--text-muted)]'
+                  'absolute top-0 left-0 flex w-full min-w-max items-start px-3 transition-colors hover:bg-hover',
+                  wrap && 'min-w-0',
+                  vRow.index % 2 === 1 && 'log-row-alt',
+                  entry._blinkAt != null && now - entry._blinkAt < BLINK_DURATION && 'log-new-line',
+                  relativeLineNumbers && lineNum === 0 && 'border-b border-dashed border-info-line',
                 )}
-                style={{ width: lineNumWidth }}
+                style={{ transform: `translateY(${vRow.start}px)`, lineHeight: `${rowHeight}px` }}
               >
-                {lineNum}
-              </span>
-
-              {/* Timestamp */}
-              {showTimestamp && entry.timestamp && (
-                <span className="shrink-0 pr-3 text-[var(--text-muted)] tabular-nums overflow-hidden" style={{ width: '13ch' }}>
-                  {formatTimestamp(entry.timestamp)}
+                <span
+                  className={cn('shrink-0 select-none pr-3 text-right tabular-nums', relativeLineNumbers && lineNum <= 0 ? 'text-info' : 'text-fg-faint')}
+                  style={cellStyle(lineNumWidth)}
+                >
+                  {lineNum}
                 </span>
-              )}
 
-              {/* Source dot + name */}
-              {showSource && entry.source && (
-                <span className="shrink-0 pr-3 flex items-center gap-1.5 whitespace-nowrap">
-                  <SourceDot name={entry.source + (entry.instance || '')} />
-                  <span className="text-[var(--text-secondary)]">
-                    {entry.instance || entry.source}
+                {showTime && (
+                  <span className="shrink-0 overflow-hidden pr-3 tabular-nums text-fg-muted" style={cellStyle(CELL.time)}>
+                    {entry.timestamp ? formatLogTime(entry.timestamp) : <span className="text-fg-faint">—</span>}
                   </span>
-                </span>
-              )}
+                )}
 
-              {/* Log message */}
-              <span className={cn('flex-1', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')}>
-                {highlightSearch(entry.line, search)}
-              </span>
-            </div>
-          )
-        })}
+                {showLevel && (
+                  <span className="shrink-0 pr-3" style={cellStyle(CELL.level)}>
+                    <span className={cn('rounded-sm px-1 font-semibold', toneSoft[badge.tone], toneText[badge.tone])}>{badge.label}</span>
+                  </span>
+                )}
+
+                {showSource && (
+                  <span className="flex shrink-0 items-center gap-1.5 overflow-hidden pr-3 whitespace-nowrap" style={cellStyle(CELL.source)} title={source}>
+                    {source && <SourceDot name={sourceKey?.(entry) ?? source} />}
+                    <span className="truncate text-fg-secondary">{source || '—'}</span>
+                  </span>
+                )}
+
+                <span className={cn('flex-1', level === 'debug' ? 'text-fg-muted' : 'text-fg', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-pre')}>
+                  {highlightSearch(entry.line, debouncedSearch)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
+
+      {!following && !paused && unseen > 0 && (
+        <button
+          type="button"
+          onClick={view.scrollToBottom}
+          className="absolute bottom-4 left-1/2 flex h-8 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-accent-line bg-surface-raised px-3 font-sans text-xs font-medium text-accent shadow-md transition-colors hover:bg-accent-soft animate-scale-in"
+        >
+          <ArrowDown className="size-3.5" />
+          {unseen.toLocaleString()} new {unseen === 1 ? 'line' : 'lines'}
+        </button>
+      )}
     </div>
   )
 }

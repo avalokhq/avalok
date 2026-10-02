@@ -1,269 +1,144 @@
 import {
-  Search,
-  Pause,
-  Play,
-  Trash2,
-  ArrowDown,
-  X,
-  Minus,
-  Plus,
-  ChevronsDown,
-  WrapText,
-  Hash,
+  Pause, Play, Trash2, ChevronsDown, WrapText, Hash, Columns3, ArrowDownToLine, ALargeSmall, PanelLeft,
 } from 'lucide-react'
-import { cn } from '../../lib/cn'
-import TimeFilter, { type TimeFilterValue } from './TimeFilter'
+import { LOG_LEVELS } from '../../lib/parseLevel'
 import type { LogViewMode } from '../../lib/api'
+import type { LogEntry } from '../../lib/types'
+import { SearchInput } from '../ui/Input'
+import IconButton from '../ui/IconButton'
+import FilterChip from '../ui/FilterChip'
+import SegmentedControl, { type Segment } from '../ui/SegmentedControl'
+import Dropdown from '../ui/Dropdown'
+import TimeFilter from './TimeFilter'
+import { FONT_SIZES, LEVEL_META, type LogViewState } from './useLogViewState'
 
-interface Props {
-  search: string
-  onSearchChange: (v: string) => void
+interface Props<T extends LogEntry> {
+  view: LogViewState<T>
   paused: boolean
   onTogglePause: () => void
   onClear: () => void
-  onScrollToBottom: () => void
-  lineCount: number
-  totalCount: number
-  follow: boolean
-  onToggleFollow: () => void
-  levelFilter: Set<string>
-  onToggleLevel: (level: string) => void
-  fontSize: number
-  onFontSizeChange: (size: number) => void
-  wrap: boolean
-  onToggleWrap: () => void
-  timeFilter?: TimeFilterValue
-  onTimeFilterChange?: (v: TimeFilterValue) => void
+  onExport: () => void
   viewMode?: LogViewMode
   onViewModeChange?: (mode: LogViewMode) => void
   hasFileMode?: boolean
-  relativeLineNumbers?: boolean
-  onToggleRelativeLineNumbers?: () => void
+  /** Shows the facet sidebar toggle (full-page console). */
+  facetsOpen?: boolean
+  onToggleFacets?: () => void
+  /** Narrow panes: hide level counts and the line counter. */
+  compact?: boolean
 }
 
-const LEVELS = [
-  { key: 'error', label: 'Error', color: 'bg-red-500' },
-  { key: 'warn', label: 'Warn', color: 'bg-amber-500' },
-  { key: 'info', label: 'Info', color: 'bg-blue-500' },
-  { key: 'debug', label: 'Debug', color: 'bg-chrome-500' },
-]
+function Divider() {
+  return <span aria-hidden className="h-5 w-px shrink-0 bg-line" />
+}
 
-const FONT_SIZES = [10, 12, 14, 16, 18]
+export default function LogToolbar<T extends LogEntry>({
+  view, paused, onTogglePause, onClear, onExport, viewMode, onViewModeChange, hasFileMode,
+  facetsOpen, onToggleFacets, compact,
+}: Props<T>) {
+  const { filtered, total, counts } = view
 
-export default function LogToolbar({
-  search, onSearchChange, paused, onTogglePause, onClear, onScrollToBottom,
-  lineCount, totalCount, follow, onToggleFollow, levelFilter, onToggleLevel,
-  fontSize, onFontSizeChange, wrap, onToggleWrap, timeFilter, onTimeFilterChange,
-  viewMode, onViewModeChange, hasFileMode,
-  relativeLineNumbers, onToggleRelativeLineNumbers,
-}: Props) {
-  const sizeIdx = FONT_SIZES.indexOf(fontSize)
-  const canDecrease = sizeIdx > 0
-  const canIncrease = sizeIdx < FONT_SIZES.length - 1
-
-  const modes: { key: LogViewMode; label: string; title: string }[] = []
-  if (onViewModeChange) {
-    modes.push({ key: 'stream', label: 'Stream', title: 'Stream all logs with live follow' })
-    if (hasFileMode) {
-      modes.push({ key: 'file', label: 'Load File', title: 'Load file content via HTTP (faster for large static files)' })
-    }
-    modes.push({ key: 'live', label: 'Live', title: 'Skip all history, show only new lines' })
-  }
+  const modes: Segment<LogViewMode>[] = [
+    { value: 'stream', label: 'Stream', title: 'Stream history, then follow new lines' },
+    ...(hasFileMode ? [{ value: 'file' as const, label: 'File', title: 'Load the whole file over HTTP (faster for large static files)' }] : []),
+    { value: 'live', label: 'Live', title: 'Skip history, show only new lines' },
+  ]
 
   return (
-    <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
+    <div role="toolbar" aria-label="Log controls" className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-surface px-3 py-1.5">
       {/* Search */}
-      <div className="relative flex-1 max-w-xs">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-        <input
-          type="text"
-          value={search}
-          onChange={e => onSearchChange(e.target.value)}
-          placeholder="Search logs..."
-          className="w-full pl-8 pr-7 py-1 rounded-md bg-[var(--bg-elevated)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--text-accent)] transition-colors"
-        />
-        {search && (
-          <button
-            onClick={() => onSearchChange('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+      {onToggleFacets && (
+        <IconButton label={facetsOpen ? 'Hide filters' : 'Show filters'} active={facetsOpen} onClick={onToggleFacets}>
+          <PanelLeft className="size-4" />
+        </IconButton>
+      )}
+      <SearchInput
+        value={view.search}
+        onChange={view.setSearch}
+        placeholder="Search logs…"
+        wrapperClassName="min-w-40 flex-1 basis-40 max-w-xs"
+      />
+
+      <Divider />
+
+      {/* Time range */}
+      {onViewModeChange && viewMode && (
+        <SegmentedControl size="sm" label="Stream mode" options={modes} value={viewMode} onChange={onViewModeChange} />
+      )}
+      <TimeFilter value={view.timeFilter} onChange={view.setTimeFilter} />
+
+      {/* Levels (the full console also has them in the facet sidebar) */}
+      {!facetsOpen && (
+        <>
+          <Divider />
+          <div className="flex items-center gap-1" role="group" aria-label="Log levels">
+            {LOG_LEVELS.map(l => (
+              <FilterChip
+                key={l}
+                label={LEVEL_META[l].label}
+                tone={LEVEL_META[l].tone}
+                count={compact ? undefined : counts.level.get(l) ?? 0}
+                active={view.levels.has(l)}
+                onToggle={() => view.toggleLevel(l)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      <Divider />
+
+      {/* View */}
+      <div className="flex items-center gap-0.5">
+        <IconButton label={view.wrap ? 'Wrap on' : 'Wrap off'} active={view.wrap} onClick={view.toggleWrap}>
+          <WrapText className="size-4" />
+        </IconButton>
+        {viewMode !== 'file' && (
+          <IconButton
+            label={view.relativeLineNumbers ? 'Line numbers relative to live start' : 'Sequential line numbers'}
+            active={view.relativeLineNumbers}
+            onClick={view.toggleRelativeLineNumbers}
           >
-            <X className="w-3.5 h-3.5" />
-          </button>
+            <Hash className="size-4" />
+          </IconButton>
         )}
+        <Dropdown
+          width={160}
+          trigger={<IconButton label="Text size"><ALargeSmall className="size-4" /></IconButton>}
+          items={FONT_SIZES.map(s => ({ label: `${s}px`, checked: s === view.fontSize, onClick: () => view.setFontSize(s) }))}
+        />
+        <Dropdown
+          width={180}
+          trigger={<IconButton label="Columns"><Columns3 className="size-4" /></IconButton>}
+          items={[
+            { label: 'Time', checked: view.columns.has('timestamp'), onClick: () => view.toggleColumn('timestamp') },
+            { label: 'Level', checked: view.columns.has('level'), onClick: () => view.toggleColumn('level') },
+            { label: 'Source', checked: view.columns.has('source'), onClick: () => view.toggleColumn('source') },
+          ]}
+        />
       </div>
 
-      {/* Level filters */}
-      <div className="flex items-center gap-0.5 border-l border-[var(--border-default)] pl-2 ml-1">
-        {LEVELS.map(l => {
-          const active = levelFilter.has(l.key)
-          return (
-            <button
-              key={l.key}
-              onClick={() => onToggleLevel(l.key)}
-              className={cn(
-                'flex items-center gap-1 px-2 py-0.5 rounded text-sm transition-colors',
-                active
-                  ? 'bg-[var(--bg-active)] text-[var(--text-primary)]'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              )}
-              title={`${active ? 'Hide' : 'Show'} ${l.label} logs`}
-            >
-              <span className={cn('w-2 h-2 rounded-full', active ? l.color : 'bg-chrome-700')} />
-              {l.label}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* View mode buttons */}
-      {modes.length > 0 && (
-        <div className="flex items-center gap-0.5 border-l border-[var(--border-default)] pl-2 ml-1">
-          {modes.map(m => {
-            const active = viewMode === m.key
-            return (
-              <button
-                key={m.key}
-                onClick={() => onViewModeChange!(m.key)}
-                className={cn(
-                  'px-2 py-0.5 rounded text-sm font-medium transition-colors',
-                  active
-                    ? 'bg-accent-500/20 text-accent-400'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-                )}
-                title={m.title}
-              >
-                {m.label}
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Time filter */}
-      {onTimeFilterChange && (
-        <div className="border-l border-[var(--border-default)] pl-2 ml-1">
-          <TimeFilter value={timeFilter ?? { source: 'live' }} onChange={onTimeFilterChange} />
-        </div>
-      )}
-
-      <div className="flex-1" />
-
-      {/* Font size */}
-      <div className="flex items-center gap-0.5 border-l border-[var(--border-default)] pl-2">
-        <button
-          onClick={() => canDecrease && onFontSizeChange(FONT_SIZES[sizeIdx - 1])}
-          disabled={!canDecrease}
-          className={cn(
-            'p-1 rounded-md transition-colors',
-            canDecrease
-              ? 'text-accent-400 hover:text-accent-300 hover:bg-accent-500/10'
-              : 'text-[var(--text-muted)] opacity-30 cursor-not-allowed'
-          )}
-          title="Decrease font size"
-        >
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-        <span className="text-xs text-[var(--text-muted)] tabular-nums w-5 text-center">{fontSize}</span>
-        <button
-          onClick={() => canIncrease && onFontSizeChange(FONT_SIZES[sizeIdx + 1])}
-          disabled={!canIncrease}
-          className={cn(
-            'p-1 rounded-md transition-colors',
-            canIncrease
-              ? 'text-accent-400 hover:text-accent-300 hover:bg-accent-500/10'
-              : 'text-[var(--text-muted)] opacity-30 cursor-not-allowed'
-          )}
-          title="Increase font size"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Wrap toggle */}
-      <button
-        onClick={onToggleWrap}
-        className={cn(
-          'p-1 rounded-md transition-colors border-l border-[var(--border-default)] pl-2',
-          wrap
-            ? 'text-accent-400 bg-accent-500/10 hover:bg-accent-500/20'
-            : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+      {/* Right: count + stream controls */}
+      <div className="ml-auto flex items-center gap-0.5">
+        {!compact && (
+          <span className="mr-2 text-xs tabular-nums text-fg-muted">
+            {filtered.length === total ? `${total.toLocaleString()} lines` : `${filtered.length.toLocaleString()} of ${total.toLocaleString()}`}
+          </span>
         )}
-        title={wrap ? 'Wrap ON' : 'Wrap OFF'}
-      >
-        <WrapText className="w-4 h-4" />
-      </button>
-
-      {/* Relative line numbers toggle */}
-      {onToggleRelativeLineNumbers && viewMode === 'stream' && (
-        <button
-          onClick={onToggleRelativeLineNumbers}
-          className={cn(
-            'p-1 rounded-md transition-colors',
-            relativeLineNumbers
-              ? 'text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20'
-              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-          )}
-          title={relativeLineNumbers ? 'Relative line numbers (click for sequential)' : 'Sequential line numbers (click for relative)'}
-        >
-          <Hash className="w-4 h-4" />
-        </button>
-      )}
-
-      {/* Line count */}
-      <span className="text-sm text-[var(--text-muted)] tabular-nums">
-        {lineCount === totalCount
-          ? `${totalCount.toLocaleString()} lines`
-          : `${lineCount.toLocaleString()} / ${totalCount.toLocaleString()}`
-        }
-      </span>
-
-      {/* Controls */}
-      <div className="flex items-center gap-1 border-l border-[var(--border-default)] pl-2">
-        {/* Go to bottom — always visible */}
-        <button
-          onClick={onScrollToBottom}
-          className="p-1.5 rounded-md text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors"
-          title="Scroll to bottom"
-        >
-          <ArrowDown className="w-4 h-4" />
-        </button>
-
-        {/* Follow mode toggle */}
-        <button
-          onClick={onToggleFollow}
-          className={cn(
-            'p-1.5 rounded-md transition-colors',
-            follow
-              ? 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/25'
-              : 'text-[var(--text-muted)] hover:text-cyan-400 hover:bg-cyan-500/10'
-          )}
-          title={follow ? 'Follow mode ON' : 'Follow mode OFF'}
-        >
-          <ChevronsDown className="w-4 h-4" />
-        </button>
-
-        {/* Pause / Play */}
-        <button
-          onClick={onTogglePause}
-          className={cn(
-            'p-1.5 rounded-md transition-colors',
-            paused
-              ? 'text-red-400 bg-red-500/15 hover:bg-red-500/25'
-              : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'
-          )}
-          title={paused ? 'Resume' : 'Pause'}
-        >
-          {paused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-        </button>
-
-        {/* Clear */}
-        <button
-          onClick={onClear}
-          className="p-1.5 rounded-md text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
-          title="Clear logs"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <IconButton label={view.follow ? 'Following new lines' : 'Follow new lines'} active={view.follow} onClick={() => (view.follow ? view.setFollow(false) : view.scrollToBottom())}>
+          <ChevronsDown className="size-4" />
+        </IconButton>
+        {viewMode !== 'file' && (
+          <IconButton label={paused ? 'Resume stream' : 'Pause stream'} active={paused} onClick={onTogglePause}>
+            {paused ? <Play className="size-4" /> : <Pause className="size-4" />}
+          </IconButton>
+        )}
+        <IconButton label="Export visible lines" onClick={onExport}>
+          <ArrowDownToLine className="size-4" />
+        </IconButton>
+        <IconButton label="Clear" variant="danger" onClick={onClear}>
+          <Trash2 className="size-4" />
+        </IconButton>
       </div>
     </div>
   )

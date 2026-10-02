@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, MoreHorizontal } from 'lucide-react'
+import { Check, ChevronDown, MoreHorizontal } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import Kbd from './Kbd'
 import IconButton from './IconButton'
@@ -13,6 +13,8 @@ export type MenuItem =
       danger?: boolean
       disabled?: boolean
       shortcut?: string
+      /** Makes this a checkbox item: shows a check and keeps the menu open on click. */
+      checked?: boolean
       separator?: false
     }
   | { separator: true }
@@ -48,7 +50,7 @@ export default function Dropdown({ trigger, items, header, align = 'end', width 
 
   useEffect(() => {
     if (!open) return
-    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus()
+    menuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]:not([disabled])')?.focus()
     function onDown(e: MouseEvent) {
       const t = e.target as Node
       if (!menuRef.current?.contains(t) && !triggerRef.current?.contains(t)) setOpen(false)
@@ -72,7 +74,7 @@ export default function Dropdown({ trigger, items, header, align = 'end', width 
   }
 
   function onMenuKey(e: React.KeyboardEvent) {
-    const els = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? [])
+    const els = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([disabled])') ?? [])
     const i = els.indexOf(document.activeElement as HTMLElement)
     if (e.key === 'ArrowDown') { e.preventDefault(); els[(i + 1) % els.length]?.focus() }
     else if (e.key === 'ArrowUp') { e.preventDefault(); els[(i - 1 + els.length) % els.length]?.focus() }
@@ -113,9 +115,10 @@ export default function Dropdown({ trigger, items, header, align = 'end', width 
               <button
                 key={item.label}
                 type="button"
-                role="menuitem"
+                role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+                aria-checked={item.checked}
                 disabled={item.disabled}
-                onClick={() => { close(false); item.onClick() }}
+                onClick={() => { if (item.checked === undefined) close(false); item.onClick() }}
                 className={cn(
                   'flex h-8 w-full items-center gap-2.5 rounded-control px-2 text-left text-sm outline-none transition-colors',
                   'disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4 [&_svg]:shrink-0',
@@ -127,6 +130,7 @@ export default function Dropdown({ trigger, items, header, align = 'end', width 
                 {item.icon}
                 <span className="flex-1 truncate">{item.label}</span>
                 {item.shortcut && <Kbd>{item.shortcut}</Kbd>}
+                {item.checked && <Check className="text-accent" />}
               </button>
             ),
           )}

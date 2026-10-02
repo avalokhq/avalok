@@ -1,8 +1,17 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { AlertTriangle, Download, FileDown, Loader2, Search, X, ChevronUp, ChevronDown } from 'lucide-react'
+import { Download, FileDown, FileText, Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
+import { formatBytes } from '../../lib/format'
 import { readFilePage, fileDownloadURL } from '../../lib/api'
 import type { FilePage } from '../../lib/types'
+import Alert from '../ui/Alert'
+import Button from '../ui/Button'
+import EmptyState from '../ui/EmptyState'
+import IconButton from '../ui/IconButton'
+import Skeleton from '../ui/Skeleton'
+import Tooltip from '../ui/Tooltip'
+import { SpinnerIcon } from '../ui/Spinner'
+import { SearchInput } from '../ui/Input'
 import FilePagination from './FilePagination'
 
 interface Props {
@@ -12,12 +21,8 @@ interface Props {
   filename: string
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
-}
+// Line-length pattern for the loading skeleton, so it reads like a file rather than a block.
+const SKELETON_WIDTHS = ['w-3/4', 'w-1/2', 'w-5/6', 'w-2/3', 'w-1/3', 'w-4/5', 'w-3/5', 'w-1/2', 'w-2/3', 'w-3/4', 'w-2/5', 'w-5/6']
 
 function highlightMatches(line: string, query: string): React.ReactNode {
   if (!query) return line
@@ -26,7 +31,7 @@ function highlightMatches(line: string, query: string): React.ReactNode {
   return (
     <>
       {line.slice(0, idx)}
-      <mark className="bg-amber-400/30 text-inherit rounded-sm px-0.5">{line.slice(idx, idx + query.length)}</mark>
+      <mark className="rounded-control bg-warning-soft px-0.5 text-fg">{line.slice(idx, idx + query.length)}</mark>
       {highlightMatches(line.slice(idx + query.length), query)}
     </>
   )
@@ -37,12 +42,12 @@ export default function FileViewer({ workspace, environment, service, filename }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [reloadKey, setReloadKey] = useState(0)
   const contentRef = useRef<HTMLDivElement>(null)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [currentMatch, setCurrentMatch] = useState(0)
-  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setPage(1)
@@ -57,9 +62,9 @@ export default function FileViewer({ workspace, environment, service, filename }
     setError(null)
     readFilePage(workspace, environment, service, filename, page)
       .then(setData)
-      .catch(err => setError(err.message))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to read file'))
       .finally(() => setLoading(false))
-  }, [workspace, environment, service, filename, page])
+  }, [workspace, environment, service, filename, page, reloadKey])
 
   useEffect(() => {
     contentRef.current?.scrollTo(0, 0)
@@ -74,6 +79,9 @@ export default function FileViewer({ workspace, environment, service, filename }
     })
     return indices
   }, [searchQuery, data?.lines])
+
+  // O(1) per-row lookup while rendering (was matchingLines.includes per line).
+  const matchSet = useMemo(() => new Set(matchingLines), [matchingLines])
 
   useEffect(() => {
     setCurrentMatch(0)
@@ -102,16 +110,18 @@ export default function FileViewer({ workspace, environment, service, filename }
     scrollToMatch(prev)
   }
 
+  function closeSearch() {
+    setSearchOpen(false)
+    setSearchQuery('')
+  }
+
   function handleSearchKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault()
       if (e.shiftKey) prevMatch()
       else nextMatch()
     }
-    if (e.key === 'Escape') {
-      setSearchOpen(false)
-      setSearchQuery('')
-    }
+    if (e.key === 'Escape') closeSearch()
   }
 
   function downloadPage() {
@@ -134,155 +144,152 @@ export default function FileViewer({ workspace, environment, service, filename }
     setPage(newPage)
   }
 
-  if (loading && !data) {
+  if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-6 h-6 text-[var(--text-accent)] animate-spin" />
-          <span className="text-sm text-[var(--text-secondary)]">Loading file...</span>
-        </div>
+      <div className="flex-1 p-4">
+        <Alert
+          tone="danger"
+          title={`Couldn't read ${filename}`}
+          action={<Button size="sm" variant="secondary" onClick={() => setReloadKey(k => k + 1)} loading={loading}>Retry</Button>}
+        >
+          {error}
+        </Alert>
       </div>
     )
   }
 
-  if (error) {
+  if (loading && !data) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-sm text-red-400">{error}</div>
+      <div className="flex min-h-0 flex-1 flex-col" aria-busy="true">
+        <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+          <Skeleton.Line width="w-48" />
+          <Skeleton.Line width="w-12" className="h-2.5" />
+        </div>
+        <div className="flex-1 space-y-2.5 bg-surface-sunken p-4">
+          {SKELETON_WIDTHS.map((w, i) => <Skeleton.Line key={i} width={w} />)}
+        </div>
       </div>
     )
   }
 
   if (!data) return null
 
+  const lines = data.lines || []
   const startLine = (data.page - 1) * data.page_size + 1
+  const lastLine = startLine + Math.max(lines.length, 1) - 1
+  // Gutter grows with the widest line number on the page (+1ch breathing room).
+  const gutterWidth = `${String(lastLine).length + 1}ch`
+  const currentLineIdx = matchingLines[currentMatch]
   const downloadUrl = fileDownloadURL(workspace, environment, service, filename)
+  const isLarge = data.file_size > 100 * 1024 * 1024 && data.page === 1
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* File header */}
-      <div className="flex items-center gap-3 px-3 py-1.5 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
-        <span className="text-xs font-medium text-[var(--text-primary)] truncate">{filename}</span>
-        <span className="text-[10px] text-[var(--text-muted)] shrink-0">{formatSize(data.file_size)}</span>
+      <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+        <FileText className="size-4 shrink-0 text-fg-muted" />
+        <span className="truncate font-mono text-xs font-medium text-fg" title={filename}>{filename}</span>
+        <span className="shrink-0 text-xs text-fg-muted tabular-nums">{formatBytes(data.file_size)}</span>
 
-        {loading && <Loader2 className="w-3 h-3 text-[var(--text-accent)] animate-spin shrink-0" />}
+        {loading && <SpinnerIcon size="sm" />}
 
         <div className="ml-auto flex items-center gap-1">
-          <button
-            onClick={() => { setSearchOpen(v => !v); if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 0) }}
-            className={cn(
-              'p-1 rounded transition-colors shrink-0',
-              searchOpen
-                ? 'text-[var(--text-accent)] bg-[var(--bg-active)]'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
-            )}
-            title="Search in file"
+          <IconButton
+            label="Search in page"
+            active={searchOpen}
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
           >
-            <Search className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={downloadPage}
-            className="p-1 rounded text-[var(--text-muted)] hover:text-blue-400 hover:bg-blue-500/10 transition-colors shrink-0"
-            title="Download this page"
-          >
-            <FileDown className="w-3.5 h-3.5" />
-          </button>
-          <a
-            href={downloadUrl}
-            download
-            className="p-1 rounded text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 transition-colors shrink-0"
-            title="Download full file"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </a>
+            <Search className="size-4" />
+          </IconButton>
+          <IconButton label="Download this page" onClick={downloadPage}>
+            <FileDown className="size-4" />
+          </IconButton>
+          <Tooltip content="Download full file">
+            <a
+              href={downloadUrl}
+              download
+              aria-label="Download full file"
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+            >
+              <Download className="size-4" />
+            </a>
+          </Tooltip>
         </div>
       </div>
 
       {/* Search bar */}
       {searchOpen && (
-        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border-default)] bg-[var(--bg-surface)]">
-          <Search className="w-3 h-3 text-[var(--text-muted)] shrink-0" />
-          <input
-            ref={searchInputRef}
-            type="text"
+        <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
+          <SearchInput
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={setSearchQuery}
             onKeyDown={handleSearchKeyDown}
-            placeholder="Search in page..."
-            className="flex-1 text-xs bg-transparent text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+            placeholder="Search in page…"
+            aria-label="Search in page"
+            autoFocus
+            wrapperClassName="min-w-0 flex-1"
           />
           {searchQuery && (
-            <span className="text-[10px] text-[var(--text-muted)] shrink-0">
-              {matchingLines.length > 0 ? `${currentMatch + 1}/${matchingLines.length}` : 'No matches'}
+            <span className="shrink-0 text-xs text-fg-muted tabular-nums" aria-live="polite">
+              {matchingLines.length > 0 ? `${currentMatch + 1} of ${matchingLines.length}` : 'No matches'}
             </span>
           )}
-          <button onClick={prevMatch} disabled={matchingLines.length === 0} className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] disabled:opacity-30" title="Previous match">
-            <ChevronUp className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={nextMatch} disabled={matchingLines.length === 0} className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] disabled:opacity-30" title="Next match">
-            <ChevronDown className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => { setSearchOpen(false); setSearchQuery('') }}
-            className="p-0.5 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <IconButton label="Previous match (Shift+Enter)" onClick={prevMatch} disabled={matchingLines.length === 0}>
+            <ChevronUp className="size-4" />
+          </IconButton>
+          <IconButton label="Next match (Enter)" onClick={nextMatch} disabled={matchingLines.length === 0}>
+            <ChevronDown className="size-4" />
+          </IconButton>
         </div>
       )}
 
-      {/* Decompression warning */}
-      {data.warning && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="text-[11px] text-amber-300">{data.warning}</span>
-        </div>
-      )}
-
-      {/* Large file warning */}
-      {data.file_size > 100 * 1024 * 1024 && data.page === 1 && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/20">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="text-[11px] text-amber-300">
-            Large file ({formatSize(data.file_size)}). Content is split into {data.total_pages} pages.
-          </span>
+      {/* Decompression / large file warnings */}
+      {(data.warning || isLarge) && (
+        <div className="flex shrink-0 flex-col gap-2 border-b border-line bg-surface px-3 py-2">
+          {data.warning && <Alert tone="warning">{data.warning}</Alert>}
+          {isLarge && (
+            <Alert tone="warning">
+              Large file ({formatBytes(data.file_size)}). Content is split into {data.total_pages.toLocaleString()} pages.
+            </Alert>
+          )}
         </div>
       )}
 
       {/* Content */}
       <div
         ref={contentRef}
-        className="flex-1 overflow-auto font-mono text-xs leading-5 select-text"
+        className="min-h-0 flex-1 select-text overflow-auto bg-surface-sunken font-mono text-xs leading-5"
       >
-        <table className="w-full border-collapse">
-          <tbody>
-            {(data.lines || []).map((line, i) => {
-              const isMatch = searchQuery && matchingLines.includes(i)
-              const isCurrentMatch = isMatch && matchingLines[currentMatch] === i
-              return (
-                <tr
-                  key={i}
-                  className={cn(
-                    'hover:bg-[var(--bg-hover)] group',
-                    isCurrentMatch && 'bg-amber-400/10',
-                    isMatch && !isCurrentMatch && 'bg-amber-400/5'
-                  )}
-                >
-                  <td className="px-3 py-0 text-right text-[var(--text-muted)] select-none w-12 shrink-0 align-top opacity-50 group-hover:opacity-100">
-                    {startLine + i}
-                  </td>
-                  <td className="px-2 py-0 text-[var(--text-primary)] whitespace-pre-wrap break-all">
-                    {searchQuery ? highlightMatches(line, searchQuery) : line}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        {data.lines?.length === 0 && (
-          <div className="flex items-center justify-center py-12 text-sm text-[var(--text-muted)]">
-            File is empty
-          </div>
+        {lines.length === 0 ? (
+          <EmptyState compact tone="neutral" icon={<FileText />} title="File is empty" />
+        ) : (
+          <table className="w-full border-collapse">
+            <tbody>
+              {lines.map((line, i) => {
+                const isMatch = searchQuery !== '' && matchSet.has(i)
+                const isCurrentMatch = isMatch && currentLineIdx === i
+                return (
+                  <tr
+                    key={i}
+                    className={cn('group transition-colors hover:bg-hover', isCurrentMatch && 'bg-warning-soft hover:bg-warning-soft')}
+                  >
+                    <td
+                      style={{ width: gutterWidth }}
+                      className={cn(
+                        'box-content select-none border-r border-line py-0 pl-3 pr-2 text-right align-top tabular-nums',
+                        isCurrentMatch ? 'text-warning' : 'text-fg-faint group-hover:text-fg-muted',
+                      )}
+                    >
+                      {startLine + i}
+                    </td>
+                    <td className="whitespace-pre-wrap break-all px-3 py-0 text-fg">
+                      {isMatch ? highlightMatches(line, searchQuery) : line}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
       </div>
 

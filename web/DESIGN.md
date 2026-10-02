@@ -5,7 +5,7 @@ This is the single source of truth for how the Avalok web UI looks and how to bu
 **North star:** calm, premium and data-first. Think Northflank's restraint, Kener's identical dark and light themes, Logdy's dense log tables, and Docker Desktop's command palette. Polish comes from **shadow depth, spacing and simplicity**, not from adding colors.
 
 > **Migration status:** the redesign is landing in phases. See the plan in the PR history.
-> - Phase 1 (tokens, type, fonts), Phase 2 (component kit), Phase 3 (app shell, auth, search palette) and Phase 4 (pages: dashboard, drill-downs, manage pages, admin, config builder) are **done**. Phase 5 (log viewer, file browser) is next.
+> - Phase 1 (tokens, type, fonts), Phase 2 (component kit), Phase 3 (app shell, auth, search palette) and Phase 4 (pages: dashboard, drill-downs, manage pages, admin, config builder) and Phase 5 (log viewer, logs dashboard, file browser) are **done**. Phase 6 (sweep, guardrails, legacy alias removal) is next.
 > - Pages still being migrated to the kit may use old props marked `@deprecated` (`Badge variant`, `Alert variant`, `Modal maxWidth`, `Card hover`, `EmptyState iconBg`, `StatItem accent/bg`). New code uses the replacements listed in the JSDoc.
 > - Legacy `var(--bg-*)` / `var(--text-*)` aliases still work but are deprecated.
 
@@ -136,7 +136,8 @@ Everything lives in [`src/components/ui/`](src/components/ui/). **If a pattern a
 | Success / error feedback after an action | `const toast = useToast(); toast.success('Saved')` / `toast.error(title, detail)` | `alert()`, silent `console.error` |
 | Inline error or notice | `Alert` (`tone`, `title`, `action` e.g. Retry button) | bare `text-red-*` div |
 | Row / card "⋯" actions | `ActionMenu` (`items`, `label`); stops clicks reaching the clickable row or card | hover-only icon buttons |
-| Contextual actions menu | `Dropdown` (`trigger`, `items` with `icon` / `danger` / `shortcut` / `disabled` / `{ separator: true }`, `align`, `header` slot for e.g. the user card); portal + arrow keys / type-ahead | `fixed inset-0` click-catcher menus |
+| Contextual actions menu | `Dropdown` (`trigger`, `items` with `icon` / `danger` / `shortcut` / `disabled` / `{ separator: true }`, `align`, `header` slot for e.g. the user card; `checked` turns an item into a menuitemcheckbox that keeps the menu open); portal + arrow keys / type-ahead | `fixed inset-0` click-catcher menus |
+| Small form in a floating panel (filters, pickers) | `Popover` (`trigger={({ open, toggle }) => …}`, `children={close => …}`, `align`, `width`, `label`); portaled, flips above when needed, Esc / outside click closes | absolutely positioned panels clipped by `overflow-hidden` |
 | Hint on hover | `Tooltip` (`content`, `side`) | `title=` only |
 | Shortcut hint | `Kbd` | inline styled `<kbd>` |
 | Loading | `Skeleton` / `Skeleton.Line` / `.Card` / `.TableRows` shaped like the real content; `Spinner` (centered) or `SpinnerIcon` (inline) only for small waits | "Loading…" text |
@@ -176,6 +177,8 @@ Every page follows the same skeleton:
 - **Settings and admin** use `Tabs`, with `Section` / `SettingsRow` inside. Search deep-links target these tabs.
 
 **Shared page building blocks** (`components/Views/`): `ServiceList` (services of an environment with live health checks; used by `ServicesView` and `StandaloneEnvServicesView`), `EnvironmentList` (used by `EnvironmentsView` and `ServiceEnvironmentsView`) and `ImportYAMLCard` (paste/upload workspace, environment or service YAML). Extend these instead of copying a view.
+
+**Log engine** (`components/LogConsole/`): `useLogSource` (stream / file / live data, status and notices), `useLogViewState` (search, level and source facets with counts, time filter, columns, font size, wrap, follow, export), `LogToolbar`, `LogFacets` (sidebar with "Showing N of M"), `LogLines` (virtualized table with sticky `#` / Time / Level / Source / Message header; follow turns off on scroll-up with an "N new lines" pill) and `LogView`, which ties them together. `LogConsole` (full page, with facets), `LogPanel` (split pane, `compact`) and `MergedLogPanel` are thin wrappers. Parse levels with `levelOf(entry)` from `lib/parseLevel.ts` (cached on the entry) and format times with `formatLogTime`. Never fork a viewer; add an option to `LogView`.
 
 **App shell** (`components/Layout/`):
 - `Header`: 56px, `bg-surface` with a bottom border, wordmark at 18px, breadcrumbs (the last one is `text-fg`), search trigger (`Ctrl K`), theme `SegmentedControl`, and a user `Dropdown`. It stays neutral, never brand-colored.

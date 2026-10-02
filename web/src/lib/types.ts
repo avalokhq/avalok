@@ -36,6 +36,8 @@ export interface LogEntry {
   error?: string
   _blinkAt?: number
   _lineNum?: number
+  /** Cached parseLevel() result, see levelOf(). */
+  _level?: string
 }
 
 export interface ServiceStatus {
