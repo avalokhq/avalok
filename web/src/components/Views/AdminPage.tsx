@@ -215,6 +215,7 @@ function ScopePicker({ scope, onChange, scopeData }: { scope: string[]; onChange
 
   function toggle(path: string) {
     const next = new Set(scopeSet)
+    next.delete(FULL_ACCESS)
     if (next.has(path)) {
       next.delete(path)
     } else {
@@ -340,6 +341,59 @@ function ScopeChips({ scope, onChange }: { scope: string[]; onChange: (s: string
   )
 }
 
+
+/** Scope value that grants everything. An empty scope grants nothing. */
+const FULL_ACCESS = '*'
+
+/** Full / Limited switch plus the scope picker. Admins always see everything, so they get no picker. */
+function AccessScopeField({ role, scope, onChange, scopeData }: { role: string; scope: string[]; onChange: (s: string[]) => void; scopeData: ScopeData }) {
+  const full = scope.includes(FULL_ACCESS)
+  // Remembers the limited selection so flipping to Full and back doesn't lose it.
+  const limitedRef = useRef<string[]>(full ? [] : scope)
+  const setLimited = (s: string[]) => { limitedRef.current = s; onChange(s) }
+
+  if (role === 'admin') {
+    return (
+      <div>
+        <div className="text-sm font-medium text-fg">Access</div>
+        <div className="text-xs text-fg-muted">Admins always have full access.</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-fg">Access</div>
+          <div className="text-xs text-fg-muted">
+            {full ? 'Everything, including sources added later.' : 'Only the selected entries (and their children) are visible.'}
+          </div>
+        </div>
+        <SegmentedControl
+          label="Access"
+          size="sm"
+          value={full ? 'full' : 'limited'}
+          onChange={v => onChange(v === 'full' ? [FULL_ACCESS] : limitedRef.current)}
+          options={[
+            { value: 'full', label: 'Full access' },
+            { value: 'limited', label: 'Limited' },
+          ]}
+        />
+      </div>
+      {!full && (
+        <>
+          {scope.length === 0 && (
+            <Alert tone="warning">Nothing selected. This user won't see any workspace, environment, service or resource.</Alert>
+          )}
+          <ScopeChips scope={scope} onChange={setLimited} />
+          <ScopePicker scope={scope} onChange={setLimited} scopeData={scopeData} />
+        </>
+      )}
+    </div>
+  )
+}
+
 // --- Users Panel ---
 
 const ROLE_TONE: Record<string, Tone> = { admin: 'accent' }
@@ -355,6 +409,7 @@ function UsersPanel({ userRole }: { userRole: string }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
   const [resetUser, setResetUser] = useState<AdminUser | null>(null)
+  const [approvingUser, setApprovingUser] = useState<AdminUser | null>(null)
   const [error, setError] = useState<string | null>(null)
   const confirm = useConfirm()
   const toast = useToast()
@@ -371,10 +426,6 @@ function UsersPanel({ userRole }: { userRole: string }) {
 
   useEffect(() => { load() }, [])
 
-  async function handleApprove(u: AdminUser) {
-    try { await adminApproveUser(u.id); toast.success(`Approved ${u.username}`); load() }
-    catch (err) { toast.error("Couldn't approve user", err instanceof Error ? err.message : undefined) }
-  }
   async function handleDisable(u: AdminUser) {
     const ok = await confirm({
       title: `Disable ${u.username}?`,
@@ -451,13 +502,15 @@ function UsersPanel({ userRole }: { userRole: string }) {
       header: 'Access',
       className: 'max-w-72',
       render: u => (
-        u.scope && u.scope.length > 0 ? (
+        u.role === 'admin' || u.scope?.includes(FULL_ACCESS) ? (
+          <span className="text-xs text-fg-muted">Full access</span>
+        ) : u.scope && u.scope.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {u.scope.slice(0, 3).map(s => <Badge key={s}>{formatScope(s)}</Badge>)}
             {u.scope.length > 3 && <Badge title={u.scope.map(formatScope).join(', ')}>+{u.scope.length - 3}</Badge>}
           </div>
         ) : (
-          <span className="text-xs text-fg-muted">Full access</span>
+          <Badge tone="warning">No access</Badge>
         )
       ),
     },
@@ -469,7 +522,7 @@ function UsersPanel({ userRole }: { userRole: string }) {
       render: u => (
         <div className="flex items-center justify-end gap-1" onClick={e => e.stopPropagation()}>
           {u.status === 'pending' && (
-            <Button size="sm" variant="secondary" leftIcon={<UserCheck />} onClick={() => handleApprove(u)}>Approve</Button>
+            <Button size="sm" variant="secondary" leftIcon={<UserCheck />} onClick={() => setApprovingUser(u)}>Approve</Button>
           )}
           {isAdmin && <ActionMenu items={menuFor(u)} label={`Actions for ${u.username}`} />}
         </div>
@@ -492,6 +545,14 @@ function UsersPanel({ userRole }: { userRole: string }) {
           userRole={userRole}
           onClose={() => setEditingUser(null)}
           onSaved={() => { toast.success(`Updated ${editingUser.username}`); setEditingUser(null); load() }}
+        />
+      )}
+
+      {approvingUser && (
+        <ApproveUserModal
+          user={approvingUser}
+          onClose={() => setApprovingUser(null)}
+          onApproved={() => { toast.success(`Approved ${approvingUser.username}`); setApprovingUser(null); load() }}
         />
       )}
 
@@ -521,9 +582,8 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState('reader')
-  const [scope, setScope] = useState<string[]>([])
+  const [scope, setScope] = useState<string[]>([FULL_ACCESS])
   const [scopeData, setScopeData] = useState<ScopeData>(EMPTY_SCOPE)
-  const [showScope, setShowScope] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const formId = useId()
@@ -578,23 +638,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
           </FormField>
         </div>
 
-        <div>
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-medium text-fg">Access scope</div>
-              <div className="text-xs text-fg-muted">{scope.length ? `${scope.length} selected` : 'Full access to everything'}</div>
-            </div>
-            <Button variant="secondary" size="sm" type="button" onClick={() => setShowScope(!showScope)}>
-              {showScope ? 'Hide' : 'Limit access'}
-            </Button>
-          </div>
-          {showScope && (
-            <>
-              <ScopeChips scope={scope} onChange={setScope} />
-              <ScopePicker scope={scope} onChange={setScope} scopeData={scopeData} />
-            </>
-          )}
-        </div>
+        <AccessScopeField role={role} scope={scope} onChange={setScope} scopeData={scopeData} />
       </form>
     </Modal>
   )
@@ -662,14 +706,53 @@ function EditUserModal({ user, userRole, onClose, onSaved }: { user: AdminUser; 
           </FormField>
         </div>
 
-        <div>
-          <div className="mb-2">
-            <div className="text-sm font-medium text-fg">Access scope</div>
-            <div className="text-xs text-fg-muted">{scope.length === 0 ? 'Full access to everything. Tick entries below to restrict.' : 'Only the selected entries (and their children) are visible.'}</div>
-          </div>
-          <ScopeChips scope={scope} onChange={setScope} />
-          <ScopePicker scope={scope} onChange={setScope} scopeData={scopeData} />
-        </div>
+        <AccessScopeField role={role} scope={scope} onChange={setScope} scopeData={scopeData} />
+      </form>
+    </Modal>
+  )
+}
+
+function ApproveUserModal({ user, onClose, onApproved }: { user: AdminUser; onClose: () => void; onApproved: () => void }) {
+  // Self-registered users start with nothing; the admin picks what they get.
+  const [scope, setScope] = useState<string[]>([])
+  const [scopeData, setScopeData] = useState<ScopeData>(EMPTY_SCOPE)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const formId = useId()
+
+  useEffect(() => {
+    loadScopeTree().then(setScopeData).catch(() => {})
+  }, [])
+
+  async function handleApprove(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      await adminApproveUser(user.id, { scope })
+      onApproved()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to approve user')
+    } finally { setLoading(false) }
+  }
+
+  return (
+    <Modal
+      title={`Approve ${user.username}`}
+      description="Choose what this user can see once they sign in."
+      size="lg"
+      onClose={onClose}
+      dismissible={false}
+      footer={
+        <>
+          <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
+          <Button type="submit" form={formId} loading={loading} leftIcon={<UserCheck />}>Approve</Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleApprove} className="flex flex-col gap-4">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <AccessScopeField role={user.role} scope={scope} onChange={setScope} scopeData={scopeData} />
       </form>
     </Modal>
   )
@@ -1681,6 +1764,7 @@ function SettingsPanel({ onSettingsChange, highlightSetting, onHighlightConsumed
 // --- Helpers ---
 
 function formatScope(s: string) {
+  if (s === FULL_ACCESS) return 'Full access'
   if (s.startsWith('env:') || s.startsWith('res:')) {
     const rest = s.slice(4)
     const slash = rest.indexOf('/')

@@ -39,10 +39,39 @@ func (s *Server) handlePublicConfig(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"enable_workspaces":   boolSetting("enable_workspaces"),
-		"enable_environments": optInSetting("enable_environments"),
-		"enable_services":     optInSetting("enable_services"),
+		"enable_environments": optInSetting(settingEnableEnvironments),
+		"enable_services":     optInSetting(settingEnableServices),
 		"log_buffer_lines":    logBufferLines,
 	})
+}
+
+// Opt-in toggles for the standalone sections (see handlePublicConfig).
+const (
+	settingEnableEnvironments = "enable_environments"
+	settingEnableServices     = "enable_services"
+)
+
+// standaloneVisible reports whether an opt-in standalone section is available to the user.
+// Disabled sections are hidden from everyone except admins, who still manage entries and
+// assign access to them.
+func (s *Server) standaloneVisible(ctx context.Context, u *store.User, setting string) bool {
+	if u != nil && u.Role == "admin" {
+		return true
+	}
+	v, err := s.store.GetSetting(ctx, setting)
+	return err == nil && v == "true"
+}
+
+// requireStandalone answers 404 for a standalone section that is switched off, so lists,
+// health checks, streams and deep links stop working rather than only disappearing from the UI.
+func (s *Server) requireStandalone(setting string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.standaloneVisible(r.Context(), userFromContext(r), setting) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		next(w, r)
+	}
 }
 
 // --- Standalone Environment read endpoints ---
@@ -171,6 +200,9 @@ func (s *Server) handleStreamStandaloneEnvService(w http.ResponseWriter, r *http
 		return
 	}
 
+	r = withAccessCheck(r, func(ctx context.Context, u *store.User) bool {
+		return u.HasStandaloneEnvServiceAccess(name, svcName) && s.standaloneVisible(ctx, u, settingEnableEnvironments)
+	})
 	s.streamResolved(w, r, resolved)
 }
 
@@ -239,6 +271,9 @@ func (s *Server) handleStreamStandaloneService(w http.ResponseWriter, r *http.Re
 	}
 
 	resolved := svc.Resolve()
+	r = withAccessCheck(r, func(ctx context.Context, u *store.User) bool {
+		return u.HasStandaloneServiceAccess(name) && s.standaloneVisible(ctx, u, settingEnableServices)
+	})
 	s.streamResolved(w, r, resolved)
 }
 
@@ -312,8 +347,8 @@ func (s *Server) handleCreateStandaloneEnv(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	if env.Name == "" {
-		writeError(w, http.StatusBadRequest, "environment name is required")
+	if err := env.ValidateNames(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -346,6 +381,10 @@ func (s *Server) handleUpdateStandaloneEnv(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	env.Name = name
+	if err := env.ValidateNames(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	if err := s.store.SaveStandaloneEnv(r.Context(), &env); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update standalone environment")
@@ -413,8 +452,8 @@ func (s *Server) handleCreateStandaloneService(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	if svc.Name == "" {
-		writeError(w, http.StatusBadRequest, "service name is required")
+	if err := workspace.ValidateName("service", svc.Name); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if svc.Provider == "" {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { LogEntry } from './types'
-import { streamURL, appendLiveMode } from './api'
+import { streamURL, appendLiveMode, openLogSocket, revokedEntry, WS_ACCESS_REVOKED } from './api'
 import type { LogViewMode } from './api'
 
 const DEFAULT_MAX_LINES = 10000
@@ -35,12 +35,17 @@ export function useLogStream(workspace: string, env: string, service: string, cu
 
     const baseUrl = customStreamURL || streamURL(workspace, env, service)
     const url = appendLiveMode(baseUrl, viewMode)
-    const ws = new WebSocket(url)
+    const ws = openLogSocket(url)
     wsRef.current = ws
     lastReceivedRef.current = Date.now()
 
     ws.onopen = () => setConnected(true)
-    ws.onclose = () => setConnected(false)
+    ws.onclose = (event) => {
+      setConnected(false)
+      if (event.code === WS_ACCESS_REVOKED) {
+        bufferRef.current.push(revokedEntry())
+      }
+    }
     ws.onerror = () => setConnected(false)
 
     ws.onmessage = (event) => {

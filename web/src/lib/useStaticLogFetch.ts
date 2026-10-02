@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { LogEntry } from './types'
-import { storageObjectContentURL } from './api'
+import { storageObjectContentURL, authHeaders } from './api'
 
 export function useStaticLogFetch(resourceName: string, objectKey: string, enabled: boolean) {
   const storeRef = useRef<LogEntry[]>([])
@@ -27,7 +27,7 @@ export function useStaticLogFetch(resourceName: string, objectKey: string, enabl
 
     const url = storageObjectContentURL(resourceName, objectKey)
 
-    fetch(url, { signal: controller.signal })
+    fetch(url, { signal: controller.signal, headers: authHeaders() })
       .then(async (res) => {
         if (!res.ok) {
           const text = await res.text()

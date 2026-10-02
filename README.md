@@ -208,9 +208,9 @@ On first start, an admin account is created automatically and credentials are pr
 | **Admin** | Full access: manage users, credentials, workspaces, resources, settings |
 | **Reader** | View logs within granted scope |
 
-Scopes follow a path format: `workspace/environment/service`. A reader with scope `my-app/production/api` can only view API logs in production.
+Scopes follow a path format: `workspace/environment/service`. A reader with scope `my-app/production/api` can only view API logs in production. Access is deny-by-default: an empty scope sees nothing, `*` grants everything, and admins always have full access.
 
-In ephemeral mode (`avalok serve`), token-based users are assigned the **viewer** role with access scoped to the `--allow` paths.
+In ephemeral mode (`avalok serve`), token-based users are assigned the **viewer** role with access scoped to the `--allow` paths. Without `--allow`, tokens get full access to the shared workspace.
 
 ## Workspace YAML Reference
 

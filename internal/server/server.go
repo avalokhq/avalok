@@ -38,6 +38,8 @@ type Server struct {
 	healthMu      sync.RWMutex
 	healthCache   []ServiceCheckResult
 	healthChecked bool
+
+	tickets ticketStore
 }
 
 type Option func(*Server)
@@ -93,18 +95,25 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/ws/{name}/env/{env}/svc/{svc}/files", s.authMiddleware(s.handleListFiles))
 	s.mux.HandleFunc("GET /api/ws/{name}/env/{env}/svc/{svc}/files/{filename}", s.authMiddleware(s.handleReadFile))
 	s.mux.HandleFunc("GET /api/ws/{name}/env/{env}/svc/{svc}/files/{filename}/download", s.authMiddleware(s.handleDownloadFile))
+	s.mux.HandleFunc("POST /api/download-tickets", s.authMiddleware(s.handleCreateDownloadTicket))
 	s.mux.HandleFunc("POST /api/ws/{name}/env/{env}/svc/{svc}/files/search", s.authMiddleware(s.handleSearchFiles))
 
 	s.mux.HandleFunc("GET /api/config", s.authMiddleware(s.handlePublicConfig))
 
-	s.mux.HandleFunc("GET /api/env", s.authMiddleware(s.handleListStandaloneEnvs))
-	s.mux.HandleFunc("GET /api/env/{name}/svc", s.authMiddleware(s.handleListStandaloneEnvServices))
-	s.mux.HandleFunc("GET /api/env/{name}/svc/{svc}/check", s.authMiddleware(s.handleCheckStandaloneEnvService))
-	s.mux.HandleFunc("/api/env/{name}/svc/{svc}/stream", s.authMiddleware(s.handleStreamStandaloneEnvService))
+	envRoute := func(h http.HandlerFunc) http.HandlerFunc {
+		return s.authMiddleware(s.requireStandalone(settingEnableEnvironments, h))
+	}
+	s.mux.HandleFunc("GET /api/env", envRoute(s.handleListStandaloneEnvs))
+	s.mux.HandleFunc("GET /api/env/{name}/svc", envRoute(s.handleListStandaloneEnvServices))
+	s.mux.HandleFunc("GET /api/env/{name}/svc/{svc}/check", envRoute(s.handleCheckStandaloneEnvService))
+	s.mux.HandleFunc("/api/env/{name}/svc/{svc}/stream", envRoute(s.handleStreamStandaloneEnvService))
 
-	s.mux.HandleFunc("GET /api/svc", s.authMiddleware(s.handleListStandaloneServices))
-	s.mux.HandleFunc("GET /api/svc/{name}/check", s.authMiddleware(s.handleCheckStandaloneService))
-	s.mux.HandleFunc("/api/svc/{name}/stream", s.authMiddleware(s.handleStreamStandaloneService))
+	svcRoute := func(h http.HandlerFunc) http.HandlerFunc {
+		return s.authMiddleware(s.requireStandalone(settingEnableServices, h))
+	}
+	s.mux.HandleFunc("GET /api/svc", svcRoute(s.handleListStandaloneServices))
+	s.mux.HandleFunc("GET /api/svc/{name}/check", svcRoute(s.handleCheckStandaloneService))
+	s.mux.HandleFunc("/api/svc/{name}/stream", svcRoute(s.handleStreamStandaloneService))
 
 	if s.serverMode {
 		s.mux.HandleFunc("POST /api/auth/register", rateLimitMiddleware(s.handleRegister))
@@ -415,7 +424,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var envStats groupStats
-	standaloneEnvs, _ := s.store.ListStandaloneEnvs(r.Context())
+	var standaloneEnvs []*workspace.StandaloneEnvironment
+	if s.standaloneVisible(r.Context(), user, settingEnableEnvironments) {
+		standaloneEnvs, _ = s.store.ListStandaloneEnvs(r.Context())
+	}
 	for _, env := range standaloneEnvs {
 		if !user.HasStandaloneEnvAccess(env.Name) {
 			continue
@@ -436,7 +448,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var svcStats groupStats
-	standaloneSvcs, _ := s.store.ListStandaloneServices(r.Context())
+	var standaloneSvcs []*workspace.StandaloneService
+	if s.standaloneVisible(r.Context(), user, settingEnableServices) {
+		standaloneSvcs, _ = s.store.ListStandaloneServices(r.Context())
+	}
 	for _, svc := range standaloneSvcs {
 		if !user.HasStandaloneServiceAccess(svc.Name) {
 			continue
@@ -524,7 +539,7 @@ func (s *Server) handleGetWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(user.Scope) > 0 {
+	if !user.HasFullAccess() {
 		var filteredEnvs []workspace.Environment
 		for _, env := range ws.Environments {
 			if user.HasEnvAccess(name, env.Name) {
@@ -853,6 +868,9 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r = withAccessCheck(r, func(_ context.Context, u *store.User) bool {
+		return u.HasAccess(name, envName, svcName)
+	})
 	if r.Header.Get("Upgrade") == "websocket" {
 		s.handleWebSocketStream(w, r, resolved)
 		return
@@ -862,6 +880,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request, resolved *workspace.ResolvedService) {
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	r = r.WithContext(ctx)
+	s.watchAccess(ctx, r, cancel)
+
 	providerName, providerConfig := s.resolveWithCredentials(r.Context(), resolved, true, s.streamTailLines())
 
 	p, ok := provider.Get(providerName)
@@ -930,6 +953,15 @@ func (s *Server) handleSSEStream(w http.ResponseWriter, r *http.Request, resolve
 
 func (s *Server) authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if ticket := r.URL.Query().Get("dl"); ticket != "" && r.Method == http.MethodGet {
+			token, ok := s.tickets.redeem(ticket, r.URL.Path)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "download link expired")
+				return
+			}
+			r = r.Clone(r.Context())
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
 		user, err := s.auth.Authenticate(r)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, err.Error())

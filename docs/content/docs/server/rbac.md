@@ -40,15 +40,35 @@ Scopes define the boundary of a user's access using path-based patterns. A user 
 | `env:<name>/<service>` | A service in a standalone environment | `env:staging/redis` |
 | `svc:<name>` | A standalone service | `svc:monitoring` |
 | `res:<name>` | A Kubernetes resource (all namespaces) | `res:prod-cluster` |
+| `*` | Everything, including sources added later | `*` |
 | `res:<name>/<namespace>` | A specific namespace in a resource | `res:prod-cluster/default` |
 
-### Empty Scope
+### Full Access and Empty Scope
 
-An **empty scope** (blank string) grants access to **all resources**. This is the default for admin users.
+Access is **deny by default**:
+
+- `*` grants full access to everything. In the UI this is the **Full access** option.
+- An **empty scope** grants **no access**. The user can sign in but sees no workspaces, environments, services or resources.
+- **Admins** always have full access, whatever their scope.
+
+When you approve a self-registered user, the approval dialog asks what they can see. It defaults to **Limited** with nothing selected, so approving without picking anything gives no access.
+
+> **Upgrading:** older versions treated an empty scope as full access. Migration `006` gives every existing active or disabled reader with an empty scope `*`, so nobody loses access on upgrade. Pending users keep an empty scope.
+
+### Name Restrictions
+
+The characters `/`, `:` and `*` are reserved by the scope syntax, so they are rejected in workspace, environment, service and resource names. This stops a name like `env:prod` from colliding with a scope prefix.
+
+### Live Streams
+
+Open log streams re-check the user every 30 seconds. A stream closes (WebSocket close code `1008`) if the session is revoked, the account is disabled or expires, the scope no longer covers the source, or the source's section is turned off. The UI shows a "Stream closed because your access to this source was revoked" line when this happens.
 
 ### Scope Examples
 
 ```
+# Full access to everything
+scope: "*"
+
 # Full access to the "production" workspace
 scope: "production"
 

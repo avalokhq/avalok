@@ -72,9 +72,7 @@ func (s *Server) handleWebSocketStream(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: s.originPatterns(),
-	})
+	conn, err := s.acceptStreamSocket(w, r)
 	if err != nil {
 		logger.Error("websocket accept error", "error", err)
 		return
@@ -87,6 +85,7 @@ func (s *Server) handleWebSocketStream(w http.ResponseWriter, r *http.Request, r
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	s.watchAccess(ctx, r, revokeSocket(conn, cancel))
 
 	providerName, providerConfig := s.resolveWithCredentials(ctx, resolved, true, s.streamTailLines())
 

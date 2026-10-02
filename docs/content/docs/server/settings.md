@@ -48,7 +48,9 @@ Only the fields included in the PUT request are updated; omitted fields retain t
 
 ## Feature Toggles
 
-The `enable_workspaces`, `enable_environments`, and `enable_services` settings control which sections appear on the dashboard and in the Logs page source tree. Workspaces are on by default; standalone Environments and Services are opt-in and stay hidden until an admin enables them under **Settings**. Disabling a section hides it from all users, regardless of role.
+The `enable_workspaces`, `enable_environments`, and `enable_services` settings control which sections appear on the dashboard and in the Logs page source tree. Workspaces are on by default; standalone Environments and Services are opt-in and stay hidden until an admin enables them under **Settings**. Disabling a section hides it from the dashboard and Logs page for everyone.
+
+The server enforces these toggles too. While Environments or Services are off, non-admin users get `404` from the `/api/env` or `/api/svc` endpoints and their streams. They also drop out of search and stats, and any open streams close within 30 seconds. Admins can still reach them through the Manage pages.
 
 This is useful when you want to focus the UI on a specific workflow. For example, if you only use Kubernetes Resources, you can disable all three to declutter the interface.
 

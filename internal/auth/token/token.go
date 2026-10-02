@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/avalokhq/avalok/internal/auth"
 	"github.com/avalokhq/avalok/internal/store"
 )
 
@@ -17,13 +18,7 @@ func New(s store.Store) *Strategy {
 }
 
 func (s *Strategy) Authenticate(r *http.Request) (*store.User, error) {
-	token := r.URL.Query().Get("token")
-	if token == "" {
-		auth := r.Header.Get("Authorization")
-		if len(auth) > 7 && auth[:7] == "Bearer " {
-			token = auth[7:]
-		}
-	}
+	token := auth.TokenFromRequest(r)
 	if token == "" {
 		return nil, fmt.Errorf("authentication required")
 	}

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
-import { streamURL } from '../../lib/api'
+import { streamURL, openLogSocket, revokedEntry, WS_ACCESS_REVOKED } from '../../lib/api'
 import type { LogEntry } from '../../lib/types'
 import SourceDot from '../ui/SourceDot'
 import StatusDot from '../ui/StatusDot'
@@ -70,11 +70,16 @@ export default function MergedLogPanel({ sessions, maxLines = DEFAULT_MAX_LINES,
       if (existing.has(session.id)) continue
 
       const url = session.streamUrl || streamURL(session.workspace, session.environment, session.service)
-      const ws = new WebSocket(url)
+      const ws = openLogSocket(url)
       lastReceivedRef.current.set(session.id, Date.now())
 
       ws.onopen = countOpen
-      ws.onclose = countOpen
+      ws.onclose = (event) => {
+        countOpen()
+        if (event.code === WS_ACCESS_REVOKED) {
+          bufferRef.current.push({ ...revokedEntry(), sessionId: session.id, sessionLabel: session.label })
+        }
+      }
 
       ws.onmessage = (event) => {
         const entry: LogEntry = JSON.parse(event.data)

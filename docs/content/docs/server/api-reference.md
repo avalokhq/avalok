@@ -5,7 +5,7 @@ description: "Complete REST API documentation for Avalok Server."
 icon: "api"
 ---
 
-All API endpoints are served under the `/api` prefix. Authenticated endpoints require a valid JWT passed via the `Authorization: Bearer <token>` header or the `?token=` query parameter.
+All API endpoints are served under the `/api` prefix. Authenticated endpoints require a valid JWT, passed in the `Authorization: Bearer <token>` header. WebSockets can use the `avalok.token.<base64url>` subprotocol instead, and downloads can use single-use `?dl=` tickets. The `?token=` query parameter is still accepted for non-browser clients. See [Authentication]({{< relref "authentication" >}}).
 
 ## Public Endpoints
 
@@ -254,6 +254,10 @@ Authorization: Bearer <token>
 Connection: Upgrade
 Upgrade: websocket
 ```
+
+Browsers can't set the `Authorization` header on a WebSocket, so they send `Sec-WebSocket-Protocol: avalok, avalok.token.<base64url(token)>` instead.
+
+The server re-checks access every 30 seconds. If the user loses access, it closes the socket with code `1008` (policy violation).
 
 #### WebSocket Commands
 

@@ -2,16 +2,16 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Download, FileDown, FileText, Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
 import { formatBytes } from '../../lib/format'
-import { readFilePage, fileDownloadURL } from '../../lib/api'
+import { readFilePage, fileDownloadURL, startDownload } from '../../lib/api'
 import type { FilePage } from '../../lib/types'
 import Alert from '../ui/Alert'
 import Button from '../ui/Button'
 import EmptyState from '../ui/EmptyState'
 import IconButton from '../ui/IconButton'
 import Skeleton from '../ui/Skeleton'
-import Tooltip from '../ui/Tooltip'
 import { SpinnerIcon } from '../ui/Spinner'
 import { SearchInput } from '../ui/Input'
+import { useToast } from '../ui/Feedback'
 import FilePagination from './FilePagination'
 
 interface Props {
@@ -38,6 +38,7 @@ function highlightMatches(line: string, query: string): React.ReactNode {
 }
 
 export default function FileViewer({ workspace, environment, service, filename }: Props) {
+  const toast = useToast()
   const [data, setData] = useState<FilePage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -180,7 +181,10 @@ export default function FileViewer({ workspace, environment, service, filename }
   // Gutter grows with the widest line number on the page (+1ch breathing room).
   const gutterWidth = `${String(lastLine).length + 1}ch`
   const currentLineIdx = matchingLines[currentMatch]
-  const downloadUrl = fileDownloadURL(workspace, environment, service, filename)
+  const downloadFull = () => {
+    startDownload(fileDownloadURL(workspace, environment, service, filename))
+      .catch(err => toast.error('Download failed', err instanceof Error ? err.message : String(err)))
+  }
   const isLarge = data.file_size > 100 * 1024 * 1024 && data.page === 1
 
   return (
@@ -204,16 +208,9 @@ export default function FileViewer({ workspace, environment, service, filename }
           <IconButton label="Download this page" onClick={downloadPage}>
             <FileDown className="size-4" />
           </IconButton>
-          <Tooltip content="Download full file">
-            <a
-              href={downloadUrl}
-              download
-              aria-label="Download full file"
-              className="inline-flex size-7 shrink-0 items-center justify-center rounded-control text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
-            >
-              <Download className="size-4" />
-            </a>
-          </Tooltip>
+          <IconButton label="Download full file" onClick={downloadFull}>
+            <Download className="size-4" />
+          </IconButton>
         </div>
       </div>
 

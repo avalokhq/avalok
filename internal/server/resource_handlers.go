@@ -17,6 +17,7 @@ import (
 	"github.com/avalokhq/avalok/internal/provider/cloudutil"
 	"github.com/avalokhq/avalok/internal/store"
 	"github.com/avalokhq/avalok/internal/stream"
+	"github.com/avalokhq/avalok/internal/workspace"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/google/uuid"
@@ -106,6 +107,10 @@ func (s *Server) handleCreateResource(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" || req.Type == "" {
 		writeError(w, http.StatusBadRequest, "name and type are required")
+		return
+	}
+	if err := workspace.ValidateName("resource", req.Name); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -639,9 +644,7 @@ func (s *Server) handleResourceStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: s.originPatterns(),
-	})
+	conn, err := s.acceptStreamSocket(w, r)
 	if err != nil {
 		logger.Error("websocket accept error", "error", err)
 		return
@@ -654,6 +657,10 @@ func (s *Server) handleResourceStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	r = withAccessCheck(r, func(_ context.Context, u *store.User) bool {
+		return u.HasResourceNamespaceAccess(name, ns)
+	})
+	s.watchAccess(ctx, r, revokeSocket(conn, cancel))
 
 	p, ok := provider.Get("kubernetes")
 	if !ok {
@@ -1034,9 +1041,7 @@ func (s *Server) handleStorageObjectStream(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: s.originPatterns(),
-	})
+	conn, err := s.acceptStreamSocket(w, r)
 	if err != nil {
 		logger.Error("websocket accept error", "error", err)
 		return
@@ -1049,6 +1054,10 @@ func (s *Server) handleStorageObjectStream(w http.ResponseWriter, r *http.Reques
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	r = withAccessCheck(r, func(_ context.Context, u *store.User) bool {
+		return u.HasResourceAccess(name)
+	})
+	s.watchAccess(ctx, r, revokeSocket(conn, cancel))
 
 	p, err := s.buildCloudProvider(ctx, res)
 	if err != nil {
