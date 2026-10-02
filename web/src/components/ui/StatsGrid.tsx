@@ -1,47 +1,72 @@
 import { cn } from '../../lib/cn'
+import { toneSoft, toneText, type Tone } from '../../lib/statusTone'
 
-interface StatItem {
+export interface StatItem {
   label: string
   value: number | string
   icon: React.ReactNode
-  accent: string
-  bg: string
-  sub?: { label: string; value: number; color?: string }[]
+  tone?: Tone
+  /** @deprecated use `tone` */
+  accent?: string
+  /** @deprecated use `tone` */
+  bg?: string
+  sub?: { label: string; value: number; color?: string; tone?: Tone }[]
+  onClick?: () => void
 }
 
-interface StatsGridProps {
-  items: StatItem[]
+export function StatCard({ label, value, icon, tone = 'accent', sub, onClick }: StatItem) {
+  const Comp = onClick ? 'button' : 'div'
+  return (
+    <Comp
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={cn(
+        'rounded-card border border-line bg-surface p-5 text-left shadow-sm',
+        onClick && 'cursor-pointer transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-accent-line hover:shadow-md',
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-fg-secondary">{label}</span>
+        <span className={cn('flex size-8 items-center justify-center rounded-control [&_svg]:size-4', toneSoft[tone], toneText[tone])}>
+          {icon}
+        </span>
+      </div>
+      <div className="mt-2 text-display font-semibold tracking-tight text-fg tabular-nums">{value}</div>
+      {sub && sub.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3">
+          {sub.map(s => (
+            <div key={s.label} className="flex items-center gap-1.5 text-xs">
+              <span className="text-fg-muted">{s.label}</span>
+              <span className={cn('font-medium tabular-nums', s.tone ? toneText[s.tone] : s.color || 'text-fg')}>{s.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Comp>
+  )
 }
 
-export default function StatsGrid({ items }: StatsGridProps) {
+function legacyTone(accent?: string): Tone {
+  if (!accent) return 'accent'
+  if (accent.includes('blue') || accent.includes('sky')) return 'info'
+  if (accent.includes('emerald') || accent.includes('green')) return 'success'
+  if (accent.includes('amber') || accent.includes('yellow')) return 'warning'
+  if (accent.includes('red')) return 'danger'
+  return 'accent'
+}
+
+export default function StatsGrid({ items, className }: { items: StatItem[]; className?: string }) {
   return (
     <div className={cn(
-      'grid gap-4 mb-8',
-      items.length >= 4 ? 'grid-cols-2 sm:grid-cols-4'
+      'mb-8 grid gap-4',
+      items.length >= 4 ? 'grid-cols-2 lg:grid-cols-4'
         : items.length === 3 ? 'grid-cols-1 sm:grid-cols-3'
           : items.length === 2 ? 'grid-cols-1 sm:grid-cols-2'
             : 'grid-cols-1 max-w-sm',
+      className,
     )}>
       {items.map(item => (
-        <div key={item.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
-          <div className="flex items-center gap-3 mb-3">
-            <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center shrink-0', item.bg, item.accent)}>
-              {item.icon}
-            </div>
-            <span className={cn('text-sm font-medium', item.accent)}>{item.label}</span>
-          </div>
-          <div className="text-2xl font-semibold text-[var(--text-primary)] mb-2 tabular-nums">{item.value}</div>
-          {item.sub && item.sub.length > 0 && (
-            <div className="flex flex-wrap gap-x-4 gap-y-1">
-              {item.sub.map(s => (
-                <div key={s.label} className="flex items-center gap-1.5 text-xs">
-                  <span className="text-[var(--text-muted)]">{s.label}</span>
-                  <span className={cn('font-medium tabular-nums', s.color || 'text-[var(--text-primary)]')}>{s.value}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <StatCard key={item.label} {...item} tone={item.tone ?? legacyTone(item.accent)} />
       ))}
     </div>
   )

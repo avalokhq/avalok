@@ -1,129 +1,111 @@
 import { Sun, Moon, Monitor, ChevronRight, LogOut, Search } from 'lucide-react'
-import { cn } from '../../lib/cn'
 import { AvalokWordmark } from '../ui/AvalokLogo'
+import SegmentedControl from '../ui/SegmentedControl'
+import Dropdown from '../ui/Dropdown'
+import Badge from '../ui/Badge'
+import Kbd from '../ui/Kbd'
 import type { AuthUser } from '../../lib/api'
-
-type Theme = 'dark' | 'light' | 'auto'
+import type { Theme } from '../../lib/useTheme'
 
 interface Props {
   theme: Theme
   onThemeChange: (t: Theme) => void
   breadcrumbs?: { label: string; onClick?: () => void }[]
-  connected?: boolean
   onNavigateHome?: () => void
   onLogout?: () => void
   currentUser?: AuthUser | null
   onSearchOpen?: () => void
 }
 
-const themeOptions: { value: Theme; icon: React.FC<{ className?: string }> }[] = [
-  { value: 'dark', icon: Moon },
-  { value: 'light', icon: Sun },
-  { value: 'auto', icon: Monitor },
-]
+function initials(name: string) {
+  const parts = name.split(/[\s._-]+/).filter(Boolean)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
+}
 
-export default function Header({ theme, onThemeChange, breadcrumbs, connected, onNavigateHome, onLogout, currentUser, onSearchOpen }: Props) {
+export default function Header({ theme, onThemeChange, breadcrumbs, onNavigateHome, onLogout, currentUser, onSearchOpen }: Props) {
   return (
-    <header className="h-14 shrink-0 flex items-center px-5 gap-4 brand-header">
-      {/* Logo + tagline */}
-      <div className="flex items-center gap-3 shrink-0">
-        <button onClick={onNavigateHome} className="cursor-pointer hover:opacity-70 transition-opacity">
-          <AvalokWordmark height={22} onDark />
-        </button>
-        <span className="text-[11px] text-white/40 italic hidden sm:inline">observe with clarity</span>
-      </div>
+    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-line bg-surface px-4">
+      <button
+        type="button"
+        onClick={onNavigateHome}
+        aria-label="Avalok home"
+        className="flex shrink-0 cursor-pointer items-center rounded-control px-1 py-1 transition-opacity hover:opacity-80"
+      >
+        <AvalokWordmark height={18} />
+      </button>
 
-      {/* Search trigger */}
-      {onSearchOpen && (
-        <button
-          onClick={onSearchOpen}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 border border-white/15 hover:bg-white/15 transition-colors cursor-pointer min-w-[180px]"
-        >
-          <Search className="w-3.5 h-3.5 text-white/40" />
-          <span className="text-xs text-white/40 flex-1 text-left">Search...</span>
-          <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-white/10 border border-white/15 text-[10px] text-white/40 font-mono">
-            Ctrl+K
-          </kbd>
-        </button>
-      )}
-
-      {/* Breadcrumbs */}
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <>
-          <div className="w-px h-5 bg-white/20" />
-          <nav className="flex items-center gap-1 text-sm">
-            {breadcrumbs.map((crumb, i) => (
-              <span key={i} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="w-3.5 h-3.5 text-white/40" />}
-                {crumb.onClick ? (
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 border-l border-line pl-4 text-sm">
+          {breadcrumbs.map((crumb, i) => {
+            const last = i === breadcrumbs.length - 1
+            return (
+              <span key={i} className="flex min-w-0 items-center gap-1">
+                {i > 0 && <ChevronRight aria-hidden className="size-3.5 shrink-0 text-fg-faint" />}
+                {crumb.onClick && !last ? (
                   <button
+                    type="button"
                     onClick={crumb.onClick}
-                    className="text-white/70 hover:text-white transition-colors"
+                    className="cursor-pointer truncate rounded-control px-1 text-fg-muted transition-colors hover:text-fg"
                   >
                     {crumb.label}
                   </button>
                 ) : (
-                  <span className="text-white font-medium">{crumb.label}</span>
+                  <span aria-current={last ? 'page' : undefined} className="truncate px-1 font-medium text-fg">{crumb.label}</span>
                 )}
               </span>
-            ))}
-          </nav>
-        </>
-      )}
-
-      <div className="ml-auto flex items-center gap-3">
-        {/* Connection status */}
-        {connected !== undefined && (
-          <div className="flex items-center gap-1.5 text-xs text-white/70">
-            <span className={cn(
-              'w-1.5 h-1.5 rounded-full',
-              connected ? 'bg-white status-pulse' : 'bg-red-400'
-            )} />
-            {connected ? 'Connected' : 'Disconnected'}
-          </div>
-        )}
-
-        {/* Current user info */}
-        {currentUser && (
-          <div className="flex items-center gap-1.5 text-xs text-white/70">
-            <span className="font-medium text-white">{currentUser.username}</span>
-            <span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/15 text-white/60">
-              {currentUser.role}
-            </span>
-          </div>
-        )}
-
-        {/* Theme toggle */}
-        <div className="flex items-center bg-white/10 rounded-lg p-0.5 border border-white/15">
-          {themeOptions.map(opt => {
-            const Icon = opt.icon
-            return (
-              <button
-                key={opt.value}
-                onClick={() => onThemeChange(opt.value)}
-                className={cn(
-                  'p-1.5 rounded-md transition-all',
-                  theme === opt.value
-                    ? 'bg-white/20 text-white shadow-sm'
-                    : 'text-white/40 hover:text-white/70'
-                )}
-                title={opt.value.charAt(0).toUpperCase() + opt.value.slice(1)}
-              >
-                <Icon className="w-3.5 h-3.5" />
-              </button>
             )
           })}
-        </div>
+        </nav>
+      )}
 
-        {/* Logout */}
-        {onLogout && (
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {onSearchOpen && (
           <button
-            onClick={onLogout}
-            className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/10 transition-all"
-            title="Sign out"
+            type="button"
+            onClick={onSearchOpen}
+            className="hidden h-8 w-60 cursor-pointer items-center gap-2 rounded-control border border-line bg-surface-sunken pl-2.5 pr-1.5 text-sm text-fg-faint transition-colors hover:border-line-strong hover:text-fg-muted md:flex"
           >
-            <LogOut className="w-4 h-4" />
+            <Search className="size-4 shrink-0" />
+            <span className="flex-1 text-left">Search…</span>
+            <Kbd>Ctrl K</Kbd>
           </button>
+        )}
+
+        <SegmentedControl
+          label="Theme"
+          size="sm"
+          value={theme}
+          onChange={onThemeChange}
+          options={[
+            { value: 'light', icon: <Sun />, title: 'Light' },
+            { value: 'dark', icon: <Moon />, title: 'Dark' },
+            { value: 'auto', icon: <Monitor />, title: 'Match system' },
+          ]}
+        />
+
+        {currentUser && (
+          <Dropdown
+            width={224}
+            header={
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium text-fg">{currentUser.username}</div>
+                {currentUser.email && <div className="truncate text-xs text-fg-muted">{currentUser.email}</div>}
+                <Badge tone={currentUser.role === 'admin' ? 'accent' : 'neutral'} size="sm" className="mt-2 capitalize">
+                  {currentUser.role}
+                </Badge>
+              </div>
+            }
+            items={onLogout ? [{ label: 'Sign out', icon: <LogOut />, onClick: onLogout }] : []}
+            trigger={
+              <button
+                type="button"
+                aria-label={`Account: ${currentUser.username}`}
+                className="flex size-8 cursor-pointer items-center justify-center rounded-full border border-accent-line bg-accent-soft text-xs font-semibold text-accent transition-shadow hover:shadow-sm"
+              >
+                {initials(currentUser.username)}
+              </button>
+            }
+          />
         )}
       </div>
     </header>

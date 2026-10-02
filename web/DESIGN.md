@@ -5,8 +5,8 @@ This is the single source of truth for how the Avalok web UI looks and how to bu
 **North star:** calm, premium and data-first. Think Northflank's restraint, Kener's identical dark and light themes, Logdy's dense log tables, and Docker Desktop's command palette. Polish comes from **shadow depth, spacing and simplicity**, not from adding colors.
 
 > **Migration status:** the redesign is landing in phases. See the plan in the PR history.
-> - Phase 1 (tokens, type, fonts) is **done**.
-> - Components marked *(planned)* below are being added in Phase 2. Until they exist, use the nearest current component and never hand-roll a new one inline.
+> - Phase 1 (tokens, type, fonts), Phase 2 (component kit) and Phase 3 (app shell, auth, search palette) are **done**.
+> - Pages still being migrated to the kit may use old props marked `@deprecated` (`Badge variant`, `Alert variant`, `Modal maxWidth`, `Card hover`, `EmptyState iconBg`, `StatItem accent/bg`). New code uses the replacements listed in the JSDoc.
 > - Legacy `var(--bg-*)` / `var(--text-*)` aliases still work but are deprecated.
 
 ---
@@ -36,7 +36,7 @@ Every color comes from a semantic token defined in [`src/index.css`](src/index.c
 
 Log source hues (`--color-source-0..9`) are the only exception, through `SourceDot`.
 
-**Status meaning is centralized** in `lib/statusTone.ts` *(planned)*:
+**Status meaning is centralized** in `lib/statusTone.ts`: `statusTone(status)` and `levelTone(level)` return a `Tone`, and `toneText` / `toneSoft` / `toneLine` / `toneDot` turn a tone into classes:
 
 | Status | Tone |
 |---|---|
@@ -112,37 +112,39 @@ Everything lives in [`src/components/ui/`](src/components/ui/). **If a pattern a
 
 | Need | Use | Never |
 |---|---|---|
-| Any clickable action | `Button` (`primary` / `secondary` / `ghost` / `danger` / `subtle`, sizes `sm` / `md` / `lg`) | raw `<button>` with custom classes |
-| Icon-only action | `IconButton` with required `label` (becomes tooltip + `aria-label`) | an unlabeled icon |
-| Text, number or password field | `Input` / `InputGroup` *(planned)* / `SearchInput` *(planned)*, inside `FormField` | raw `<input>` |
-| Choice from a list | `Select`; for 2–4 options use `SegmentedControl` *(planned)* | native `<select>` with custom styling |
-| On/off setting | `Toggle`; multi-select uses `Checkbox` *(planned)* | unstyled native checkbox |
-| Page title area | `PageHeader` (eyebrow, title, description, actions, tabs) | ad-hoc `<h1>` blocks |
-| Page-level sections | `Tabs` (underline) | hand-built tab rows |
-| View mode toggle (table/grid, dark/light/auto) | `SegmentedControl` *(planned; `LayoutToggle` until then)* | custom pill groups |
-| Any list of records | `DataTable` (sortable, sticky header, density, built-in loading/empty/error) | stacked Cards as rows, hand-built `<table>` |
-| Browsable collection with visuals | `CollectionGrid` of `Card interactive` | — |
-| Container | `Card` (+ `CardHeader` / `CardFooter` *(planned)*) | `div` with border + rounded + bg |
+| Any clickable action | `Button`: variants `primary` / `secondary` / `subtle` / `ghost` / `danger` (soft) / `destructive` (solid, final confirm only) / `link`; sizes `sm` 28 / `md` 32 / `lg` 36; `leftIcon`, `rightIcon`, `loading`, `iconOnly` | raw `<button>` with custom classes |
+| Icon-only action | `IconButton` with `label` (tooltip + `aria-label`); `active` for toggles; sizes `xs` / `sm` / `md` | an unlabeled icon |
+| Text, number or password field | `Input` (`size` `md` 32px default, `lg` 36px for auth) / `InputGroup` (`leading`, `trailing`) / `PasswordInput` (show/hide toggle) / `SearchInput` (clear button, `shortcut` hint), inside `FormField` (`help`, `error`); `invalid` prop for errors | raw `<input>` |
+| Choice from a list | `Select`; for 2–4 options use `SegmentedControl` | native `<select>` with custom styling |
+| On/off setting | `Toggle` (`role=switch`); multi-select uses `Checkbox`; single choice with descriptions uses `Radio` (both in `Checkbox.tsx`) | unstyled native checkbox |
+| Page title area | `PageHeader` (`eyebrow`, `title`, `description`, `actions`, `tabs`) | ad-hoc `<h1>` blocks |
+| Page-level sections | `Tabs` (default `underline`; `pill` for compact in-card switching; optional `count`) | hand-built tab rows |
+| View mode toggle (table/grid, dark/light/auto) | `SegmentedControl` (icon-only segments need `title`); `LayoutToggle` is a preset of it | custom pill groups |
+| Any list of records | `DataTable`: column `sortValue`, `numeric`; props `density`, `loading`, `error` + `onRetry`, `empty`, `stickyHeader`, `isRowSelected`, `onRowClick` (keyboard-accessible) | stacked Cards as rows, hand-built `<table>` |
+| Browsable collection with visuals | `CollectionGrid` of `Card` with `onClick` | — |
+| Container | `Card` (`padding`, `interactive`, `selected`) + `CardHeader` (`icon`, `title`, `description`, `actions`) / `CardFooter` | `div` with border + rounded + bg |
 | Settings form layout | `Section` + `SettingsRow` | — |
-| Labels, types, statuses | `Badge` with a tone (`neutral` / `accent` / `success` / `warning` / `danger` / `info`) | inline `<span>` pills, hex provider colors |
-| Live / connection / health state | `StatusDot` *(planned)* with a text label | bare colored dot |
-| KPI numbers | `StatCard` / `StatsGrid` | — |
-| Dialog or form overlay | `Modal` (portal, frosted backdrop, Esc, focus trap; header/body/footer) | `fixed inset-0` divs |
-| Destructive confirm | `useConfirm()` / `ConfirmDialog` *(planned)* | `window.confirm()` |
-| Success / error feedback after an action | `useToast()` *(planned)* | `alert()`, silent `console.error` |
-| Inline error or notice | `Alert` (tone, optional retry action) | bare `text-red-*` div |
-| Contextual actions menu | `Dropdown` → `Menu` *(planned: portal + keyboard)* | `fixed inset-0` click-catcher menus |
-| Hint on hover | `Tooltip` *(planned)* | `title=` only |
-| Shortcut hint | `Kbd` *(planned)* | inline styled `<kbd>` |
-| Loading | `Skeleton` *(planned; `.skeleton` class until then)* shaped like the real content; `Spinner` only for small inline waits | "Loading…" text |
-| Nothing to show | `EmptyState` (icon, title, description, action) | blank areas, plain text |
-| Tree navigation row | `TreeItem` *(planned)* | copy-pasted row markup |
-| Resizable panes | `ResizeHandle` *(planned)* | mouse-only drag divs |
-| Facet / filter with count | `FilterChip` *(planned)* | — |
+| Labels, types, statuses | `Badge` with `tone` (`neutral` / `accent` / `success` / `warning` / `danger` / `info`), optional `dot`; providers: neutral tone + `<ProviderIcon>` inside | inline `<span>` pills, hex provider colors |
+| Live / connection / health state | `StatusDot` (`live` pings, `ok`, `warn`, `error`, `idle`) with a `label` | bare colored dot |
+| KPI numbers | `StatCard` / `StatsGrid` (`tone`, optional `onClick`) | — |
+| Dialog or form overlay | `Modal` (`title`, `description`, `footer`, `size` `sm`/`md`/`lg`/`xl`, `dismissible`); portal, frosted backdrop, Esc, focus trap + restore | `fixed inset-0` divs |
+| Destructive confirm | `const confirm = useConfirm(); if (!(await confirm({ title, description, confirmLabel: 'Delete', danger: true }))) return` | `window.confirm()` |
+| Success / error feedback after an action | `const toast = useToast(); toast.success('Saved')` / `toast.error(title, detail)` | `alert()`, silent `console.error` |
+| Inline error or notice | `Alert` (`tone`, `title`, `action` e.g. Retry button) | bare `text-red-*` div |
+| Contextual actions menu | `Dropdown` (`trigger`, `items` with `icon` / `danger` / `shortcut` / `disabled` / `{ separator: true }`, `align`, `header` slot for e.g. the user card); portal + arrow keys / type-ahead | `fixed inset-0` click-catcher menus |
+| Hint on hover | `Tooltip` (`content`, `side`) | `title=` only |
+| Shortcut hint | `Kbd` | inline styled `<kbd>` |
+| Loading | `Skeleton` / `Skeleton.Line` / `.Card` / `.TableRows` shaped like the real content; `Spinner` (centered) or `SpinnerIcon` (inline) only for small waits | "Loading…" text |
+| Nothing to show | `EmptyState` (`icon`, `tone`, `title`, `description`, `action`, `compact` inside cards/tables) | blank areas, plain text |
+| Tree navigation row | `TreeItem` (`depth`, `expanded` + `onToggle`, `onSelect`, `selected`, `count`, `status`, `actions`) | copy-pasted row markup |
+| Resizable panes | `ResizeHandle` (`orientation`, `onResize(delta)`; arrow keys too) | mouse-only drag divs |
+| Facet / filter with count | `FilterChip` (`label`, `count`, `active`, `onToggle`, `tone` dot or `leading`) | — |
 | Entity / provider icons | `EntityIcon`, `ProviderIcon`, `SourceDot` | hand-built `w-8 h-8 bg-x/10` tiles |
 | Global search | `SearchDialog` (Ctrl+K). Results must deep-link to the exact tab or setting | — |
 
 All overlays (modals, menus, popovers, palettes) render with `createPortal(…, document.body)`.
+
+`useConfirm()` and `useToast()` come from `ui/Feedback.tsx`; `<FeedbackProvider>` is mounted once in `main.tsx`.
 
 ## 5. Page patterns
 
@@ -167,6 +169,12 @@ Every page follows the same skeleton:
   - failure shows an inline `Alert` or toast;
   - deletes go through `useConfirm()`.
 - **Settings and admin** use `Tabs`, with `Section` / `SettingsRow` inside. Search deep-links target these tabs.
+
+**App shell** (`components/Layout/`):
+- `Header`: 56px, `bg-surface` with a bottom border, wordmark at 18px, breadcrumbs (the last one is `text-fg`), search trigger (`Ctrl K`), theme `SegmentedControl`, and a user `Dropdown`. It stays neutral, never brand-colored.
+- `AppSidebar`: 232px wide (56px collapsed), with "Observe" / "Manage" groups. The active item has `bg-selected`, an accent icon and a 2px accent bar. The footer holds `StatusIndicator` (a real `/api/health` poll) and the collapse button.
+- `AuthLayout`: the only screens with the `bg-premium` glow. The app shell itself sits on `bg-canvas`.
+- `SearchDialog`: the command palette. New pages and settings must be added to its list with a deep-link `data` value (e.g. `admin:settings:<key>`).
 
 **Log viewer conventions:**
 - a dense mono table: `#`, Time, Level badge, Source, Message;

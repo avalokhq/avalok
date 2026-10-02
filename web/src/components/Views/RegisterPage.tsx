@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { CheckCircle2, Lock, Mail, User } from 'lucide-react'
 import { register } from '../../lib/api'
-import { AvalokWordmark } from '../ui/AvalokLogo'
+import AuthLayout from '../Layout/AuthLayout'
 import Button from '../ui/Button'
-import Input from '../ui/Input'
+import { InputGroup, PasswordInput } from '../ui/Input'
 import Alert from '../ui/Alert'
 import FormField from '../ui/FormField'
+import EmptyState from '../ui/EmptyState'
 
 interface Props {
   onBack: () => void
@@ -18,6 +20,9 @@ export default function RegisterPage({ onBack }: Props) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  const mismatch = confirmPassword.length > 0 && password !== confirmPassword
+  const tooShort = password.length > 0 && password.length < 8
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -45,90 +50,84 @@ export default function RegisterPage({ onBack }: Props) {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-premium">
-        <div className="w-full max-w-sm px-4">
-          <div className="flex flex-col items-center mb-8 gap-2">
-            <AvalokWordmark height={28} />
-            <span className="text-xs text-[var(--text-muted)] italic">observe with clarity</span>
-          </div>
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 text-center">
-            <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-              <span className="text-emerald-400 text-xl">&#10003;</span>
-            </div>
-            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Registration submitted</h2>
-            <p className="text-sm text-[var(--text-secondary)] mb-5">
-              Your account is pending admin approval. You'll be able to sign in once approved.
-            </p>
-            <Button variant="secondary" size="lg" onClick={onBack} className="w-full">
-              Back to sign in
-            </Button>
-          </div>
-        </div>
-      </div>
+      <AuthLayout>
+        <EmptyState
+          compact
+          tone="success"
+          icon={<CheckCircle2 />}
+          title="Registration submitted"
+          description="Your account is pending admin approval. You'll be able to sign in once it's approved."
+          action={<Button variant="secondary" size="lg" onClick={onBack}>Back to sign in</Button>}
+          className="py-2"
+        />
+      </AuthLayout>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-premium">
-      <div className="w-full max-w-sm px-4">
-        <div className="flex justify-center mb-8">
-          <AvalokWordmark height={28} />
-        </div>
+    <AuthLayout
+      title="Create your account"
+      description="An admin will approve access to the log dashboard"
+      footer={<>Already have an account? <Button variant="link" onClick={onBack}>Sign in</Button></>}
+    >
+      {error && <Alert tone="danger" className="mb-5">{error}</Alert>}
 
-        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-1">Create account</h2>
-          <p className="text-sm text-[var(--text-secondary)] mb-5">Register for log dashboard access</p>
-
-          {error && <Alert className="mb-4">{error}</Alert>}
-
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <FormField label="Username">
-              <Input
-                type="text"
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                placeholder="Choose a username"
-                autoFocus
-                required
-              />
-            </FormField>
-            <FormField label="Email" hint="optional">
-              <Input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@company.com"
-              />
-            </FormField>
-            <FormField label="Password">
-              <Input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Min 8 characters"
-                required
-              />
-            </FormField>
-            <FormField label="Confirm password">
-              <Input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Repeat password"
-                required
-              />
-            </FormField>
-            <Button type="submit" size="lg" loading={loading} className="w-full mt-1">
-              Register
-            </Button>
-          </form>
-        </div>
-
-        <p className="mt-4 text-center text-sm text-[var(--text-secondary)]">
-          Already have an account?{' '}
-          <Button variant="link" onClick={onBack}>Sign in</Button>
-        </p>
-      </div>
-    </div>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <FormField label="Username" htmlFor="reg-username">
+          <InputGroup
+            id="reg-username"
+            leading={<User />}
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            placeholder="Choose a username"
+            autoComplete="username"
+            autoFocus
+            required
+            size="lg"
+          />
+        </FormField>
+        <FormField label="Email" hint="optional" htmlFor="reg-email">
+          <InputGroup
+            id="reg-email"
+            leading={<Mail />}
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="you@company.com"
+            autoComplete="email"
+            size="lg"
+          />
+        </FormField>
+        <FormField label="Password" htmlFor="reg-password" help="At least 8 characters" error={tooShort ? 'At least 8 characters' : null}>
+          <PasswordInput
+            id="reg-password"
+            leading={<Lock />}
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="Create a password"
+            autoComplete="new-password"
+            invalid={tooShort}
+            required
+            size="lg"
+          />
+        </FormField>
+        <FormField label="Confirm password" htmlFor="reg-confirm" error={mismatch ? 'Passwords do not match' : null}>
+          <PasswordInput
+            id="reg-confirm"
+            leading={<Lock />}
+            value={confirmPassword}
+            onChange={e => setConfirmPassword(e.target.value)}
+            placeholder="Repeat password"
+            autoComplete="new-password"
+            invalid={mismatch}
+            required
+            size="lg"
+          />
+        </FormField>
+        <Button type="submit" size="lg" loading={loading} className="mt-2 w-full">
+          Create account
+        </Button>
+      </form>
+    </AuthLayout>
   )
 }
