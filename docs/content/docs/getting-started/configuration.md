@@ -137,7 +137,7 @@ A target is a machine, cluster, or local system where services run. The fields a
 |---|---|---|---|
 | `name` | string | Yes | Target identifier (e.g., `web-1`, `k8s-prod`). |
 | `type` | string | Yes | Target type. One of: `ssh`, `kubernetes`, `winrm`, `local`, `windows`. |
-| `credential_profile` | string | No | Reference to a managed credential profile (server mode). Overrides environment-level `profile`. |
+| `credential_profile` | string | No | Reference to a managed credential profile (server mode). Connection fields set on the target override the profile's values. |
 
 ### Service Binding
 

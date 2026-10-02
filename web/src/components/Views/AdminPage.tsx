@@ -18,6 +18,7 @@ import Section from '../ui/Section'
 import EmptyState from '../ui/EmptyState'
 import SettingsRow from '../ui/SettingsRow'
 import FormField from '../ui/FormField'
+import SegmentedControl from '../ui/SegmentedControl'
 import Badge from '../ui/Badge'
 import StatusDot from '../ui/StatusDot'
 import { ActionMenu, type MenuItem } from '../ui/Dropdown'
@@ -1048,7 +1049,8 @@ const CRED_AUTH_FIELDS: Record<string, StorageField[]> = {
     { key: 'port', label: 'Port', placeholder: '5986', hint: '5985 for HTTP, 5986 for HTTPS' },
     { key: 'use_https', label: 'Use HTTPS', placeholder: '', type: 'toggle' },
     { key: 'insecure', label: 'Skip TLS Verification', placeholder: '', hint: 'For self-signed certificates', type: 'toggle' },
-    { key: 'host', label: 'Host', placeholder: '10.0.2.100', hint: 'Optional — set only if this credential is for a single server' },
+    // Rendered by the "Used for" scope picker, not in the field list.
+    { key: 'host', label: 'Host', placeholder: '10.0.2.100' },
   ],
   kubernetes: [
     { key: 'kubeconfig_content', label: 'Kubeconfig Content', placeholder: 'Paste kubeconfig YAML', hint: 'Full kubeconfig file content' },
@@ -1098,11 +1100,49 @@ function CredentialForm({ editing, onCancel, onSaved }: {
   )
   const [fields, setFields] = useState<Record<string, string>>(() => initialFields(editing?.config))
   const [removed, setRemoved] = useState<Set<string>>(new Set())
+  // "server": tied to one host, targets just pick it. "any": a login reused across hosts.
+  const [hostScope, setHostScope] = useState<'server' | 'any'>(isEdit && !original.host ? 'any' : 'server')
   const formRef = useRef<HTMLFormElement>(null)
   const formId = useId()
 
   const hasStructuredFields = targetType === 'ssh' || targetType in CRED_AUTH_FIELDS || targetType === 'azure-storage'
   const isAzureCredType = targetType === 'azure-storage'
+  const hasHostScope = targetType === 'ssh' || targetType === 'winrm'
+
+  function changeHostScope(scope: 'server' | 'any') {
+    setHostScope(scope)
+    if (scope === 'any') setField('host', '')
+  }
+
+  const hostScopePicker = hasHostScope && (
+    <>
+      <FormField label="Used for" hint={hostScope === 'server'
+        ? 'Targets pick this credential and connect straight to this host'
+        : 'Targets pick this credential and supply their own host'}>
+        <SegmentedControl
+          label="Used for"
+          size="sm"
+          className="flex w-full [&>button]:flex-1"
+          value={hostScope}
+          onChange={changeHostScope}
+          options={[
+            { value: 'server', label: 'One server' },
+            { value: 'any', label: 'Any server' },
+          ]}
+        />
+      </FormField>
+      {hostScope === 'server' && (
+        <FormField label="Host" required>
+          <Input
+            value={fields.host || ''}
+            onChange={e => setField('host', e.target.value)}
+            placeholder={targetType === 'ssh' ? 'e.g. 10.0.0.5 or db-01.internal' : 'e.g. 10.0.2.100'}
+            required
+          />
+        </FormField>
+      )}
+    </>
+  )
 
   function setField(key: string, value: string) {
     setFields(prev => ({ ...prev, [key]: value }))
@@ -1291,9 +1331,7 @@ function CredentialForm({ editing, onCancel, onSaved }: {
 
         {targetType === 'ssh' ? (
           <>
-            <FormField label="Host" hint="optional">
-              <Input value={fields.host || ''} onChange={e => setField('host', e.target.value)} placeholder="Host (set here if credential is tied to one server)" />
-            </FormField>
+            {hostScopePicker}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField label="User">
                 <Input value={fields.user || ''} onChange={e => setField('user', e.target.value)} placeholder="e.g. root" />
@@ -1329,7 +1367,8 @@ function CredentialForm({ editing, onCancel, onSaved }: {
           </>
         ) : hasStructuredFields ? (
           <div className="flex flex-col gap-4">
-            {activeFields().map(field => {
+            {hostScopePicker}
+            {activeFields().filter(f => !(hasHostScope && f.key === 'host')).map(field => {
               const secret = SENSITIVE_CRED_KEYS.has(field.key)
               return (
                 <FormField key={field.key} label={field.label} required={fieldRequired(field)} hint={field.hint}>

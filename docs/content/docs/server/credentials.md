@@ -18,6 +18,21 @@ Avalok Server stores and manages credentials in PostgreSQL, allowing teams to sh
 | **azure-storage** | Account key, connection string, SAS token, or managed identity | Connecting to Azure Blob Storage or Azure File Shares |
 | **gcs** | Service account credentials JSON or credentials file path | Connecting to Google Cloud Storage |
 
+## One Server vs Any Server
+
+SSH and WinRM credentials can be used in two ways. In the admin UI, the **Used for** switch picks one:
+
+| Used for | `host` in config | When a target uses it |
+|----------|------------------|-----------------------|
+| **One server** | Set | The target only picks the credential. Host, port and user all come from the credential, so there is nothing else to fill in. |
+| **Any server** | Not set | A shared login (e.g. one deploy key for a fleet). Each target supplies its own `host` and, optionally, `port`. |
+
+When you add a target to a workspace, environment or service, the first field after the type is **Connect using**. It lists the saved credentials of that type (`prod-db — 10.0.0.5` or `deploy-key — any host`) plus **Enter details manually**:
+
+- **One-server credential:** the form shows "Connects to 10.0.0.5:22 as deploy" instead of host fields. Use **Override host/port** if this target needs a different address; any value set on the target wins over the credential.
+- **Any-server credential:** the form asks for the host and port.
+- **Manual:** every connection field is shown, as without credentials.
+
 ## Creating Credentials
 
 Admins create credentials via the API or the admin UI.
@@ -49,7 +64,7 @@ Authorization: Bearer <token>
   "config": {
     "host": "10.0.1.50",
     "port": 22,
-    "username": "deploy",
+    "user": "deploy",
     "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n..."
   }
 }
@@ -215,7 +230,7 @@ Updates are a key-level merge into the stored `config`. Send only what changes:
 - The audit log records which keys were changed or cleared, never their values.
 - Changes apply to every resource and target using the profile on their next connection.
 
-The `GET /api/admin/credentials` list response includes a non-secret `host` field for credentials that have one saved. The admin UI uses this to test those credentials without prompting for a host.
+The `GET /api/admin/credentials` list response includes the non-secret `host`, `user` and `port` fields for credentials that have them saved. The admin UI uses these to test those credentials without prompting for a host, and to show where a target will connect.
 
 ## Deleting Credentials
 

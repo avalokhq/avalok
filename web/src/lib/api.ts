@@ -197,6 +197,8 @@ export interface AdminCredential {
   target_type: string
   description: string
   host?: string
+  user?: string
+  port?: string
   config?: Record<string, unknown>
   created_at?: string
   updated_at?: string

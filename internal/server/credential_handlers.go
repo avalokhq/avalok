@@ -28,6 +28,8 @@ func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 		TargetType  string `json:"target_type"`
 		Description string `json:"description"`
 		Host        string `json:"host,omitempty"`
+		User        string `json:"user,omitempty"`
+		Port        string `json:"port,omitempty"`
 		CreatedAt   any    `json:"created_at"`
 		UpdatedAt   any    `json:"updated_at"`
 	}
@@ -35,12 +37,19 @@ func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 	result := make([]credResponse, 0, len(creds))
 	for _, c := range creds {
 		host, _ := c.Config["host"].(string)
+		user, _ := c.Config["user"].(string)
+		var port string
+		if p, ok := c.Config["port"]; ok && p != nil && p != "" {
+			port = fmt.Sprint(p)
+		}
 		result = append(result, credResponse{
 			ID:          c.ID,
 			Name:        c.Name,
 			TargetType:  c.TargetType,
 			Description: c.Description,
 			Host:        host,
+			User:        user,
+			Port:        port,
 			CreatedAt:   nullTimeJSON(c.CreatedAt),
 			UpdatedAt:   nullTimeJSON(c.UpdatedAt),
 		})
