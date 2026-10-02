@@ -18,6 +18,7 @@ import Section from '../ui/Section'
 import EmptyState from '../ui/EmptyState'
 import SettingsRow from '../ui/SettingsRow'
 import FormField from '../ui/FormField'
+import SegmentedControl from '../ui/SegmentedControl'
 import Badge from '../ui/Badge'
 import StatusDot from '../ui/StatusDot'
 import { ActionMenu, type MenuItem } from '../ui/Dropdown'
@@ -28,13 +29,13 @@ import ProviderIcon from '../ui/ProviderIcon'
 const KUBERNETES_LOGO = 'https://cdn.jsdelivr.net/gh/selfhst/icons@main/webp/kubernetes.webp'
 import {
   adminListUsers, adminApproveUser, adminDisableUser, adminDeleteUser, adminCreateUser, adminUpdateUser, adminResetPassword,
-  adminListCredentials, adminGetCredential, adminCreateCredential, adminUpdateCredential, adminDeleteCredential, adminTestCredential,
+  adminListCredentials, adminGetCredential, adminCreateCredential, adminUpdateCredential, adminDeleteCredential, adminTestCredential, adminCredentialUsage,
   adminListResources, adminListResourceNamespaces,
   adminGetSettings, adminUpdateSettings,
   listWorkspaces, listEnvironments, listServices,
   listStandaloneEnvs, listStandaloneEnvServices, listStandaloneServices,
 } from '../../lib/api'
-import type { AdminUser, AdminCredential, AdminResource, NamespaceInfo, CredentialTestResult, CredentialTestStep } from '../../lib/api'
+import type { AdminUser, AdminCredential, CredentialUsage, AdminResource, NamespaceInfo, CredentialTestResult, CredentialTestStep } from '../../lib/api'
 import type { Workspace, Environment, Service, StandaloneEnvironment, StandaloneService } from '../../lib/types'
 import {
   type StorageField, type AzureAuthMethod,
@@ -764,6 +765,7 @@ function CredentialsPanel() {
   const [testResults, setTestResults] = useState<Record<string, TestState>>({})
   const [hostPrompt, setHostPrompt] = useState<AdminCredential | null>(null)
   const [reportFor, setReportFor] = useState<string | null>(null)
+  const [inUse, setInUse] = useState<{ name: string; usages: CredentialUsage[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const confirm = useConfirm()
   const toast = useToast()
@@ -782,16 +784,34 @@ function CredentialsPanel() {
 
   useEffect(() => { load() }, [])
 
+  // Returns true if the credential is referenced anywhere (and shows where).
+  async function blockIfInUse(name: string): Promise<boolean> {
+    const usages = await adminCredentialUsage(name)
+    if (usages.length === 0) return false
+    setInUse({ name, usages })
+    return true
+  }
+
   async function handleDelete(name: string) {
+    try {
+      if (await blockIfInUse(name)) return
+    } catch (err) {
+      toast.error("Couldn't check where this credential is used", err instanceof Error ? err.message : undefined)
+      return
+    }
     const ok = await confirm({
       title: `Delete credential "${name}"?`,
-      description: 'Services and resources that reference this profile will fail to connect until they are updated.',
+      description: "Nothing references this profile. This can't be undone.",
       confirmLabel: 'Delete',
       danger: true,
     })
     if (!ok) return
     try { await adminDeleteCredential(name); toast.success(`Deleted ${name}`); load() }
-    catch (err) { toast.error("Couldn't delete credential", err instanceof Error ? err.message : undefined) }
+    catch (err) {
+      // Something may have started using it after the check above.
+      if (await blockIfInUse(name).catch(() => false)) return
+      toast.error("Couldn't delete credential", err instanceof Error ? err.message : undefined)
+    }
   }
 
   async function handleEdit(name: string) {
@@ -925,6 +945,7 @@ function CredentialsPanel() {
           <CredentialTestReport result={report} />
         </Modal>
       )}
+      {inUse && <CredentialInUseModal {...inUse} onClose={() => setInUse(null)} />}
 
       <DataTable
         columns={columns}
@@ -943,6 +964,37 @@ function CredentialsPanel() {
         }
       />
     </div>
+  )
+}
+
+const USAGE_KIND_LABEL: Record<CredentialUsage['kind'], string> = {
+  resource: 'Resource',
+  workspace: 'Workspace',
+  environment: 'Environment',
+  service: 'Service',
+}
+
+function CredentialInUseModal({ name, usages, onClose }: { name: string; usages: CredentialUsage[]; onClose: () => void }) {
+  return (
+    <Modal
+      title={`Can't delete "${name}"`}
+      description={`It's used in ${plural(usages.length, 'place')}. Switch these to another credential or remove them, then try again.`}
+      size="md"
+      onClose={onClose}
+      footer={<Button variant="secondary" type="button" onClick={onClose}>Close</Button>}
+    >
+      <ul className="divide-y divide-line overflow-hidden rounded-control border border-line">
+        {usages.map((u, i) => (
+          <li key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
+            <Badge tone="neutral" size="sm">{USAGE_KIND_LABEL[u.kind]}</Badge>
+            <span className="min-w-0 truncate">
+              <span className="font-medium text-fg">{u.name}</span>
+              {u.path && <span className="text-fg-muted"> › {u.path}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Modal>
   )
 }
 
@@ -1048,7 +1100,8 @@ const CRED_AUTH_FIELDS: Record<string, StorageField[]> = {
     { key: 'port', label: 'Port', placeholder: '5986', hint: '5985 for HTTP, 5986 for HTTPS' },
     { key: 'use_https', label: 'Use HTTPS', placeholder: '', type: 'toggle' },
     { key: 'insecure', label: 'Skip TLS Verification', placeholder: '', hint: 'For self-signed certificates', type: 'toggle' },
-    { key: 'host', label: 'Host', placeholder: '10.0.2.100', hint: 'Optional — set only if this credential is for a single server' },
+    // Rendered by the "Used for" scope picker, not in the field list.
+    { key: 'host', label: 'Host', placeholder: '10.0.2.100' },
   ],
   kubernetes: [
     { key: 'kubeconfig_content', label: 'Kubeconfig Content', placeholder: 'Paste kubeconfig YAML', hint: 'Full kubeconfig file content' },
@@ -1098,11 +1151,49 @@ function CredentialForm({ editing, onCancel, onSaved }: {
   )
   const [fields, setFields] = useState<Record<string, string>>(() => initialFields(editing?.config))
   const [removed, setRemoved] = useState<Set<string>>(new Set())
+  // "server": tied to one host, targets just pick it. "any": a login reused across hosts.
+  const [hostScope, setHostScope] = useState<'server' | 'any'>(isEdit && !original.host ? 'any' : 'server')
   const formRef = useRef<HTMLFormElement>(null)
   const formId = useId()
 
   const hasStructuredFields = targetType === 'ssh' || targetType in CRED_AUTH_FIELDS || targetType === 'azure-storage'
   const isAzureCredType = targetType === 'azure-storage'
+  const hasHostScope = targetType === 'ssh' || targetType === 'winrm'
+
+  function changeHostScope(scope: 'server' | 'any') {
+    setHostScope(scope)
+    if (scope === 'any') setField('host', '')
+  }
+
+  const hostScopePicker = hasHostScope && (
+    <>
+      <FormField label="Used for" hint={hostScope === 'server'
+        ? 'Targets pick this credential and connect straight to this host'
+        : 'Targets pick this credential and supply their own host'}>
+        <SegmentedControl
+          label="Used for"
+          size="sm"
+          className="flex w-full [&>button]:flex-1"
+          value={hostScope}
+          onChange={changeHostScope}
+          options={[
+            { value: 'server', label: 'One server' },
+            { value: 'any', label: 'Any server' },
+          ]}
+        />
+      </FormField>
+      {hostScope === 'server' && (
+        <FormField label="Host" required>
+          <Input
+            value={fields.host || ''}
+            onChange={e => setField('host', e.target.value)}
+            placeholder={targetType === 'ssh' ? 'e.g. 10.0.0.5 or db-01.internal' : 'e.g. 10.0.2.100'}
+            required
+          />
+        </FormField>
+      )}
+    </>
+  )
 
   function setField(key: string, value: string) {
     setFields(prev => ({ ...prev, [key]: value }))
@@ -1291,9 +1382,7 @@ function CredentialForm({ editing, onCancel, onSaved }: {
 
         {targetType === 'ssh' ? (
           <>
-            <FormField label="Host" hint="optional">
-              <Input value={fields.host || ''} onChange={e => setField('host', e.target.value)} placeholder="Host (set here if credential is tied to one server)" />
-            </FormField>
+            {hostScopePicker}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField label="User">
                 <Input value={fields.user || ''} onChange={e => setField('user', e.target.value)} placeholder="e.g. root" />
@@ -1329,7 +1418,8 @@ function CredentialForm({ editing, onCancel, onSaved }: {
           </>
         ) : hasStructuredFields ? (
           <div className="flex flex-col gap-4">
-            {activeFields().map(field => {
+            {hostScopePicker}
+            {activeFields().filter(f => !(hasHostScope && f.key === 'host')).map(field => {
               const secret = SENSITIVE_CRED_KEYS.has(field.key)
               return (
                 <FormField key={field.key} label={field.label} required={fieldRequired(field)} hint={field.hint}>
